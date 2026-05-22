@@ -1,0 +1,20 @@
+node_modules/
+.next/
+out/
+build/
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+.vercel
+coverage/
+
+# Real CRM exports, sent emails, proposals = PII. Never commit.
+# Keep only folder structure + templates.
+inputs/**
+!inputs/
+!inputs/**/
+!inputs/**/.gitkeep
+!inputs/**/*.template.md
