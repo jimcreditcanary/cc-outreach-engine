@@ -41,6 +41,17 @@ export interface ContactInput {
   linkedin_url?: string;
 }
 
+export interface NoteInput {
+  pipedrive_note_id?: number;
+  organisation_name?: string;
+  deal_title?: string;
+  contact_name?: string;
+  contact_email?: string;
+  content: string;
+  author?: string;
+  noted_at?: string;
+}
+
 export interface DealInput {
   pipedrive_deal_id?: number;
   organisation_name?: string;
@@ -174,6 +185,22 @@ export function mapDeal(row: RawRow): DealInput | null {
     value: asNumber(pick(ix, ["value", "deal_value", "amount"])),
     lost_reason,
     proposal_exists,
+  };
+}
+
+export function mapNote(row: RawRow): NoteInput | null {
+  const ix = indexRow(row);
+  const content = asString(pick(ix, ["content", "note", "body", "text"]));
+  if (!content) return null; // a note with no content is useless
+  return {
+    pipedrive_note_id: asBigIntId(pick(ix, ["id", "note_id"])),
+    organisation_name: asString(pick(ix, ["organization", "organisation", "company", "company_name"])),
+    deal_title: asString(pick(ix, ["deal", "deal_title"])),
+    contact_name: asString(pick(ix, ["person", "contact", "contact_name"])),
+    contact_email: asString(pick(ix, ["email", "person_email", "email_address"])),
+    content,
+    author: asString(pick(ix, ["user", "author", "owner", "created_by"])),
+    noted_at: asString(pick(ix, ["add_time", "created", "created_at", "date", "noted_at", "update_time"])),
   };
 }
 

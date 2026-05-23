@@ -14,6 +14,7 @@ const ENTITY_PREFIXES = [
   "organisation",
   "person",
   "contact",
+  "note",
 ] as const;
 
 /** Lower-case, strip a leading "<entity> - " prefix if present. */

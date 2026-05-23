@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { normalizeHeader, stripEntityPrefix, buildHeaderIndex } from "../headers";
-import { mapDeal, resolveStatus } from "../mappers";
+import { mapDeal, mapNote, resolveStatus } from "../mappers";
 
 describe("normalizeHeader", () => {
   // Real columns from a Pipedrive deal export.
@@ -68,6 +68,32 @@ describe("mapDeal against a real export row", () => {
 
   it("returns null for an empty row", () => {
     expect(mapDeal({ "Deal - Label": "Broker" })).toBeNull();
+  });
+});
+
+describe("mapNote", () => {
+  it("maps a Pipedrive note export row, linking by names", () => {
+    const note = mapNote({
+      "Note - ID": "9001",
+      "Note - Content": "Spoke to FD — budget signed off for Q3, wants CoP demo.",
+      "Note - Organization": "Snugg",
+      "Note - Deal": "Snugg - Broker Route",
+      "Note - Person": "Jane Doe",
+      "Note - User": "Jim Fell",
+      "Note - Add time": "2026-02-10 14:00:00",
+    });
+    expect(note).not.toBeNull();
+    expect(note!.content).toContain("budget signed off");
+    expect(note!.organisation_name).toBe("Snugg");
+    expect(note!.deal_title).toBe("Snugg - Broker Route");
+    expect(note!.contact_name).toBe("Jane Doe");
+    expect(note!.author).toBe("Jim Fell");
+    expect(note!.noted_at).toBe("2026-02-10 14:00:00");
+    expect(note!.pipedrive_note_id).toBe(9001);
+  });
+
+  it("returns null when there is no content", () => {
+    expect(mapNote({ "Note - Organization": "Snugg" })).toBeNull();
   });
 });
 

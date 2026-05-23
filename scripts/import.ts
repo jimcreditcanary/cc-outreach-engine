@@ -12,17 +12,17 @@ import { readFileSync } from "node:fs";
 import { config } from "dotenv";
 import { serviceClient } from "../src/lib/db/client";
 import { parseTabular } from "../src/lib/import/parse";
-import { mapOrg, mapContact, mapDeal } from "../src/lib/import/mappers";
+import { mapOrg, mapContact, mapDeal, mapNote } from "../src/lib/import/mappers";
 import { deriveTier, type DealTierInput } from "../src/lib/tier/derive";
 
 config({ path: ".env.local" });
 
-type Kind = "organisations" | "contacts" | "deals";
+type Kind = "organisations" | "contacts" | "deals" | "notes";
 
 async function main() {
   const [kind, file] = process.argv.slice(2) as [Kind, string];
   if (!kind || !file) {
-    console.error("usage: import <organisations|contacts|deals> <file.csv|.xlsx>");
+    console.error("usage: import <organisations|contacts|deals|notes> <file.csv|.xlsx>");
     process.exit(1);
   }
 
@@ -35,7 +35,8 @@ async function main() {
   else if (kind === "deals") {
     await importDeals(db, rows);
     await rederiveAllTiers(db);
-  } else {
+  } else if (kind === "notes") await importNotes(db, rows);
+  else {
     console.error(`unknown kind: ${kind}`);
     process.exit(1);
   }
@@ -168,6 +169,75 @@ async function importDeals(db: DB, rows: unknown[]) {
     n++;
   }
   console.log(`Upserted ${n} deals`);
+}
+
+/** Best-effort deal lookup by org + title (null when not found). */
+async function findDealId(db: DB, organisation_id: string | null, title?: string): Promise<string | null> {
+  if (!organisation_id || !title) return null;
+  const { data } = await db
+    .from("deals")
+    .select("id")
+    .eq("organisation_id", organisation_id)
+    .ilike("title", title)
+    .maybeSingle();
+  return (data?.id as string | undefined) ?? null;
+}
+
+/** Best-effort contact lookup by email, else by name within the org. */
+async function findContactId(
+  db: DB,
+  organisation_id: string | null,
+  email?: string,
+  name?: string,
+): Promise<string | null> {
+  if (email) {
+    const { data } = await db.from("contacts").select("id").ilike("email", email).maybeSingle();
+    if (data?.id) return data.id as string;
+  }
+  if (organisation_id && name) {
+    const { data } = await db
+      .from("contacts")
+      .select("id")
+      .eq("organisation_id", organisation_id)
+      .ilike("full_name", name)
+      .maybeSingle();
+    if (data?.id) return data.id as string;
+  }
+  return null;
+}
+
+async function importNotes(db: DB, rows: unknown[]) {
+  const orgCache = new Map<string, string>();
+  let n = 0;
+  for (const row of rows) {
+    const note = mapNote(row as Record<string, unknown>);
+    if (!note) continue;
+    const organisation_id = note.organisation_name
+      ? await resolveOrgId(db, note.organisation_name, orgCache)
+      : null;
+    const deal_id = await findDealId(db, organisation_id, note.deal_title);
+    const contact_id = await findContactId(db, organisation_id, note.contact_email, note.contact_name);
+
+    const record = {
+      pipedrive_note_id: note.pipedrive_note_id ?? null,
+      organisation_id,
+      deal_id,
+      contact_id,
+      content: note.content,
+      author: note.author ?? null,
+      noted_at: note.noted_at ?? null,
+    };
+
+    if (note.pipedrive_note_id) {
+      const { error } = await db.from("notes").upsert(record, { onConflict: "pipedrive_note_id" });
+      if (error) throw error;
+    } else {
+      const { error } = await db.from("notes").insert(record);
+      if (error) throw error;
+    }
+    n++;
+  }
+  console.log(`Upserted ${n} notes`);
 }
 
 /** Recompute and cache every org's tier from its deals (§5). */
