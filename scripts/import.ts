@@ -26,7 +26,7 @@ async function main() {
     process.exit(1);
   }
 
-  const rows = parseTabular(readFileSync(file));
+  const rows = parseTabular(readFileSync(file), file);
   const db = serviceClient();
   console.log(`Parsed ${rows.length} rows from ${file}`);
 

@@ -30,6 +30,13 @@ export interface OrgInput {
   website?: string;
   top_line_notes?: string;
   is_partner?: boolean;
+  // CC-specific targeting fields captured from the real export — these
+  // are the inputs the targeting engine segments on (§6).
+  icp?: boolean;
+  customer_category?: string;
+  customer_sub_category?: string;
+  industry?: string;
+  partner_category?: string;
 }
 
 export interface ContactInput {
@@ -112,22 +119,42 @@ function pick(indexed: Map<string, unknown>, aliases: readonly string[]): unknow
 
 // ── sector parsing ──────────────────────────────────────────────────
 
-const SECTOR_TOKENS: Record<string, Sector> = {
+/** Lower-case + snake_case a free-text value (not a header). */
+function slug(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+// Real-world spellings (incl. plurals) seen in the CRM's Industry/Type
+// columns → the canonical sector enum. Values not listed here (Auto
+// Finance, Platforms, Consulting, Insurance, CDFI, ...) stay null until
+// reconciled against the targeting map.
+const SECTOR_SYNONYMS: Record<string, Sector> = {
   bank: "bank",
-  broker: "broker",
+  banks: "bank",
   building_society: "building_society",
+  building_societies: "building_society",
   credit_union: "credit_union",
+  credit_unions: "credit_union",
   direct_lender: "direct_lender",
+  direct_lenders: "direct_lender",
+  broker: "broker",
+  brokers: "broker",
   marketplace: "marketplace",
+  marketplaces: "marketplace",
   sme_lender: "sme_lender",
   utility: "utility",
+  utilities: "utility",
 };
 
+/** First recognised sector in a possibly comma-separated cell. */
 function asSector(v: unknown): Sector | undefined {
   const s = asString(v);
   if (s === undefined) return undefined;
-  const token = normalizeHeader(s);
-  return SECTOR_TOKENS[token];
+  for (const part of s.split(",")) {
+    const hit = SECTOR_SYNONYMS[slug(part)];
+    if (hit) return hit;
+  }
+  return undefined;
 }
 
 // ── mappers ─────────────────────────────────────────────────────────
@@ -136,21 +163,35 @@ export function mapOrg(row: RawRow): OrgInput | null {
   const ix = indexRow(row);
   const name = asString(pick(ix, ["name", "organization", "organisation", "company", "company_name"]));
   if (!name) return null; // a row with no org name is unusable
+
+  const partner_category = asString(pick(ix, ["partner_category"]));
+  const explicitPartner = asBool(pick(ix, ["is_partner", "partner"]));
+
   return {
     pipedrive_org_id: asBigIntId(pick(ix, ["id", "org_id", "organization_id", "organisation_id"])),
     name,
-    sector: asSector(pick(ix, ["sector", "industry", "category"])),
-    location: asString(pick(ix, ["location", "address", "city", "region"])),
+    sector: asSector(pick(ix, ["sector", "industry", "type"])),
+    location: asString(pick(ix, ["location", "full_combined_address_of_address", "address", "city", "region"])),
     website: asString(pick(ix, ["website", "url", "web", "domain"])),
-    top_line_notes: asString(pick(ix, ["top_line_notes", "notes", "note", "description"])),
-    is_partner: asBool(pick(ix, ["is_partner", "partner"])),
+    top_line_notes: asString(pick(ix, ["top_line_notes", "description", "notes", "note"])),
+    // A partner is anyone with a Partner Category set (§12 — partners are
+    // excluded from buyer outreach), unless an explicit flag says otherwise.
+    is_partner: explicitPartner ?? (partner_category !== undefined ? true : undefined),
+    icp: asBool(pick(ix, ["icp", "ideal_customer_profile"])),
+    customer_category: asString(pick(ix, ["customer_category"])),
+    customer_sub_category: asString(pick(ix, ["customer_sub_category"])),
+    industry: asString(pick(ix, ["industry"])),
+    partner_category,
   };
 }
 
 export function mapContact(row: RawRow): ContactInput | null {
   const ix = indexRow(row);
   const full_name = asString(pick(ix, ["name", "full_name", "contact_name", "person"]));
-  const email = asString(pick(ix, ["email", "email_address", "primary_email"]));
+  // Pipedrive splits email into Work/Home/Other; prefer Work for B2B.
+  const email = asString(
+    pick(ix, ["email", "email_work", "email_address", "email_other", "email_home", "primary_email"]),
+  );
   if (!full_name && !email) return null; // need at least a name or email
   return {
     pipedrive_person_id: asBigIntId(pick(ix, ["id", "person_id", "contact_id"])),
@@ -196,7 +237,7 @@ export function mapNote(row: RawRow): NoteInput | null {
     pipedrive_note_id: asBigIntId(pick(ix, ["id", "note_id"])),
     organisation_name: asString(pick(ix, ["organization", "organisation", "company", "company_name"])),
     deal_title: asString(pick(ix, ["deal", "deal_title"])),
-    contact_name: asString(pick(ix, ["person", "contact", "contact_name"])),
+    contact_name: asString(pick(ix, ["person", "contact_person", "contact", "contact_name"])),
     contact_email: asString(pick(ix, ["email", "person_email", "email_address"])),
     content,
     author: asString(pick(ix, ["user", "author", "owner", "created_by"])),
