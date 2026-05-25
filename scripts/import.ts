@@ -77,10 +77,11 @@ async function importOrgs(db: DB, rows: unknown[]) {
   for (const row of rows) {
     const org = mapOrg(row as Record<string, unknown>);
     if (!org) continue;
+    const record = { ...org, raw: row as Record<string, unknown> };
     if (org.pipedrive_org_id) {
       const { error } = await db
         .from("organisations")
-        .upsert(org, { onConflict: "pipedrive_org_id" });
+        .upsert(record, { onConflict: "pipedrive_org_id" });
       if (error) throw error;
     } else {
       const { data: existing } = await db
@@ -89,8 +90,8 @@ async function importOrgs(db: DB, rows: unknown[]) {
         .ilike("name", org.name)
         .maybeSingle();
       const { error } = existing
-        ? await db.from("organisations").update(org).eq("id", existing.id)
-        : await db.from("organisations").insert(org);
+        ? await db.from("organisations").update(record).eq("id", existing.id)
+        : await db.from("organisations").insert(record);
       if (error) throw error;
     }
     n++;
@@ -108,7 +109,7 @@ async function importContacts(db: DB, rows: unknown[]) {
       ? await resolveOrgId(db, c.organisation_name, orgCache)
       : null;
     const { organisation_name: _drop, ...rest } = c;
-    const record = { ...rest, organisation_id };
+    const record = { ...rest, organisation_id, raw: row as Record<string, unknown> };
 
     if (c.pipedrive_person_id) {
       const { error } = await db
@@ -144,7 +145,7 @@ async function importDeals(db: DB, rows: unknown[]) {
       ? await resolveOrgId(db, d.organisation_name, orgCache)
       : null;
     const { organisation_name: _drop, ...rest } = d;
-    const record = { ...rest, organisation_id };
+    const record = { ...rest, organisation_id, raw: row as Record<string, unknown> };
 
     if (d.pipedrive_deal_id) {
       const { error } = await db
@@ -226,6 +227,7 @@ async function importNotes(db: DB, rows: unknown[]) {
       content: note.content,
       author: note.author ?? null,
       noted_at: note.noted_at ?? null,
+      raw: row as Record<string, unknown>,
     };
 
     if (note.pipedrive_note_id) {
