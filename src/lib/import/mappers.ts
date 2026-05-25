@@ -37,6 +37,7 @@ export interface OrgInput {
   customer_sub_category?: string;
   industry?: string;
   partner_category?: string;
+  label?: string;
 }
 
 export interface ContactInput {
@@ -46,6 +47,7 @@ export interface ContactInput {
   email?: string;
   job_title?: string;
   linkedin_url?: string;
+  label?: string;
 }
 
 export interface NoteInput {
@@ -182,6 +184,7 @@ export function mapOrg(row: RawRow): OrgInput | null {
     customer_sub_category: asString(pick(ix, ["customer_sub_category"])),
     industry: asString(pick(ix, ["industry"])),
     partner_category,
+    label: asString(pick(ix, ["label", "labels"])),
   };
 }
 
@@ -200,6 +203,7 @@ export function mapContact(row: RawRow): ContactInput | null {
     email,
     job_title: asString(pick(ix, ["job_title", "title", "role", "position"])),
     linkedin_url: asString(pick(ix, ["linkedin_url", "linkedin", "linked_in"])),
+    label: asString(pick(ix, ["label", "labels"])),
   };
 }
 
