@@ -42,6 +42,7 @@ export interface OrgInput {
 
 export interface ContactInput {
   pipedrive_person_id?: number;
+  organisation_pipedrive_id?: number;
   organisation_name?: string;
   full_name?: string;
   email?: string;
@@ -52,8 +53,11 @@ export interface ContactInput {
 
 export interface NoteInput {
   pipedrive_note_id?: number;
+  organisation_pipedrive_id?: number;
   organisation_name?: string;
+  deal_pipedrive_id?: number;
   deal_title?: string;
+  contact_pipedrive_id?: number;
   contact_name?: string;
   contact_email?: string;
   content: string;
@@ -63,7 +67,9 @@ export interface NoteInput {
 
 export interface DealInput {
   pipedrive_deal_id?: number;
+  organisation_pipedrive_id?: number;
   organisation_name?: string;
+  primary_contact_pipedrive_id?: number;
   title?: string;
   status: DealStatus;
   stage?: string;
@@ -198,6 +204,7 @@ export function mapContact(row: RawRow): ContactInput | null {
   if (!full_name && !email) return null; // need at least a name or email
   return {
     pipedrive_person_id: asBigIntId(pick(ix, ["id", "person_id", "contact_id"])),
+    organisation_pipedrive_id: asBigIntId(pick(ix, ["organization_id", "organisation_id", "org_id"])),
     organisation_name: asString(pick(ix, ["organization", "organisation", "company", "company_name"])),
     full_name,
     email,
@@ -223,7 +230,9 @@ export function mapDeal(row: RawRow): DealInput | null {
 
   return {
     pipedrive_deal_id: asBigIntId(pick(ix, ["id", "deal_id"])),
+    organisation_pipedrive_id: asBigIntId(pick(ix, ["organization_id", "organisation_id", "org_id"])),
     organisation_name,
+    primary_contact_pipedrive_id: asBigIntId(pick(ix, ["contact_person_id", "person_id"])),
     title,
     status,
     stage: asString(pick(ix, ["stage", "pipeline_stage"])),
@@ -239,8 +248,11 @@ export function mapNote(row: RawRow): NoteInput | null {
   if (!content) return null; // a note with no content is useless
   return {
     pipedrive_note_id: asBigIntId(pick(ix, ["id", "note_id"])),
+    organisation_pipedrive_id: asBigIntId(pick(ix, ["organization_id", "organisation_id", "org_id"])),
     organisation_name: asString(pick(ix, ["organization", "organisation", "company", "company_name"])),
-    deal_title: asString(pick(ix, ["deal", "deal_title"])),
+    deal_pipedrive_id: asBigIntId(pick(ix, ["deal_id"])),
+    deal_title: asString(pick(ix, ["deal_title", "deal"])),
+    contact_pipedrive_id: asBigIntId(pick(ix, ["contact_person_id", "person_id"])),
     contact_name: asString(pick(ix, ["person", "contact_person", "contact", "contact_name"])),
     contact_email: asString(pick(ix, ["email", "person_email", "email_address"])),
     content,

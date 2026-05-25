@@ -46,30 +46,95 @@ async function main() {
 
 type DB = ReturnType<typeof serviceClient>;
 
-/** Resolve (and cache) an organisation id by name, creating a stub if new. */
-async function resolveOrgId(db: DB, name: string, cache: Map<string, string>): Promise<string> {
-  const key = name.toLowerCase();
-  const cached = cache.get(key);
-  if (cached) return cached;
+interface OrgCaches {
+  byId: Map<number, string>;
+  byName: Map<string, string>;
+}
+const newOrgCaches = (): OrgCaches => ({ byId: new Map(), byName: new Map() });
 
-  const { data: existing } = await db
-    .from("organisations")
-    .select("id")
-    .ilike("name", name)
-    .maybeSingle();
+/**
+ * Resolve an organisation id, preferring the Pipedrive org id (stable)
+ * over the name (drifts). Orgs present in the org export are found; orgs
+ * referenced only by people/notes (investors, partners not in the buyer
+ * list) are created as stubs keyed by their Pipedrive id so they dedupe
+ * cleanly. Returns null when neither id nor name is given.
+ */
+async function resolveOrgId(
+  db: DB,
+  opts: { pipedriveId?: number; name?: string },
+  caches: OrgCaches,
+): Promise<string | null> {
+  const { pipedriveId, name } = opts;
 
-  let id = existing?.id as string | undefined;
-  if (!id) {
-    const { data, error } = await db
+  if (pipedriveId !== undefined) {
+    const c = caches.byId.get(pipedriveId);
+    if (c) return c;
+    const { data } = await db
       .from("organisations")
-      .insert({ name })
       .select("id")
-      .single();
-    if (error) throw error;
-    id = data.id as string;
+      .eq("pipedrive_org_id", pipedriveId)
+      .maybeSingle();
+    if (data?.id) {
+      caches.byId.set(pipedriveId, data.id);
+      return data.id;
+    }
   }
-  cache.set(key, id);
-  return id;
+  if (name) {
+    const key = name.toLowerCase();
+    const c = caches.byName.get(key);
+    if (c) return c;
+    const { data } = await db.from("organisations").select("id").ilike("name", name).maybeSingle();
+    if (data?.id) {
+      caches.byName.set(key, data.id);
+      return data.id;
+    }
+  }
+  if (pipedriveId === undefined && !name) return null;
+
+  // Not found anywhere — create a stub (an external org not in the export).
+  const insert: Record<string, unknown> = { name: name ?? `(unknown org ${pipedriveId})` };
+  if (pipedriveId !== undefined) insert.pipedrive_org_id = pipedriveId;
+  const { data, error } = await db.from("organisations").insert(insert).select("id").single();
+  if (error) throw error;
+  if (pipedriveId !== undefined) caches.byId.set(pipedriveId, data.id);
+  if (name) caches.byName.set(name.toLowerCase(), data.id);
+  return data.id;
+}
+
+/** Contact id by Pipedrive person id (cached). */
+async function findContactByPersonId(
+  db: DB,
+  personId: number,
+  cache: Map<number, string>,
+): Promise<string | null> {
+  const c = cache.get(personId);
+  if (c) return c;
+  const { data } = await db
+    .from("contacts")
+    .select("id")
+    .eq("pipedrive_person_id", personId)
+    .maybeSingle();
+  if (data?.id) {
+    cache.set(personId, data.id);
+    return data.id;
+  }
+  return null;
+}
+
+/** Deal id by Pipedrive deal id (cached). */
+async function findDealByPipedriveId(
+  db: DB,
+  dealId: number,
+  cache: Map<number, string>,
+): Promise<string | null> {
+  const c = cache.get(dealId);
+  if (c) return c;
+  const { data } = await db.from("deals").select("id").eq("pipedrive_deal_id", dealId).maybeSingle();
+  if (data?.id) {
+    cache.set(dealId, data.id);
+    return data.id;
+  }
+  return null;
 }
 
 async function importOrgs(db: DB, rows: unknown[]) {
@@ -100,15 +165,17 @@ async function importOrgs(db: DB, rows: unknown[]) {
 }
 
 async function importContacts(db: DB, rows: unknown[]) {
-  const orgCache = new Map<string, string>();
+  const orgCaches = newOrgCaches();
   let n = 0;
   for (const row of rows) {
     const c = mapContact(row as Record<string, unknown>);
     if (!c) continue;
-    const organisation_id = c.organisation_name
-      ? await resolveOrgId(db, c.organisation_name, orgCache)
-      : null;
-    const { organisation_name: _drop, ...rest } = c;
+    const organisation_id = await resolveOrgId(
+      db,
+      { pipedriveId: c.organisation_pipedrive_id, name: c.organisation_name },
+      orgCaches,
+    );
+    const { organisation_name: _n, organisation_pipedrive_id: _pid, ...rest } = c;
     const record = { ...rest, organisation_id, raw: row as Record<string, unknown> };
 
     if (c.pipedrive_person_id) {
@@ -136,16 +203,27 @@ async function importContacts(db: DB, rows: unknown[]) {
 }
 
 async function importDeals(db: DB, rows: unknown[]) {
-  const orgCache = new Map<string, string>();
+  const orgCaches = newOrgCaches();
+  const contactCache = new Map<number, string>();
   let n = 0;
   for (const row of rows) {
     const d = mapDeal(row as Record<string, unknown>);
     if (!d) continue;
-    const organisation_id = d.organisation_name
-      ? await resolveOrgId(db, d.organisation_name, orgCache)
+    const organisation_id = await resolveOrgId(
+      db,
+      { pipedriveId: d.organisation_pipedrive_id, name: d.organisation_name },
+      orgCaches,
+    );
+    const primary_contact_id = d.primary_contact_pipedrive_id
+      ? await findContactByPersonId(db, d.primary_contact_pipedrive_id, contactCache)
       : null;
-    const { organisation_name: _drop, ...rest } = d;
-    const record = { ...rest, organisation_id, raw: row as Record<string, unknown> };
+    const {
+      organisation_name: _n,
+      organisation_pipedrive_id: _pid,
+      primary_contact_pipedrive_id: _cpid,
+      ...rest
+    } = d;
+    const record = { ...rest, organisation_id, primary_contact_id, raw: row as Record<string, unknown> };
 
     if (d.pipedrive_deal_id) {
       const { error } = await db
@@ -208,16 +286,24 @@ async function findContactId(
 }
 
 async function importNotes(db: DB, rows: unknown[]) {
-  const orgCache = new Map<string, string>();
+  const orgCaches = newOrgCaches();
+  const contactCache = new Map<number, string>();
+  const dealCache = new Map<number, string>();
   let n = 0;
   for (const row of rows) {
     const note = mapNote(row as Record<string, unknown>);
     if (!note) continue;
-    const organisation_id = note.organisation_name
-      ? await resolveOrgId(db, note.organisation_name, orgCache)
-      : null;
-    const deal_id = await findDealId(db, organisation_id, note.deal_title);
-    const contact_id = await findContactId(db, organisation_id, note.contact_email, note.contact_name);
+    const organisation_id = await resolveOrgId(
+      db,
+      { pipedriveId: note.organisation_pipedrive_id, name: note.organisation_name },
+      orgCaches,
+    );
+    const contact_id = note.contact_pipedrive_id
+      ? await findContactByPersonId(db, note.contact_pipedrive_id, contactCache)
+      : await findContactId(db, organisation_id, note.contact_email, note.contact_name);
+    const deal_id = note.deal_pipedrive_id
+      ? await findDealByPipedriveId(db, note.deal_pipedrive_id, dealCache)
+      : await findDealId(db, organisation_id, note.deal_title);
 
     const record = {
       pipedrive_note_id: note.pipedrive_note_id ?? null,
