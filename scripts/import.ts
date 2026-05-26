@@ -142,7 +142,10 @@ async function importOrgs(db: DB, rows: unknown[]) {
   for (const row of rows) {
     const org = mapOrg(row as Record<string, unknown>);
     if (!org) continue;
-    const record = { ...org, raw: row as Record<string, unknown> };
+    // The curated org export IS the ICP universe (per Jim) — every org in
+    // it is an ICP, regardless of the source ICP Yes/No column (preserved
+    // in raw). External orgs (auto-created stubs) stay non-ICP.
+    const record = { ...org, icp: true, raw: row as Record<string, unknown> };
     if (org.pipedrive_org_id) {
       const { error } = await db
         .from("organisations")
