@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "import": "tsx scripts/import.ts",
-    "crawl": "tsx scripts/crawl.ts"
+    "crawl": "tsx scripts/crawl.ts",
+    "voice-spec": "tsx scripts/voice-spec.ts",
+    "tag-assets": "tsx scripts/tag-assets.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
