@@ -4,7 +4,7 @@
   Rename a copy of this file to `voice-corpus.md` and paste Jim's real
   sent emails below. Separate each one with a line containing only:
 
-      --- EMAIL ---
+--- EMAIL ---
 
   Keep:   subject (optional) + Jim's own body text.
   Strip:  recipient names/addresses, quoted reply chains, forwarded threads.
