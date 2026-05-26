@@ -11,6 +11,7 @@
 import { config } from "dotenv";
 import { serviceClient } from "../src/lib/db/client";
 import { generateDraft, type AssetOption, type ContactCtx } from "../src/lib/generate/draft";
+import { isDue, applyPerCompanyCap, DEFAULT_COOLDOWN_DAYS } from "../src/lib/cadence/cadence";
 
 config({ path: ".env.local", override: true });
 
@@ -37,13 +38,19 @@ async function main() {
   // Suppression list + already-queued/sent contacts (dedupe).
   const { data: supp } = await db.from("suppressions").select("email");
   const suppressed = new Set((supp ?? []).map((s) => String(s.email).toLowerCase()));
-  const { data: existing } = await db.from("sends").select("contact_id");
-  const alreadySent = new Set((existing ?? []).map((s) => s.contact_id as string));
+  // Only PENDING sends block (don't double-queue); a 'sent' contact can be
+  // re-touched once cooldown passes — that's the cadence engine's job.
+  const { data: pending } = await db.from("sends").select("contact_id").in("status", ["queued", "approved"]);
+  const inPipeline = new Set((pending ?? []).map((s) => s.contact_id as string));
+
+  const cooldownDays = Number(process.env.CADENCE_COOLDOWN_DAYS ?? DEFAULT_COOLDOWN_DAYS);
+  const maxPerCompany = Number(process.env.CADENCE_MAX_PER_COMPANY ?? 1);
+  const now = new Date();
 
   // Candidate contacts with their org embedded.
   const { data: contacts, error } = await db
     .from("contacts")
-    .select("id, full_name, email, job_title, label, organisation:organisations(id, name, sector, tier, is_partner)")
+    .select("id, full_name, email, job_title, label, last_touched_at, snooze_until, organisation:organisations(id, name, sector, tier, is_partner)")
     .not("email", "is", null)
     .limit(3000);
   if (error) throw error;
@@ -53,14 +60,23 @@ async function main() {
       | { id: string; name: string; sector: string | null; tier: number | null; is_partner: boolean }
       | null;
     if (!org || org.is_partner || !org.sector || (org.tier !== 2 && org.tier !== 3)) return false;
-    if (alreadySent.has(c.id as string)) return false;
+    if (inPipeline.has(c.id as string)) return false;
     if (c.email && suppressed.has(String(c.email).toLowerCase())) return false;
-    return true;
+    // Cadence: not snoozed, outside the cooldown window.
+    return isDue(
+      { last_touched_at: c.last_touched_at as string | null, snooze_until: c.snooze_until as string | null },
+      now,
+      cooldownDays,
+    );
   });
 
-  // Prospects first.
+  // Prospects first, then per-company cap so one org isn't hit from many angles.
   due.sort((a, b) => (b.label === "Prospect" ? 1 : 0) - (a.label === "Prospect" ? 1 : 0));
-  const batch = due.slice(0, limit);
+  const capped = applyPerCompanyCap(
+    due.map((c) => ({ ...c, organisation_id: (c.organisation as unknown as { id: string }).id })),
+    maxPerCompany,
+  );
+  const batch = capped.slice(0, limit);
   console.log(`${due.length} due contacts; generating ${batch.length}.`);
 
   const assetCache = new Map<string, AssetRow[]>();
