@@ -12,7 +12,9 @@
     "import": "tsx scripts/import.ts",
     "crawl": "tsx scripts/crawl.ts",
     "voice-spec": "tsx scripts/voice-spec.ts",
-    "tag-assets": "tsx scripts/tag-assets.ts"
+    "tag-assets": "tsx scripts/tag-assets.ts",
+    "generate": "tsx scripts/generate.ts",
+    "review": "tsx scripts/review.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
