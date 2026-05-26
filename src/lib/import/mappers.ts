@@ -152,6 +152,12 @@ const SECTOR_SYNONYMS: Record<string, Sector> = {
   sme_lender: "sme_lender",
   utility: "utility",
   utilities: "utility",
+  // Targeting-map §7 reconciliation of real CRM industry values.
+  auto_finance: "direct_lender",
+  automotive: "direct_lender",
+  platform: "marketplace",
+  platforms: "marketplace",
+  cdfi: "credit_union",
 };
 
 /** First recognised sector in a possibly comma-separated cell. */
