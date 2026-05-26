@@ -1,37 +1,23 @@
-# Credit Canary — Targeting Map
 
-> **Status: v0 draft, Claude-generated from creditcanary.co.uk content + the build brief.**
-> Jim to review and correct. `[REVIEW]` marks anything inferred (buyer titles, angle
-> phrasing, sector reconciliation) rather than lifted from the site.
->
-> This is **engine config**. It defines, per sector: the problems buyers face → the Credit
-> Canary capability that answers them → the anonymised proof → the content asset to attach →
-> the angle to lead with. Plus the anonymisation lookup, regulatory triggers, and the
-> payments loop. The generator and the daily queue read this; nothing here is sent verbatim.
+# Credit Canary — Targeting Map
 
 ---
 
 ## 0. Operating principles (apply to every generated touch)
 
-- **Relevance, not a hard sell.** Keep CC in the consideration set with a genuinely useful,
-  well-timed touch. Tone: thought-leader, low-pressure — *"if useful, let's talk; if not, no
-  worries, I'll resurface in a few months."* Never drip-spam, never "just circling back",
-  never quote the previous email.
-- **Anonymisation is HARD (see §1).** Never name a client, quote a logo, or imply whose proof
-  a metric belongs to. Convert every proof to a descriptor. A post-generation check rejects
-  any draft containing a roster name.
-- **Lead with one angle.** Pick the single most compelling signal for that contact; don't
-  stack three.
-- **Payments loop (see §5).** When leading with payments, lead with the loop — *risk dictates
-  payments, payments dictate risk* — not a rail list.
+- **The focus of outreach is about driving relevance and not looking for quick wins or hard sells.** Keep Credit Canary in the consideration set with a genuinely useful, well-timed touch. The tone of outreach should be one of a thought-leader, low-pressure — *"if useful, let's talk; if not, no worries, I'll resurface in a few months."* Never drip-spam, never "just circling back", never quote the previous email.
+- **Anonymisation is HARD (see §1).** Never name a client, quote a logo, or imply whose proof a metric belongs to. Convert every proof to a descriptor. A post-generation check rejects any draft containing a roster name.
+- **Lead with one angle.** Pick the single most compelling signal for that contact; don't stack three. As much as possible, we need to put forward proprtiary insights first either as standalone statments e.g. *here is what we are seeing in the market* or *the market has said this, here is our response to this based on data*. The CTA should drive to my calendar invite link: https://creditcanary.pipedrive.com/scheduler/Mlm4k3h0/meeting-with-james-fell 
+- **Payments loop (see §5).** When leading with payments, lead with the loop — *risk dictates payments, payments dictate risk* — not a rail list. 
 - **Engagement = clicks and replies only.** Never opens.
 
 ---
 
 ## 1. Anonymisation lookup (proof → descriptor)
 
-Every proof metric below is real but must be attributed only by descriptor. **Keep the metric,
-drop the name.** Reject any draft containing the left-column names.
+Every proof metric below is real but must be attributed only by descriptor. 
+
+**Keep the metric, drop the name.** Reject any draft containing the left-column names.
 
 | Real client (NEVER write) | Descriptor to use | Proof metrics (anonymised, usable) |
 |---|---|---|
@@ -39,49 +25,50 @@ drop the name.** Reject any draft containing the left-column names.
 | **GMB Credit Union** | "a large national credit union" | 28% increase in new lending; 13,000 admin hours saved; 50% lower origination cost; manual review cut from ~45 min. Same year, no extra staff or marketing spend. |
 | **NE First Credit Union** | "a regional credit union" | Application review 45 min → 5 min (89% faster); 75% fewer missed payments via proactive pre-arrears intervention; 60% auto-decline efficiency. |
 
-> `[REVIEW]` Add any other clients/logos that must never appear (current pipeline, partners,
-> reference accounts) with their descriptors.
+These are the key ones for now - we can update this table overtime. 
 
 ---
 
 ## 2. Capability spine (shared vocabulary)
 
-CC's platform is **six modules** + a set of **data connections**. Sector lanes below reference
-these by name.
+Credit Canary's platform comprises **six modules** + a set of **data connections** + a set of **payment rails**.
+
+Sector lanes below reference these by name.
 
 **Modules**
-- **Originate** — branded, on-brand application journeys; Open Banking data injection; real-time
-  eligibility; verified data capture. Proof: 40%+ higher conversion vs incumbents, 85%+
-  zero-touch decision rate, <90s application time, 60% lower data cost.
-- **Unify** — one enriched profile from bureau + Open Banking + internal/broker/CRM data.
-- **Decide** — configurable scorecards (weighted/rules), real-time affordability, explainable
-  auto-decisioning; route edge cases to humans with full context.
-- **Pay** — every rail (Direct Debit, Pay by Bank, Faster Payments, BACS, settlement); pay-in,
-  pay-out, reconcile. <1s execution, 99.9% reconciliation accuracy.
-- **Act** — proactive/next-best-action layer (pre-arrears intervention, collections workflow).
-- **Performance** — portfolio performance + payment-signal feedback into risk models.
+- **Originate** — branded, on-brand application journeys; Open Banking data injection; real-time eligibility; verified data capture. Proof: 40%+ higher conversion vs incumbents, 85%+ zero-touch decision rate, <90s application time, 60% lower data cost.
+- **Unify** — one enriched profile from bureau + Open Banking + internal/broker/CRM data. This is underpinned with a suite of proprietary ML models that cover both data quality, propensity models and more,
+- **Decide** — configurable scorecards (weighted/rules), real-time affordability, explainable auto-decisioning; route edge cases to humans with full context. There is also the ability to risk price every decision e.g. people with good credit can be rewarded by the lender with X cheaper % APR or more lending options.
+- **Pay** — every rail (Direct Debit, Pay by Bank, Faster Payments, BACS, settlement); pay-in, pay-out, reconcile. <1s execution, 99.9% reconciliation accuracy. We can also do settlement accounts too, allowing for more innovative use cases e.g. sweeping VRP.
+- **Act** — proactive/next-best-action layer (pre-arrears intervention, collections workflow) delivered at scale via the lenders communication channel of choice.
+- **Performance** — portfolio performance + payment-signal feedback into risk models, curated for specific roles.
 
-**Data connections (`/connect/*`)** — Open Banking, HMRC, Confirmation of Payee, Company
-Information, Identity Score, Physical IDV, TrueVision, TransUnion Affordability, Call & Report,
-Call & Validate, Standalone Checks.
+**Data connections (`/connect/*`)** — Out of the box, Credit Canary offers:
+ - Open Banking
+ - Confirmation of Payee
+ - Companies House Data
+ - Physical IDV&V
+ - Digital ID&V, as well as checks for Fraud, Deceased, PEPS, Sanctions and more
+ - Transunion Bureau Data, namely: True Vision, Affordability and Call Report
+
+We also have a banking app offering that we provide for clients as required.
 
 ---
 
 ## 3. Sector lanes
 
-Each lane: who we're talking to, the problems, the CC capability that answers them, the proof
-to cite (anonymised), the content asset to attach, and the angle to lead with.
+Each lane: who we're talking to, the problems, the CC capability that answers them, the proof to cite (anonymised), the content asset to attach, and the angle to lead with.
 
 ### bank — `/audience/banks.html`
-- **Buyers** `[REVIEW]`: Head of Unsecured Lending, Chief Risk Officer, Head of Credit Risk, Head of Collections, Director of Lending Transformation.
+- **Buyers:** Head of Unsecured Lending, Chief Risk Officer, Head of Credit Risk, Head of Collections, Director of Lending Transformation, Chief Operating Officer, Chief Customer Officer, Head of Product, Head of Propositions.
 - **Problems:** false declines (rigid affordability + static bureau data reject creditworthy applicants); rising cost-to-serve (manual underwriting, 10–15 siloed systems); Consumer Duty demands individualised, outcomes-based assessment.
 - **Capability:** Unify + Decide (explainable, affordability-rich decisioning); Originate; Pay feeding Performance.
-- **Proof:** tier 1 UK retail bank — 40% of declines converted to responsible approvals, 4× response rate.
+- **Proof:** tier 1 UK retail bank — 40% of declines converted to responsible approvals, 4× response rate uplift.
 - **Content:** TSB case study (anonymised), `/use-cases/income-identification`, `/use-cases/affordability-analysis`.
 - **Angle:** "Reworking declines into responsible approvals" — the revenue hiding in the decline pile.
 
 ### building_society — `/audience/building-societies.html`
-- **Buyers** `[REVIEW]`: CEO, Head of Mortgages/Lending, Head of Intermediary/Broker, COO.
+- **Buyers** CEO, Head of Mortgages/Lending, Head of Intermediary/Broker, COO, Head of Operations, Head of Transformation
 - **Problems:** lengthy manual mortgage underwriting (paper-heavy, multi-day); poor broker connectivity (60%+ cite intermediary digital as top priority); disproportionate regulatory cost vs scale.
 - **Opportunity hook:** UK government doubling the mutual/co-op sector (£165.7bn, 3.5% of GDP); 50% of building-society CEOs changed since 2021.
 - **Capability:** Decide (complex-case decisioning) + Unify + Originate (broker connectivity).
@@ -90,7 +77,7 @@ to cite (anonymised), the content asset to attach, and the angle to lead with.
 - **Angle:** "A once-in-a-generation mutual growth moment — modernise mortgage decisioning before competitors capture it."
 
 ### credit_union — `/audience/credit-unions.html`
-- **Buyers** `[REVIEW]`: CEO, Lending Manager, Operations Manager, Head of Credit.
+- **Buyers** CEO, COO, Head of Lending, Head of Loans, Underwriting Lead, Lending Manager, Operations Manager, Head of Credit.
 - **Problems:** manual underwriting (45+ min/application); disconnected systems block broker/car-finance origination; paying over the odds for limited bureau data, missing real-time income/expenditure.
 - **Capability:** Originate + Unify + Decide (AI underwriting, up to 89% review-time reduction) + Act (pre-arrears).
 - **Proof:** large national credit union — 28% more lending, 13k hours saved, 50% lower origination cost. Regional credit union — 45→5 min reviews, 75% fewer missed payments.
@@ -98,7 +85,7 @@ to cite (anonymised), the content asset to attach, and the angle to lead with.
 - **Angle:** "Grow lending without growing the team" / "see who needs help before they miss a payment."
 
 ### direct_lender — `/audience/direct-lenders.html`
-- **Buyers** `[REVIEW]`: CEO/Founder, CRO, Head of Credit, Head of Product.
+- **Buyers** Head of Unsecured Lending, Chief Risk Officer, Head of Credit Risk, Head of Collections, Director of Lending Transformation, Chief Operating Officer, Chief Customer Officer, Head of Product, Head of Propositions.
 - **Problems:** data gaps (thin-file, single-CRA, stale snapshots); scaling across product lines (cards, BNPL, car finance, personal loans) hits a wall; regulation catching up (BNPL under FCA, tighter CRA sharing).
 - **Capability:** Unify (multi-source) + Decide (adaptive scorecards) + Pay (close the loop) + straight-through processing.
 - **Proof:** STP <2s, zero manual touchpoints; Originate 40%+ conversion uplift.
@@ -106,15 +93,15 @@ to cite (anonymised), the content asset to attach, and the angle to lead with.
 - **Angle:** "Data quality is your moat — out-decision the banks, one platform across every product line."
 
 ### sme_lender — `/audience/sme-lenders.html`
-- **Buyers** `[REVIEW]`: Head of Credit, Head of Underwriting, CRO, Founder.
+- **Buyers** CEO, COO, Head of Lending, Head of Underwriting, Head of Credit, Head of Operations.
 - **Problems:** opaque borrower data (SMEs lack corporate-grade reporting); slow manual underwriting (weeks); collections without real-time cash-flow visibility.
 - **Capability:** Unify (Open Banking + Xero + Companies House + bureau) + Decide (AI appraisal agents) + Act (collections).
-- **Proof:** AI appraisal in minutes; accurate end-of-day balances widening the funnel. `[REVIEW: SME-specific proof metric?]`
+- **Proof:** AI appraisal in minutes; accurate end-of-day balances widening the funnel.
 - **Content:** `/use-cases/affordability-analysis`, `/audience/sme-lenders`.
 - **Angle:** "See the full picture of business health — real liquidity, not just filed accounts."
 
 ### broker — `/audience/brokers.html`
-- **Buyers** `[REVIEW]`: Principal/Owner, Head of Lending Panel, Operations Director.
+- **Buyers** Principal/Owner, Head of Lending Panel / Marketplace / Lenders, Operations Director.
 - **Problems:** wasted lead spend when the panel declines; limited lender-panel reach; slow lender connectivity.
 - **Capability:** Originate (lead enrichment) + Unify (enriched profile lenders trust) + Decide (Decisioning API pre-filter / lender matching).
 - **Proof:** conversion lifted from sub-15% to 80%+ (marketplace proof, transferable). `[REVIEW]`
@@ -122,7 +109,7 @@ to cite (anonymised), the content asset to attach, and the angle to lead with.
 - **Angle:** "Stop wasting placed-and-declined lead spend — enrich the lead, match it to a lender that says yes."
 
 ### marketplace — `/audience/marketplaces.html`
-- **Buyers** `[REVIEW]`: CEO/Founder, Head of Partnerships, Head of Product, Lender Ops.
+- **Buyers** CEO/Founder, Head of Partnerships, Head of Product, Lender Ops.
 - **Problems:** slow lender onboarding (weeks, bespoke); poor conversion (industry avg <15%); fragmented per-lender reporting.
 - **Capability:** Originate (whitelabel journeys) + Decide (sub-second pre-approved offers via API) + central product/pricing/rules management.
 - **Proof:** conversion sub-15% → 80%+; pre-approved offers in <1s.
@@ -130,7 +117,7 @@ to cite (anonymised), the content asset to attach, and the angle to lead with.
 - **Angle:** "Seamless lead-to-lender handoff — pre-approved offers in under a second, conversion past 80%."
 
 ### utility — `/audience/utilities.html`
-- **Buyers** `[REVIEW]`: Head of Credit/Collections, Head of Customer Debt, Director of Green Finance/Propositions.
+- **Buyers** Head of Credit/Collections, Head of Customer Debt, Director of Green Finance/Propositions.
 - **Problems:** spiralling domestic energy debt (>£4.4bn, +71% since 2023); rising Direct Debit failure (0.9% → 2%+); green-finance origination at scale (Warm Homes Plan); regulatory complexity (Ofgem Debt Relief Scheme, Consumer Duty).
 - **Capability:** Pay (DD/Open Banking/Pay by Bank) + Act (proactive pre-arrears) + Decide (affordability + green-finance models) + Originate.
 - **Proof:** collections — 2.4× collection-rate uplift, 60–80% arrangement conversion. `[REVIEW: utility-specific descriptor]`
@@ -157,10 +144,9 @@ Use when a signal points at a specific problem rather than a sector.
 
 ## 5. The payments loop (lead with this when angle = payments)
 
-> **Risk dictates payments, payments dictate risk.** Payment behaviour (DD failures, Pay-by-Bank
-> patterns) is a live risk signal; feeding it back into Decide/Performance catches problems
-> earlier than any bureau refresh. Lead with the *loop*, not a rail list. Collections is where
-> the loop is most visible: when a payment is missed, the next-best-action is data-driven (Act).
+**Risk dictates payments, payments dictate risk.** Payment behaviour (DD failures, Pay-by-Bank patterns) is a live risk signal; feeding it back into Decide/Performance catches problems earlier than any bureau refresh. Lead with the *loop*, not a rail list. Collections is where the loop is most visible: when a payment is missed, the next-best-action is data-driven (Act).
+
+To add a bit more detail here, these payments contracts are way more lucrative than the decisioning and can be an easier win, especially if they have reviews pending.
 
 ---
 
@@ -178,25 +164,13 @@ When one of these lands as a signal (press, consultation, deadline), it's a reas
 | **Warm Homes Plan / green finance** | utility | Originate + Decide — stand up consumer green-finance lending |
 | **Mutual-sector doubling (gov co-op/mutual policy)** | building_society, credit_union | modernise decisioning to capture the growth window |
 
-> `[REVIEW]` Add specific live consultations/deadlines you want monitored as RSS/press triggers.
+### Monitor List
+https://www.fca.org.uk/news
+https://www.psr.org.uk/news-and-updates/
+https://www.bankofengland.co.uk/news
 
 ---
 
-## 7. Sector enum reconciliation `[REVIEW — needs Jim's call]`
+## 7. Sector enum reconciliation 
 
-261 of 496 curated orgs don't map to the 8 enum lanes from their `industry` value. Proposed mapping:
-
-| Raw `industry` value | Proposed lane | Note |
-|---|---|---|
-| Auto Finance / Automotive | `direct_lender` | car-finance lenders; CU car-finance partnerships also relevant |
-| Platforms | `marketplace` | `[REVIEW]` confirm vs a partner classification |
-| Banks, Auto Finance (combo) | `bank` | take primary |
-| CDFI | `credit_union` | `[REVIEW]` closest community-lending lane, or its own |
-| Bureaus | — | likely **partner/vendor**, not buyer — exclude? |
-| Consulting / Management Consultants | — | likely **partner** (Partner Category set) — exclude from outreach |
-| Insurance / Telco / Internet Software | — | `[REVIEW]` out of current ICP sectors? |
-| (blank, 211) | use `customer_sub_category` | Loans/Mortgages/Credit Cards/BNPL/DCA/Broker/P2P — `[REVIEW]` decide whether sub-category drives the lane |
-
-**Decision needed:** keep the 8-value enum and drive unmapped orgs off `customer_sub_category`,
-or extend the enum (e.g. add `auto_finance`)? Once you decide, I'll backfill `sector` and tag
-the content assets accordingly.
+261 of 496 curated orgs don't map to the 8 enum lanes from their `industry` value. For these, can you surface them daily, maybe 5-10 a day, and I'll provide the necessary intelligence.
