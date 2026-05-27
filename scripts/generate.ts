@@ -12,6 +12,8 @@ import { config } from "dotenv";
 import { serviceClient } from "../src/lib/db/client";
 import { generateDraft, type AssetOption, type ContactCtx } from "../src/lib/generate/draft";
 import { isDue, applyPerCompanyCap, DEFAULT_COOLDOWN_DAYS } from "../src/lib/cadence/cadence";
+import { matchSignals, type SignalInput } from "../src/lib/signals/triggers";
+import type { Sector } from "../src/lib/import/mappers";
 
 config({ path: ".env.local", override: true });
 
@@ -79,6 +81,20 @@ async function main() {
   const batch = capped.slice(0, limit);
   console.log(`${due.length} due contacts; generating ${batch.length}.`);
 
+  // Recent regulatory/market signals (last 45 days) → matched per sector.
+  const since = new Date(now.getTime() - 45 * 86_400_000).toISOString();
+  const { data: press } = await db
+    .from("events")
+    .select("payload, source, ts")
+    .eq("type", "press")
+    .gte("ts", since)
+    .order("ts", { ascending: false })
+    .limit(120);
+  const recentSignals: SignalInput[] = (press ?? []).map((p) => {
+    const pl = p.payload as { title?: string; summary?: string; link?: string };
+    return { title: pl.title ?? "", summary: pl.summary ?? null, link: pl.link ?? "", source: String(p.source ?? "") };
+  });
+
   const assetCache = new Map<string, AssetRow[]>();
   let queued = 0;
   let flagged = 0;
@@ -105,7 +121,8 @@ async function main() {
       notes: (notes ?? []).map((n) => String(n.content)).filter(Boolean),
     };
 
-    const draft = await generateDraft(ctx, assets);
+    const signals = matchSignals(recentSignals, org.sector as Sector);
+    const draft = await generateDraft(ctx, assets, signals);
     if (!draft) {
       console.warn(`  FLAGGED (anonymisation) — ${ctx.full_name} @ ${org.name}`);
       flagged++;

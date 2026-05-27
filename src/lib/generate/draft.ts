@@ -6,6 +6,7 @@ import { z } from "zod";
 import { generateStructured } from "../ai/claude";
 import { buildSystemPrompt, SIGNATURE_TEXT, SIGNATURE_HTML } from "./config";
 import { checkAnonymisation } from "./anonymisation";
+import type { MatchedSignal } from "../signals/triggers";
 
 export interface ContactCtx {
   first_name: string;
@@ -42,7 +43,12 @@ const DraftSchema = z.object({
   asset_url: z.string(),
 });
 
-function buildUserPrompt(ctx: ContactCtx, assets: AssetOption[], correction?: string): string {
+function buildUserPrompt(
+  ctx: ContactCtx,
+  assets: AssetOption[],
+  signals: MatchedSignal[],
+  correction?: string,
+): string {
   const notes =
     ctx.notes.length > 0
       ? ctx.notes.map((n, i) => `  ${i + 1}. ${n}`).join("\n")
@@ -86,6 +92,11 @@ ${notes}
 CANDIDATE CONTENT ASSETS (reference at most one; use its exact URL):
 ${assetList}
 
+RECENT REGULATORY / MARKET SIGNALS for this sector (lead with one ONLY if it's
+genuinely relevant and timely — it's the strongest insight-first hook; otherwise
+ignore them entirely):
+${signals.length > 0 ? signals.map((s) => `  - [${s.source}] ${s.title} — angle: ${s.note}`).join("\n") : "  (none)"}
+
 Write the email now.`;
 }
 
@@ -93,7 +104,11 @@ Write the email now.`;
  * Generate one draft. Returns null if it can't pass the anonymisation gate
  * after a regeneration attempt (caller should flag, not send).
  */
-export async function generateDraft(ctx: ContactCtx, assets: AssetOption[]): Promise<DraftResult | null> {
+export async function generateDraft(
+  ctx: ContactCtx,
+  assets: AssetOption[],
+  signals: MatchedSignal[] = [],
+): Promise<DraftResult | null> {
   const system = buildSystemPrompt();
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -104,7 +119,7 @@ export async function generateDraft(ctx: ContactCtx, assets: AssetOption[]): Pro
 
     const out = await generateStructured({
       system,
-      user: buildUserPrompt(ctx, assets, correction),
+      user: buildUserPrompt(ctx, assets, signals, correction),
       schema: DraftSchema,
       effort: "medium",
       maxTokens: 2000,
