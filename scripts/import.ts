@@ -54,10 +54,10 @@ const newOrgCaches = (): OrgCaches => ({ byId: new Map(), byName: new Map() });
 
 /**
  * Resolve an organisation id, preferring the Pipedrive org id (stable)
- * over the name (drifts). Orgs present in the org export are found; orgs
- * referenced only by people/notes (investors, partners not in the buyer
- * list) are created as stubs keyed by their Pipedrive id so they dedupe
- * cleanly. Returns null when neither id nor name is given.
+ * over the name (drifts). Only matches orgs that already exist (i.e. came
+ * from the organisations export). Anything referenced by people/notes but
+ * not in that export resolves to null — we do NOT invent a company, so the
+ * company list stays exactly the curated buyer set.
  */
 async function resolveOrgId(
   db: DB,
@@ -89,16 +89,11 @@ async function resolveOrgId(
       return data.id;
     }
   }
-  if (pipedriveId === undefined && !name) return null;
-
-  // Not found anywhere — create a stub (an external org not in the export).
-  const insert: Record<string, unknown> = { name: name ?? `(unknown org ${pipedriveId})` };
-  if (pipedriveId !== undefined) insert.pipedrive_org_id = pipedriveId;
-  const { data, error } = await db.from("organisations").insert(insert).select("id").single();
-  if (error) throw error;
-  if (pipedriveId !== undefined) caches.byId.set(pipedriveId, data.id);
-  if (name) caches.byName.set(name.toLowerCase(), data.id);
-  return data.id;
+  // Not in the organisations export → do NOT invent a company. The
+  // contact/deal/note is left company-less (organisation_id null), so the
+  // company list stays exactly the curated buyer export. (Previously this
+  // created a stub, which is how investor/external orgs crept in.)
+  return null;
 }
 
 /** Contact id by Pipedrive person id (cached). */
