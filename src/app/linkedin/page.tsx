@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { saveLinkedInHook } from "../actions";
 
@@ -75,11 +76,13 @@ export default async function LinkedInPage() {
 
       {needsResearch.length > 0 && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500">Needs research ({needsResearch.length})</h2>
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Needs research ({needsResearch.length})</h2>
+          <p className="mb-3 text-xs text-neutral-400">No LinkedIn URL on file — click a name to look them up and paste their profile URL.</p>
           <ul className="space-y-1 text-sm text-neutral-600">
             {needsResearch.map((r) => (
               <li key={r.id}>
-                {r.full_name} — {r.job_title} — {r.organisation?.name} ({r.organisation?.sector})
+                <Link href={`/contacts/${r.id}`} className="text-blue-700 hover:underline">{r.full_name}</Link>
+                {" — "}{r.job_title} — {r.organisation?.name} ({r.organisation?.sector})
               </li>
             ))}
           </ul>
