@@ -1,5 +1,5 @@
 import { serviceClient } from "@/lib/db/client";
-import { approveDraft, rejectDraft } from "../actions";
+import { approveDraft, rejectDraft, updateDraft } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -51,25 +51,41 @@ export default async function QueuePage() {
                     </span>
                   )}
                 </div>
-                {d.angle && <p className="mb-1 text-xs uppercase tracking-wide text-amber-700">{d.angle}</p>}
-                <p className="mb-2 font-semibold">{d.subject}</p>
-                <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-neutral-700">
-                  {d.body_text}
-                </pre>
-                <div className="mt-3 flex gap-2">
-                  <form action={approveDraft}>
-                    <input type="hidden" name="id" value={d.id} />
-                    <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">
-                      Approve
+                {d.angle && <p className="mb-2 text-xs uppercase tracking-wide text-amber-700">{d.angle}</p>}
+                <form action={updateDraft} className="space-y-2">
+                  <input type="hidden" name="id" value={d.id} />
+                  <input
+                    name="subject"
+                    defaultValue={d.subject ?? ""}
+                    className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm font-semibold"
+                  />
+                  <textarea
+                    name="body_text"
+                    defaultValue={d.body_text ?? ""}
+                    rows={14}
+                    className="w-full rounded border border-neutral-300 px-2 py-1.5 font-sans text-sm leading-relaxed text-neutral-700"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      formAction={approveDraft}
+                      className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
+                    >
+                      Save &amp; approve
                     </button>
-                  </form>
-                  <form action={rejectDraft}>
-                    <input type="hidden" name="id" value={d.id} />
-                    <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100">
+                    <button
+                      formAction={updateDraft}
+                      className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                    >
+                      Save
+                    </button>
+                    <button
+                      formAction={rejectDraft}
+                      className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+                    >
                       Reject
                     </button>
-                  </form>
-                </div>
+                  </div>
+                </form>
               </li>
             );
           })}
