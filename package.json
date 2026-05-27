@@ -16,7 +16,8 @@
     "generate": "tsx scripts/generate.ts",
     "review": "tsx scripts/review.ts",
     "approve": "tsx scripts/approve.ts",
-    "send": "tsx scripts/send.ts"
+    "send": "tsx scripts/send.ts",
+    "signals": "tsx scripts/signals.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
