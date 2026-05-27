@@ -62,7 +62,17 @@ function buildUserPrompt(ctx: ContactCtx, assets: AssetOption[], correction?: st
       ? "Tier 2 (lapsed deal): re-engage on what's changed since you last spoke + the most relevant new asset."
       : "Tier 3 (no proposal yet): content/capability nurture — earn relevance, no hard ask.";
 
-  return `${correction ? correction + "\n\n" : ""}CONTACT
+  const today = new Date().toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/London",
+  });
+
+  return `${correction ? correction + "\n\n" : ""}Today is ${today}. Do not reference any other season, month, quarter, or year.
+
+CONTACT
   Name: ${ctx.full_name} (open with "Hi ${ctx.first_name},")
   Job title: ${ctx.job_title ?? "unknown"}
   Organisation: ${ctx.org_name}

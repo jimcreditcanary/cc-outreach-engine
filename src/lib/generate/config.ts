@@ -66,6 +66,10 @@ NON-NEGOTIABLE RULES:
 5. Do NOT include a signature, sign-off block, or the calendar link — those
    are appended automatically. End the body on Jim's soft CTA sentence.
 6. Open with "Hi <FirstName>,".
+7. TEMPORAL ACCURACY. Today's date is given in the contact context. Do NOT
+   invent or assume a season, month, quarter, or year ("year-end", "new
+   year", "into 2025", "autumn", "cold snap", "run-in to peak"). Only
+   reference timing if it is accurate to today's date — otherwise omit it.
 
 Return the subject, the body (no signature), the angle you led with (a short
 label), and the URL of the single content asset you referenced (or "" if
