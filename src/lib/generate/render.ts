@@ -10,7 +10,10 @@ export function textToHtml(text: string): string {
     .trim()
     .split(/\n\s*\n/)
     .map((p) => {
-      const linked = escapeHtml(p).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>');
+      const linked = escapeHtml(p).replace(
+        /(https?:\/\/[^\s<]+?)([.,;:!?)\]]*)(?=\s|$)/g,
+        '<a href="$1">$1</a>$2',
+      );
       return `<p>${linked.replace(/\n/g, "<br>")}</p>`;
     })
     .join("\n");

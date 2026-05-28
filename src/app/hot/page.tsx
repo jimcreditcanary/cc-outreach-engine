@@ -22,7 +22,7 @@ export default async function HotPage() {
   const hot = (data ?? []) as unknown as HotSend[];
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    <main className="w-full px-[50px] py-8">
       <header className="mb-6 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Hot flags</h1>
         <p className="text-sm text-neutral-500">

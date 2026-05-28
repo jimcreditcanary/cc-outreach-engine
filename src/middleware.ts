@@ -1,42 +1,59 @@
-// Simple single-operator auth gate (brief §2 — "simple auth (just Jim)").
-// A cookie-based password gate protecting the cockpit. Webhook and cron
-// routes are exempt — they carry their own shared-secret tokens.
-//
-// If APP_PASSWORD is unset (local dev / preview), the gate is open.
+// Auth gate via Supabase Auth. Every request refreshes the session cookie
+// and is redirected to /login unless authenticated. Webhook + cron routes
+// carry their own shared-secret tokens and are exempt.
 
-import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";
 
-const COOKIE = "cc_auth";
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/api/postmark",
+  "/api/cron",
+  "/api/auth", // reserved for future OAuth callback if needed
+];
 
-function expectedToken(): string | null {
-  const pw = process.env.APP_PASSWORD;
-  if (!pw) return null; // gate disabled
-  return process.env.APP_SESSION_SECRET || pw;
-}
+export async function middleware(req: NextRequest) {
+  let response = NextResponse.next({ request: req });
 
-export function middleware(req: NextRequest) {
-  const token = expectedToken();
-  if (!token) return NextResponse.next(); // no password configured → open
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => req.cookies.getAll(),
+        setAll: (toSet) => {
+          for (const c of toSet) req.cookies.set(c.name, c.value);
+          response = NextResponse.next({ request: req });
+          for (const c of toSet) response.cookies.set(c.name, c.value, c.options);
+        },
+      },
+    },
+  );
+
+  // Refresh the JWT cookie if it expired; gives us the current user (or null).
+  const { data: { user } } = await supabase.auth.getUser();
 
   const { pathname } = req.nextUrl;
-  if (
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/api/login") ||
-    pathname.startsWith("/api/postmark") ||
-    pathname.startsWith("/api/cron")
-  ) {
-    return NextResponse.next();
+  const isPublic = PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
+
+  if (!user && !isPublic) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+    return NextResponse.redirect(url);
   }
 
-  if (req.cookies.get(COOKIE)?.value === token) return NextResponse.next();
+  // Bounce a signed-in user off /login → /queue.
+  if (user && pathname.startsWith("/login")) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/queue";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
 
-  const url = req.nextUrl.clone();
-  url.pathname = "/login";
-  url.search = "";
-  return NextResponse.redirect(url);
+  return response;
 }
 
 export const config = {
-  // Protect everything except Next internals and static assets.
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

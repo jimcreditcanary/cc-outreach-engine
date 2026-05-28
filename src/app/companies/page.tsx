@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
+import { createOrg, deleteOrg } from "../actions";
 
 export const dynamic = "force-dynamic";
+
+const SECTORS = ["bank", "broker", "building_society", "credit_union", "direct_lender", "marketplace", "sme_lender", "utility"];
 
 interface OrgRow {
   id: string;
@@ -13,32 +16,48 @@ interface OrgRow {
   icp: boolean | null;
 }
 
-export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await searchParams;
+const PAGE = 100;
+
+export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+  const { q, page: pageStr } = await searchParams;
+  const page = Math.max(1, parseInt(pageStr ?? "1") || 1);
+  const from = (page - 1) * PAGE;
   const db = serviceClient();
   let query = db
     .from("organisations")
-    .select("id, name, sector, tier, label, is_partner, icp")
+    .select("id, name, sector, tier, label, is_partner, icp", { count: "exact" })
     .order("name", { ascending: true })
-    .limit(600);
+    .range(from, from + PAGE - 1);
   if (q) query = query.ilike("name", `%${q}%`);
-  const { data } = await query;
+  const { data, count } = await query;
   const orgs = (data ?? []) as OrgRow[];
+  const total = count ?? orgs.length;
+  const lastPage = Math.max(1, Math.ceil(total / PAGE));
+  const qp = (p: number) => `/companies?${new URLSearchParams({ ...(q ? { q } : {}), page: String(p) })}`;
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-8">
+    <main className="w-full px-[50px] py-8">
       <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Companies</h1>
-        <span className="text-sm text-neutral-500">{orgs.length}{q ? " matches" : ""}</span>
+        <span className="text-sm text-neutral-500">{total}{q ? " matches" : ""} · showing {orgs.length === 0 ? 0 : from + 1}–{from + orgs.length}</span>
       </header>
 
-      <form className="mb-4">
+      <form className="mb-3">
         <input
           name="q"
           defaultValue={q ?? ""}
           placeholder="Search companies…"
           className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
         />
+      </form>
+
+      <form action={createOrg} className="mb-5 flex flex-wrap gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+        <input name="name" placeholder="New company name…" className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" required />
+        <select name="sector" className="rounded border border-neutral-300 px-2 py-1.5 text-sm" defaultValue="">
+          <option value="">sector…</option>
+          {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">+ Add company</button>
       </form>
 
       <table className="w-full text-sm">
@@ -48,6 +67,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
             <th>Sector</th>
             <th>Tier</th>
             <th>Label</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -62,10 +82,24 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
               <td className="text-neutral-600">{o.sector ?? "—"}</td>
               <td className="text-neutral-600">{o.tier ?? "—"}</td>
               <td className="text-neutral-600">{o.label ?? "—"}</td>
+              <td className="text-right">
+                <form action={deleteOrg}>
+                  <input type="hidden" name="id" value={o.id} />
+                  <button className="text-xs text-red-600 hover:underline" title="Delete company">×</button>
+                </form>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      {lastPage > 1 && (
+        <div className="mt-4 flex items-center justify-between text-sm">
+          {page > 1 ? <Link href={qp(page - 1)} className="text-blue-700 hover:underline">← Prev</Link> : <span className="text-neutral-300">← Prev</span>}
+          <span className="text-neutral-500">Page {page} of {lastPage}</span>
+          {page < lastPage ? <Link href={qp(page + 1)} className="text-blue-700 hover:underline">Next →</Link> : <span className="text-neutral-300">Next →</span>}
+        </div>
+      )}
     </main>
   );
 }

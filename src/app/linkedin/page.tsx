@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
-import { saveLinkedInHook } from "../actions";
+import { saveLinkedInEdits, markLinkedInDone } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -16,13 +16,18 @@ interface Row {
   organisation: { id: string; name: string | null; sector: string | null; is_partner: boolean } | null;
 }
 
+const fld = "rounded border border-neutral-300 px-2 py-1 text-sm";
+
 export default async function LinkedInPage() {
   const db = serviceClient();
-  const { data } = await db
-    .from("contacts")
-    .select("id, full_name, job_title, linkedin_url, label, linkedin_connected, organisation:organisations(id, name, sector, is_partner)")
-    .eq("linkedin_connected", false)
-    .limit(4000);
+  const [{ data }, { data: orgs }] = await Promise.all([
+    db
+      .from("contacts")
+      .select("id, full_name, job_title, linkedin_url, label, linkedin_connected, organisation:organisations(id, name, sector, is_partner)")
+      .eq("linkedin_connected", false)
+      .limit(4000),
+    db.from("organisations").select("id, name").order("name").limit(1000),
+  ]);
 
   // ICP buyer contacts only (sector set, not partner).
   const icp = ((data ?? []) as unknown as Row[]).filter(
@@ -34,11 +39,11 @@ export default async function LinkedInPage() {
   const needsResearch = icp.filter((r) => !r.linkedin_url).slice(0, 15);
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    <main className="w-full px-[50px] py-8">
       <header className="mb-6 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">LinkedIn — today</h1>
         <p className="text-sm text-neutral-500">
-          Open the profile, send a connection request, drop a one-line hook. {icp.filter((r) => r.linkedin_url).length} with a
+          Edit details inline, open the profile, send the connection request, drop a one-line hook, hit Done. {icp.filter((r) => r.linkedin_url).length} with a
           profile · {needsResearch.length}+ need research.
         </p>
       </header>
@@ -48,26 +53,25 @@ export default async function LinkedInPage() {
         <ul className="space-y-3">
           {withUrl.map((r) => (
             <li key={r.id} className="rounded-lg border border-neutral-200 bg-white p-3 shadow-sm">
-              <div className="flex flex-wrap items-center gap-x-2 text-sm">
-                <span className="font-medium">{r.full_name}</span>
-                <span className="text-neutral-500">{r.job_title}</span>
-                <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">
-                  {r.organisation?.name} · {r.organisation?.sector}
-                </span>
-                {r.label === "Prospect" && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">Prospect</span>}
-                <a href={r.linkedin_url!} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-                  profile ↗
-                </a>
-              </div>
-              <form action={saveLinkedInHook} className="mt-2 flex gap-2">
+              <form action={saveLinkedInEdits} className="space-y-2">
                 <input type="hidden" name="contact_id" value={r.id} />
-                <input type="hidden" name="organisation_id" value={r.organisation?.id ?? ""} />
-                <input
-                  name="hook"
-                  placeholder="One-line hook / note…"
-                  className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
-                />
-                <button className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700">Done</button>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <input name="full_name" defaultValue={r.full_name ?? ""} className={`${fld} w-48 font-medium`} />
+                  <input name="job_title" defaultValue={r.job_title ?? ""} className={`${fld} w-56`} placeholder="job title" />
+                  <select name="organisation_id" defaultValue={r.organisation?.id ?? ""} className={`${fld} w-56`}>
+                    <option value="">— no company —</option>
+                    {(orgs ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                  {r.label === "Prospect" && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">Prospect</span>}
+                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">{r.organisation?.sector}</span>
+                  <a href={r.linkedin_url!} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">profile ↗</a>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input name="linkedin_url" defaultValue={r.linkedin_url ?? ""} placeholder="LinkedIn URL" className={`${fld} w-80`} />
+                  <input name="hook" placeholder="One-line hook / note…" className={`${fld} flex-1`} />
+                  <button className="rounded border border-neutral-300 px-3 py-1 text-sm font-medium text-neutral-700 hover:bg-neutral-100">Save edits</button>
+                  <button formAction={markLinkedInDone} className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700">Done — connected</button>
+                </div>
               </form>
             </li>
           ))}
