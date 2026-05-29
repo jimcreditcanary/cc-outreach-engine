@@ -105,6 +105,37 @@ export async function approveDraft(formData: FormData) {
   revalidatePath("/queue");
 }
 
+/** Force a draft into the queue for a specific contact, bypassing the
+ *  generator's normal selection criteria (sector / tier / pipeline dedup).
+ *  Surfaced as a button on the contact page — useful for ad-hoc outreach,
+ *  testing, and contacts that don't fit the auto-generator's funnel. */
+export async function generateDraftForContact(formData: FormData) {
+  const contactId = String(formData.get("contact_id"));
+  if (!contactId) return;
+  const db = serviceClient();
+  const draft = await regenerateForContact(db, contactId);
+  if (!draft) return;
+  // Look up the asset_id by URL so the click-tracker can attribute clicks.
+  const { data: asset } = await db
+    .from("content_assets")
+    .select("id")
+    .eq("url", draft.asset_url)
+    .maybeSingle();
+  const { error } = await db.from("sends").insert({
+    contact_id: contactId,
+    angle: draft.angle,
+    asset_id: asset?.id ?? null,
+    subject: draft.subject,
+    body_html: draft.body_html,
+    body_text: draft.body_text,
+    status: "queued",
+  });
+  if (error) throw error;
+  await logEvent(db, { contact_id: contactId, message: `Draft generated on demand: ${draft.subject}` });
+  revalidatePath(`/contacts/${contactId}`);
+  redirect("/queue");
+}
+
 /** Re-run the AI for the same contact, replacing the queued draft in place.
  *  Useful when the system prompt / voice spec has changed since the draft
  *  was first generated. */

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote } from "../../actions";
+import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +55,16 @@ export default async function ContactDetail({
         <p className="mb-4 text-sm text-neutral-500">
           <Link href={`/companies/${org.id}`} className="text-blue-700 hover:underline">{org.name}</Link>
         </p>
+      )}
+
+      {c.email && (
+        <form action={generateDraftForContact} className="mb-4">
+          <input type="hidden" name="contact_id" value={c.id} />
+          <button className="rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800">
+            ✨ Generate draft for this contact
+          </button>
+          <span className="ml-2 text-xs text-neutral-400">Bypasses tier/sector filters — lands in the queue.</span>
+        </form>
       )}
 
       <form action={updateContact} className="grid grid-cols-2 gap-3">
