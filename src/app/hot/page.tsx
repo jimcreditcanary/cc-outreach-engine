@@ -1,53 +1,140 @@
+// VP-sales beast mode: for every live deal (open + proposal), surface ONE
+// MEDDICC gap-closing question. Jim types the answer, we re-seed MEDDICC and
+// the next gap surfaces. One-click ✨ Draft follow-up button drops a fresh
+// email into the queue for the deal's primary contact.
+
+import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
+import { answerMeddiccGap, generateDraftForContact, reseedDealMeddicc } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-interface HotSend {
+const MEDDICC: { key: string; label: string }[] = [
+  { key: "metrics", label: "Metrics" },
+  { key: "economic_buyer", label: "Econ. buyer" },
+  { key: "decision_criteria", label: "Criteria" },
+  { key: "decision_process", label: "Process" },
+  { key: "identified_pain", label: "Pain" },
+  { key: "champion", label: "Champion" },
+  { key: "competition", label: "Competition" },
+];
+
+type DealRow = Record<string, unknown> & {
   id: string;
-  subject: string | null;
-  clicked: boolean;
-  replied: boolean;
-  ts: string;
-  contact: { full_name: string | null; email: string | null; organisation: { name: string | null; sector: string | null; tier: number | null } | null } | null;
+  title: string | null;
+  value: number | null;
+  primary_contact_id: string | null;
+  next_best_action: string | null;
+  organisation: { id: string; name: string | null; sector: string | null; tier: number | null } | null;
+};
+
+/** next_best_action is stored as `[gap: KEY] ACTION\n\nAsk: "QUESTION"` */
+function parseNextBest(raw: string | null): { gap: string | null; action: string | null; question: string | null } {
+  if (!raw) return { gap: null, action: null, question: null };
+  const m = raw.match(/^\[gap:\s*([\w_]+)\]\s*([\s\S]+?)\n\nAsk:\s*"([\s\S]+)"\s*$/);
+  if (!m) return { gap: null, action: raw, question: null };
+  return { gap: m[1], action: m[2].trim(), question: m[3].trim() };
 }
 
 export default async function HotPage() {
   const db = serviceClient();
+  const meddiccCols = MEDDICC.map((m) => `meddicc_${m.key}_filled`).join(", ");
   const { data } = await db
-    .from("sends")
-    .select("id, subject, clicked, replied, ts, contact:contacts(full_name, email, organisation:organisations(name, sector, tier))")
-    .or("clicked.eq.true,replied.eq.true")
-    .order("ts", { ascending: false })
-    .limit(100);
-  const hot = (data ?? []) as unknown as HotSend[];
+    .from("deals")
+    .select(`id, title, value, primary_contact_id, next_best_action, ${meddiccCols}, organisation:organisations(id, name, sector, tier)`)
+    .eq("status", "open")
+    .eq("proposal_exists", true)
+    .order("value", { ascending: false, nullsFirst: false });
+  const deals = (data ?? []) as unknown as DealRow[];
 
   return (
     <main className="w-full px-[50px] py-8">
       <header className="mb-6 border-b border-neutral-200 pb-3">
-        <h1 className="text-xl font-semibold">Hot flags</h1>
+        <h1 className="text-xl font-semibold">Hot — VP sales beast mode</h1>
         <p className="text-sm text-neutral-500">
-          Engaged contacts — clicked or replied. A T3 who engages is a promotion candidate: curate a proposal and they become T1.
+          One MEDDICC gap-closing question per live deal. Answer it, AI updates the deal &amp; surfaces the next move.
+          Click <span className="font-medium">✨ Draft follow-up</span> to push a fresh email into the queue for the primary contact.
         </p>
       </header>
 
-      {hot.length === 0 ? (
-        <p className="text-neutral-500">No engagement yet (clicks/replies appear here once sending is live).</p>
+      {deals.length === 0 ? (
+        <p className="text-neutral-500">
+          No live deals (open + proposal). Upload proposals on the Deals tab and MEDDICC auto-seeds — they&apos;ll appear here.
+        </p>
       ) : (
-        <ul className="space-y-2">
-          {hot.map((h) => (
-            <li key={h.id} className="rounded-lg border border-neutral-200 bg-white p-3 text-sm shadow-sm">
-              <div className="flex flex-wrap items-center gap-x-2">
-                <span className="font-medium">{h.contact?.full_name}</span>
-                <span className="text-neutral-500">{h.contact?.organisation?.name}</span>
-                {h.clicked && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-blue-700">clicked</span>}
-                {h.replied && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700">replied</span>}
-                {h.contact?.organisation?.tier === 3 && (
-                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">promote → T1?</span>
+        <ul className="space-y-5">
+          {deals.map((d) => {
+            const { gap, action, question } = parseNextBest(d.next_best_action);
+            const filledCount = MEDDICC.filter((m) => d[`meddicc_${m.key}_filled`]).length;
+            return (
+              <li key={d.id} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+                <div className="mb-2 flex flex-wrap items-baseline gap-x-2 text-sm">
+                  <Link href={`/companies/${d.organisation?.id}`} className="font-medium text-blue-700 hover:underline">{d.organisation?.name}</Link>
+                  <Link href={`/deals/${d.id}`} className="text-neutral-500 hover:underline">{d.title}</Link>
+                  {typeof d.value === "number" && <span className="text-neutral-400">£{d.value.toLocaleString()}</span>}
+                  {d.organisation?.tier && <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-800">T{d.organisation.tier}</span>}
+                  <span className="ml-auto text-xs text-neutral-400">{filledCount}/{MEDDICC.length} qualified</span>
+                </div>
+
+                <div className="mb-3 flex flex-wrap gap-1">
+                  {MEDDICC.map((m) => {
+                    const filled = d[`meddicc_${m.key}_filled`] as boolean;
+                    const isGap = m.key === gap;
+                    return (
+                      <span
+                        key={m.key}
+                        className={`rounded px-1.5 py-0.5 text-xs ${
+                          isGap ? "bg-amber-200 text-amber-900 ring-1 ring-amber-400" :
+                          filled ? "bg-emerald-100 text-emerald-800" :
+                          "bg-neutral-100 text-neutral-400"
+                        }`}
+                      >
+                        {m.label}{isGap ? " ←" : ""}
+                      </span>
+                    );
+                  })}
+                </div>
+
+                {question ? (
+                  <form action={answerMeddiccGap} className="space-y-2">
+                    <input type="hidden" name="deal_id" value={d.id} />
+                    <input type="hidden" name="question" value={question} />
+                    <p className="text-sm font-medium text-amber-900">{question}</p>
+                    {action && <p className="text-xs text-neutral-500">Recommended action: {action}</p>}
+                    <textarea
+                      name="answer"
+                      rows={3}
+                      placeholder="Your answer…"
+                      required
+                      className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button className="rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800">
+                        Submit answer → re-qualify
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <form action={reseedDealMeddicc} className="text-sm">
+                    <input type="hidden" name="deal_id" value={d.id} />
+                    <p className="mb-2 text-neutral-500">No MEDDICC question yet — re-seed to generate one.</p>
+                    <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100">
+                      Re-seed MEDDICC
+                    </button>
+                  </form>
                 )}
-              </div>
-              <div className="mt-1 text-neutral-600">{h.subject}</div>
-            </li>
-          ))}
+
+                {d.primary_contact_id && (
+                  <form action={generateDraftForContact} className="mt-3 border-t border-neutral-100 pt-3">
+                    <input type="hidden" name="contact_id" value={d.primary_contact_id} />
+                    <button className="rounded border border-amber-300 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50">
+                      ✨ Draft follow-up email to primary contact
+                    </button>
+                  </form>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </main>

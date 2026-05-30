@@ -628,6 +628,37 @@ export async function removeDealContact(formData: FormData) {
   revalidatePath(`/deals/${deal_id}`);
 }
 
+/** VP-sales beast-mode answer flow: Jim types the answer to the current
+ *  MEDDICC gap-closing question; we log it as a note, then re-seed MEDDICC
+ *  so the new context flows into the fields + a fresh biggest-gap surfaces. */
+export async function answerMeddiccGap(formData: FormData) {
+  const deal_id = String(formData.get("deal_id"));
+  const answer = str(formData.get("answer"));
+  const question = str(formData.get("question"));
+  if (!deal_id || !answer) return;
+  const db = serviceClient();
+  const { data: deal } = await db
+    .from("deals")
+    .select("organisation_id, title")
+    .eq("id", deal_id)
+    .maybeSingle();
+  if (!deal) return;
+  const noteContent = `[deal: ${deal.title ?? deal_id}] MEDDICC Q&A\nQ: ${question ?? "(prior question)"}\nA: ${answer}`;
+  await db.from("notes").insert({
+    organisation_id: deal.organisation_id,
+    content: noteContent,
+    author: "Jim",
+    noted_at: new Date().toISOString(),
+  });
+  const gap = await seedDealMeddicc(db, deal_id);
+  await logEvent(db, {
+    organisation_id: deal.organisation_id,
+    deal_id,
+    message: `MEDDICC answered → new gap: ${gap ?? "(fully qualified)"}`,
+  });
+  revalidatePath("/hot");
+}
+
 /** Re-seed MEDDICC on demand for a single deal (button on the deal page). */
 export async function reseedDealMeddicc(formData: FormData) {
   const dealId = String(formData.get("deal_id"));
