@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { createOrg, deleteOrg } from "../actions";
+import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 
@@ -83,9 +84,15 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
               <td className="text-neutral-600">{o.tier ?? "—"}</td>
               <td className="text-neutral-600">{o.label ?? "—"}</td>
               <td className="text-right">
-                <form action={deleteOrg}>
+                <form>
                   <input type="hidden" name="id" value={o.id} />
-                  <button className="text-xs text-red-600 hover:underline" title="Delete company">×</button>
+                  <ConfirmSubmit
+                    formAction={deleteOrg}
+                    className="text-xs text-red-600 hover:underline"
+                    message={`Delete ${o.name}? Its deals, contacts, notes and history go with it.`}
+                  >
+                    ×
+                  </ConfirmSubmit>
                 </form>
               </td>
             </tr>

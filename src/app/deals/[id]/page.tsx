@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { updateDeal, deleteDeal, uploadProposal, addDealContact, removeDealContact, reseedDealMeddicc } from "../../actions";
+import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +93,13 @@ export default async function DealDetail({ params }: { params: Promise<{ id: str
         </div>
         <div className="col-span-2 flex gap-2">
           <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
-          <button formAction={deleteDeal} className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
+          <ConfirmSubmit
+            formAction={deleteDeal}
+            className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+            message={`Delete deal "${deal.title ?? "(untitled)"}"? Its stakeholders, proposal and MEDDICC go too.`}
+          >
+            Delete
+          </ConfirmSubmit>
         </div>
       </form>
 

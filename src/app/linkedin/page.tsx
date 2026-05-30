@@ -5,11 +5,14 @@ import { saveLinkedInEdits, markLinkedInDone } from "../actions";
 export const dynamic = "force-dynamic";
 
 const DAILY = 30;
+const SECTORS = ["bank", "broker", "building_society", "credit_union", "direct_lender", "marketplace", "sme_lender", "utility"];
 
 interface Row {
   id: string;
   full_name: string | null;
   job_title: string | null;
+  email: string | null;
+  mobile: string | null;
   linkedin_url: string | null;
   label: string | null;
   linkedin_connected: boolean;
@@ -23,15 +26,16 @@ export default async function LinkedInPage() {
   const [{ data }, { data: orgs }] = await Promise.all([
     db
       .from("contacts")
-      .select("id, full_name, job_title, linkedin_url, label, linkedin_connected, organisation:organisations(id, name, sector, is_partner)")
+      .select("id, full_name, job_title, email, mobile, linkedin_url, label, linkedin_connected, organisation:organisations(id, name, sector, is_partner)")
       .eq("linkedin_connected", false)
       .limit(4000),
     db.from("organisations").select("id, name").order("name").limit(1000),
   ]);
 
-  // ICP buyer contacts only (sector set, not partner).
+  // ICP buyer contacts only (sector set, not partner). We still show contacts
+  // with no sector — they're the ones you can now fix inline.
   const icp = ((data ?? []) as unknown as Row[]).filter(
-    (r) => r.organisation && !r.organisation.is_partner && r.organisation.sector,
+    (r) => r.organisation && !r.organisation.is_partner,
   );
   icp.sort((a, b) => (b.label === "Prospect" ? 1 : 0) - (a.label === "Prospect" ? 1 : 0));
 
@@ -43,7 +47,7 @@ export default async function LinkedInPage() {
       <header className="mb-6 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">LinkedIn — today</h1>
         <p className="text-sm text-neutral-500">
-          Edit details inline, open the profile, send the connection request, drop a one-line hook, hit Done. {icp.filter((r) => r.linkedin_url).length} with a
+          Edit inline, open the profile, send the connection, drop a hook, Done. {icp.filter((r) => r.linkedin_url).length} with a
           profile · {needsResearch.length}+ need research.
         </p>
       </header>
@@ -58,16 +62,26 @@ export default async function LinkedInPage() {
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <input name="full_name" defaultValue={r.full_name ?? ""} className={`${fld} w-48 font-medium`} />
                   <input name="job_title" defaultValue={r.job_title ?? ""} className={`${fld} w-56`} placeholder="job title" />
+                  {r.label === "Prospect" && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">Prospect</span>}
+                  <a href={r.linkedin_url!} target="_blank" rel="noreferrer" className="ml-auto text-blue-600 hover:underline">profile ↗</a>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <input name="email" type="email" defaultValue={r.email ?? ""} placeholder="email" className={`${fld} w-64`} />
+                  <input name="mobile" defaultValue={r.mobile ?? ""} placeholder="mobile" className={`${fld} w-44`} />
+                  <input name="linkedin_url" defaultValue={r.linkedin_url ?? ""} placeholder="LinkedIn URL" className={`${fld} flex-1 min-w-[12rem]`} />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
                   <select name="organisation_id" defaultValue={r.organisation?.id ?? ""} className={`${fld} w-56`}>
                     <option value="">— no company —</option>
                     {(orgs ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                   </select>
-                  {r.label === "Prospect" && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">Prospect</span>}
-                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">{r.organisation?.sector}</span>
-                  <a href={r.linkedin_url!} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">profile ↗</a>
+                  <input name="new_organisation_name" placeholder="…or new company name" className={`${fld} w-56`} />
+                  <select name="org_sector" defaultValue={r.organisation?.sector ?? ""} className={`${fld} w-44`}>
+                    <option value="">sector…</option>
+                    {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <input name="linkedin_url" defaultValue={r.linkedin_url ?? ""} placeholder="LinkedIn URL" className={`${fld} w-80`} />
                   <input name="hook" placeholder="One-line hook / note…" className={`${fld} flex-1`} />
                   <button className="rounded border border-neutral-300 px-3 py-1 text-sm font-medium text-neutral-700 hover:bg-neutral-100">Save edits</button>
                   <button formAction={markLinkedInDone} className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700">Done — connected</button>
@@ -86,7 +100,7 @@ export default async function LinkedInPage() {
             {needsResearch.map((r) => (
               <li key={r.id}>
                 <Link href={`/contacts/${r.id}`} className="text-blue-700 hover:underline">{r.full_name}</Link>
-                {" — "}{r.job_title} — {r.organisation?.name} ({r.organisation?.sector})
+                {" — "}{r.job_title} — {r.organisation?.name} ({r.organisation?.sector ?? "no sector"})
               </li>
             ))}
           </ul>

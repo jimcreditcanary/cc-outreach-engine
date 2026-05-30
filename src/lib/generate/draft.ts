@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import { generateStructured } from "../ai/claude";
-import { buildSystemPrompt, SIGNATURE_TEXT, SIGNATURE_HTML, SCHEDULER_LINK } from "./config";
+import { buildSystemPrompt, SIGNATURE_TEXT, SIGNATURE_HTML, SCHEDULER_LINK, UNSUB_FOOTER_TEXT, UNSUB_FOOTER_HTML } from "./config";
 import { checkAnonymisation } from "./anonymisation";
 import type { MatchedSignal } from "../signals/triggers";
 
@@ -114,7 +114,7 @@ const hasLink = (s: string) => /https?:\/\/\S+/.test(s);
 function assemble(out: z.infer<typeof DraftSchema>): DraftResult {
   return {
     subject: out.subject,
-    body_text: `${out.body_text.trim()}\n\n${SIGNATURE_TEXT}`,
+    body_text: `${out.body_text.trim()}\n\n${SIGNATURE_TEXT}${UNSUB_FOOTER_TEXT}`,
     body_html: renderHtml(out.body_text),
     angle: out.angle,
     asset_url: out.asset_url,
@@ -169,6 +169,7 @@ function renderHtml(bodyText: string): string {
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">
 ${paragraphs}
 ${SIGNATURE_HTML}
+${UNSUB_FOOTER_HTML}
 </div>`;
 }
 

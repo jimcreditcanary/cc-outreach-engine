@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { createDeal, deleteDeal } from "../actions";
+import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 
@@ -146,10 +147,16 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
               <td className="text-neutral-600">{d.status}</td>
               <td className="text-right text-neutral-600">{typeof d.value === "number" ? `£${d.value.toLocaleString()}` : "—"}</td>
               <td className="text-right">
-                <form action={deleteDeal}>
+                <form>
                   <input type="hidden" name="id" value={d.id} />
                   <input type="hidden" name="organisation_id" value={d.organisation?.id ?? ""} />
-                  <button className="text-xs text-red-600 hover:underline" title="Delete deal">×</button>
+                  <ConfirmSubmit
+                    formAction={deleteDeal}
+                    className="text-xs text-red-600 hover:underline"
+                    message={`Delete deal "${d.title ?? "(untitled)"}"? This cannot be undone.`}
+                  >
+                    ×
+                  </ConfirmSubmit>
                 </form>
               </td>
             </tr>

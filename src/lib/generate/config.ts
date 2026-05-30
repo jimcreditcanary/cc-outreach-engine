@@ -21,6 +21,13 @@ export const SIGNATURE_HTML = `<p>Jim</p>
 Credit Canary<br>
 <a href="mailto:jim@creditcanary.co.uk">jim@creditcanary.co.uk</a></p>`;
 
+/** Unsubscribe footer. Uses Postmark's {{{ pm:unsubscribe }}} token so the
+ * Broadcast stream treats the email as compliant (suppresses the auto-footer)
+ * and we control the copy. The link text reads as a personal opt-out, not
+ * a generic 'Unsubscribe'. Replaced server-side with a tracked URL. */
+export const UNSUB_FOOTER_TEXT = `\n\n—\nNot a fit? No hard feelings — let me know here: {{{ pm:unsubscribe }}}`;
+export const UNSUB_FOOTER_HTML = `<p style="color:#999;font-size:12px;margin-top:24px">Not a fit? No hard feelings — <a href="{{{ pm:unsubscribe }}}" style="color:#999">tell me why and I'll stop</a>.</p>`;
+
 let _system: string | null = null;
 
 /**

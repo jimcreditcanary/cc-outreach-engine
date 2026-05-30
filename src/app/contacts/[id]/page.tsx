@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact } from "../../actions";
+import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 
@@ -98,7 +99,13 @@ export default async function ContactDetail({
         <div><label className={lbl}>Snooze until (ISO)</label><input name="snooze_until" defaultValue={c.snooze_until ?? ""} className={field} placeholder="(blank = active)" /></div>
         <div className="col-span-2 flex gap-2">
           <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
-          <button formAction={deleteContact} className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
+          <ConfirmSubmit
+            formAction={deleteContact}
+            className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+            message={`Delete contact ${c.full_name ?? "?"}? Their notes, sends and timeline go too.`}
+          >
+            Delete
+          </ConfirmSubmit>
         </div>
       </form>
 
@@ -120,7 +127,7 @@ export default async function ContactDetail({
                 <textarea name="content" defaultValue={String(n.content)} rows={2} className={`${field} flex-1`} />
                 <div className="flex flex-col gap-1">
                   <button className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300">Save</button>
-                  <button formAction={deleteNote} className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50">Del</button>
+                  <ConfirmSubmit formAction={deleteNote} className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50" message="Delete this note?">Del</ConfirmSubmit>
                 </div>
               </form>
             </li>

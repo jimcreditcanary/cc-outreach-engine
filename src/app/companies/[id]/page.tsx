@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { updateOrg, deleteOrg, mergeOrg, addNote, updateNote, deleteNote, createDeal } from "../../actions";
+import { updateOrg, deleteOrg, mergeOrg, addNote, updateNote, deleteNote, createDeal, setDealStatus, deleteDeal } from "../../actions";
+import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 
 const SECTORS = ["bank", "broker", "building_society", "credit_union", "direct_lender", "marketplace", "sme_lender", "utility"];
 const ORG_LABELS = ["Prospect", "Customer", "Partner", "Potential introducer", "Investor", "Lapsed"];
+const DEAL_STATUS = ["open", "won", "lost"];
 
 const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
 const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 mb-1";
@@ -75,7 +77,13 @@ export default async function CompanyDetail({
         <div className="col-span-2"><label className={lbl}>Notes (top-line)</label><textarea name="top_line_notes" defaultValue={org.top_line_notes ?? ""} rows={3} className={field} /></div>
         <div className="col-span-2 flex gap-2">
           <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
-          <button formAction={deleteOrg} className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
+          <ConfirmSubmit
+            formAction={deleteOrg}
+            className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+            message={`Delete ${org.name}? Its deals, notes and activity history go with it. This cannot be undone.`}
+          >
+            Delete
+          </ConfirmSubmit>
         </div>
       </form>
 
@@ -95,9 +103,26 @@ export default async function CompanyDetail({
           <h2 className="mb-2 font-semibold">Deals ({deals?.length ?? 0})</h2>
           <ul className="mb-3 space-y-1 text-neutral-600">
             {(deals ?? []).map((d) => (
-              <li key={d.id}>
-                <Link href={`/deals/${d.id}`} className="text-blue-700 hover:underline">{d.title ?? "(untitled)"}</Link>
-                {" — "}{d.status}{typeof d.value === "number" ? ` · £${d.value.toLocaleString()}` : ""}
+              <li key={d.id} className="flex flex-wrap items-center gap-2 rounded border border-neutral-100 px-2 py-1.5">
+                <Link href={`/deals/${d.id}`} className="flex-1 text-blue-700 hover:underline">{d.title ?? "(untitled)"}</Link>
+                {typeof d.value === "number" && <span className="text-xs text-neutral-400">£{d.value.toLocaleString()}</span>}
+                <form action={setDealStatus} className="flex items-center gap-1">
+                  <input type="hidden" name="id" value={d.id} />
+                  <select name="status" defaultValue={d.status} className="rounded border border-neutral-200 px-1 py-0.5 text-xs">
+                    {DEAL_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <button className="rounded bg-neutral-100 px-2 py-0.5 text-xs hover:bg-neutral-200">set</button>
+                </form>
+                <form action={deleteDeal}>
+                  <input type="hidden" name="id" value={d.id} />
+                  <input type="hidden" name="organisation_id" value={org.id} />
+                  <ConfirmSubmit
+                    className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50"
+                    message={`Delete deal "${d.title ?? "(untitled)"}"? This cannot be undone.`}
+                  >
+                    ×
+                  </ConfirmSubmit>
+                </form>
               </li>
             ))}
           </ul>
@@ -125,7 +150,7 @@ export default async function CompanyDetail({
                   <textarea name="content" defaultValue={String(n.content)} rows={2} className={`${field} flex-1`} />
                   <div className="flex flex-col gap-1">
                     <button className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300">Save</button>
-                    <button formAction={deleteNote} className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50">Del</button>
+                    <ConfirmSubmit formAction={deleteNote} className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50" message="Delete this note?">Del</ConfirmSubmit>
                   </div>
                 </form>
               </li>

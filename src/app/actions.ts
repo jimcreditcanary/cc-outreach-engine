@@ -244,45 +244,58 @@ export async function rejectDraft(formData: FormData) {
 
 // ── LinkedIn ────────────────────────────────────────────────────────
 
-/** Persist inline edits (name/title/company/URL) from the LinkedIn card
- *  without marking the connection request as sent. */
+/** Persist inline LinkedIn-card edits (name / title / email / mobile /
+ *  company [existing or new] / sector / URL) without marking connected. */
 export async function saveLinkedInEdits(formData: FormData) {
   const id = String(formData.get("contact_id"));
   if (!id) return;
   const db = serviceClient();
-  const organisation_id = str(formData.get("organisation_id"));
+  const organisation_id = await resolveCompany(db, formData);
   const { error } = await db
     .from("contacts")
     .update({
       full_name: str(formData.get("full_name")),
       job_title: str(formData.get("job_title")),
+      email: str(formData.get("email")),
+      mobile: str(formData.get("mobile")),
       organisation_id,
       linkedin_url: str(formData.get("linkedin_url")),
     })
     .eq("id", id);
   if (error) throw error;
+  // Inline sector assignment — useful when the contact lives at a company
+  // that has none yet, so the generator stops skipping them.
+  const sector = str(formData.get("org_sector"));
+  if (sector && organisation_id) {
+    await db.from("organisations").update({ sector }).eq("id", organisation_id);
+  }
   await logEvent(db, { contact_id: id, organisation_id, message: "LinkedIn details edited" });
   revalidatePath("/linkedin");
 }
 
-/** Persist edits AND mark the connection request as sent (with optional hook). */
 export async function markLinkedInDone(formData: FormData) {
   const id = String(formData.get("contact_id"));
   if (!id) return;
   const db = serviceClient();
   const hook = str(formData.get("hook"));
-  const organisation_id = str(formData.get("organisation_id"));
+  const organisation_id = await resolveCompany(db, formData);
   const { error } = await db
     .from("contacts")
     .update({
       full_name: str(formData.get("full_name")),
       job_title: str(formData.get("job_title")),
+      email: str(formData.get("email")),
+      mobile: str(formData.get("mobile")),
       organisation_id,
       linkedin_url: str(formData.get("linkedin_url")),
       linkedin_connected: true,
     })
     .eq("id", id);
   if (error) throw error;
+  const sector = str(formData.get("org_sector"));
+  if (sector && organisation_id) {
+    await db.from("organisations").update({ sector }).eq("id", organisation_id);
+  }
   await db.from("events").insert({
     contact_id: id,
     organisation_id,
@@ -554,6 +567,24 @@ export async function updateDeal(formData: FormData) {
   await logEvent(db, { organisation_id, deal_id: id, message: "Deal updated" });
   revalidatePath("/deals");
   redirect(`/deals/${id}`);
+}
+
+/** Inline status change from the company page (no full deal edit needed). */
+export async function setDealStatus(formData: FormData) {
+  const id = String(formData.get("id"));
+  const status = str(formData.get("status")) ?? "open";
+  const db = serviceClient();
+  const { data: deal, error } = await db
+    .from("deals")
+    .update({ status })
+    .eq("id", id)
+    .select("organisation_id")
+    .single();
+  if (error) throw error;
+  await rederiveTier(db, deal.organisation_id);
+  await logEvent(db, { organisation_id: deal.organisation_id, deal_id: id, message: `Deal status → ${status}` });
+  if (deal.organisation_id) revalidatePath(`/companies/${deal.organisation_id}`);
+  revalidatePath("/deals");
 }
 
 export async function deleteDeal(formData: FormData) {

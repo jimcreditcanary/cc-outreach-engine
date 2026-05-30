@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { createContact, deleteContact } from "../actions";
+import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 
@@ -74,9 +75,15 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
                 {c.email_status === "bounced" && <span className="ml-1 rounded bg-red-100 px-1 text-xs text-red-700">bounced</span>}
               </td>
               <td className="text-right">
-                <form action={deleteContact}>
+                <form>
                   <input type="hidden" name="id" value={c.id} />
-                  <button className="text-xs text-red-600 hover:underline" title="Delete contact">×</button>
+                  <ConfirmSubmit
+                    formAction={deleteContact}
+                    className="text-xs text-red-600 hover:underline"
+                    message={`Delete contact ${c.full_name ?? "?"}? Their notes, sends and timeline go too.`}
+                  >
+                    ×
+                  </ConfirmSubmit>
                 </form>
               </td>
             </tr>
