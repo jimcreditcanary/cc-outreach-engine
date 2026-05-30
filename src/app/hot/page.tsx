@@ -33,7 +33,7 @@ function parseNextBest(raw: string | null): { gap: string | null; action: string
   if (!raw) return { gap: null, action: null, question: null };
   const m = raw.match(/^\[gap:\s*([\w_]+)\]\s*([\s\S]+?)\n\nAsk:\s*"([\s\S]+)"\s*$/);
   if (!m) return { gap: null, action: raw, question: null };
-  return { gap: m[1], action: m[2].trim(), question: m[3].trim() };
+  return { gap: m[1] ?? null, action: m[2]?.trim() ?? null, question: m[3]?.trim() ?? null };
 }
 
 export default async function HotPage() {
