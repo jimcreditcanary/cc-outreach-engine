@@ -2,6 +2,8 @@ import { serviceClient } from "@/lib/db/client";
 import { approveDraft, rejectDraft, updateDraft, regenerateDraft, sendDraftNow } from "../actions";
 
 export const dynamic = "force-dynamic";
+// Regenerate + Send-now invoke Claude / Postmark — give them runway.
+export const maxDuration = 60;
 
 // Curated, specific reasons — each is actionable feedback for the voice loop.
 const REJECT_REASONS = [

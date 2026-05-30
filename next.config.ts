@@ -14,6 +14,13 @@ const nextConfig: NextConfig = {
   // external tells Next to load them as regular Node deps at runtime rather
   // than try to bundle them.
   serverExternalPackages: ["pdf-parse", "mammoth"],
+  // Proposal uploads are PDF/DOCX — easily larger than the default 1MB
+  // server-action limit. Bump to 25MB.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "25mb",
+    },
+  },
 };
 
 export default nextConfig;

@@ -5,6 +5,9 @@ import { updateDeal, deleteDeal, uploadProposal, addDealContact, removeDealConta
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
+// Proposal upload + AI markdown conversion + MEDDICC auto-seed can run 20s+.
+// Vercel Pro tier honours this; Hobby caps at 10s regardless.
+export const maxDuration = 60;
 
 const STATUS = ["open", "won", "lost"];
 // Pipeline stages (from the Pipedrive export) + closed-lost for completeness.

@@ -5,6 +5,8 @@ import { updateContact, deleteContact, mergeContact, addNote, updateNote, delete
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
+// ✨ Generate-draft-for-this-contact calls Claude.
+export const maxDuration = 60;
 
 const EMAIL_STATUS = ["unverified", "valid", "bounced"];
 const LABELS = ["Lead", "Prospect", "Customer", "Partner", "Potential introducer", "Investor"];

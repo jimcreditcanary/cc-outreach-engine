@@ -8,6 +8,8 @@ import { serviceClient } from "@/lib/db/client";
 import { answerMeddiccGap, generateDraftForContact, reseedDealMeddicc } from "../actions";
 
 export const dynamic = "force-dynamic";
+// answerMeddiccGap + ✨ Draft follow-up run Claude (sometimes both back-to-back).
+export const maxDuration = 60;
 
 const MEDDICC: { key: string; label: string }[] = [
   { key: "metrics", label: "Metrics" },
