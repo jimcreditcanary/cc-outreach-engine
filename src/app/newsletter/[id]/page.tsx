@@ -40,7 +40,7 @@ ${unsubFooterHtml("recipient@example.com")}
 </div>`;
 
   return (
-    <main className="w-full px-[50px] py-8">
+    <main className="px-8 py-6">
       <Link href="/newsletter" className="text-sm text-blue-700 hover:underline">← Newsletter</Link>
       <header className="mb-4 mt-2 flex flex-wrap items-baseline gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">{issue.subject}</h1>

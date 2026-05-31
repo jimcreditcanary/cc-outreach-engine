@@ -22,7 +22,7 @@ export default async function NewsletterPage() {
   const list = (issues ?? []) as Issue[];
 
   return (
-    <main className="w-full px-[50px] py-8">
+    <main className="px-8 py-6">
       <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
         <div>
           <h1 className="text-xl font-semibold">Newsletter</h1>

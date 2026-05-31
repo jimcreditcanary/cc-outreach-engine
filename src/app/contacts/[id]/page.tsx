@@ -53,7 +53,7 @@ export default async function ContactDetail({
   }
 
   return (
-    <main className="w-full px-[50px] py-8">
+    <main className="px-8 py-6">
       <Link href="/contacts" className="text-sm text-blue-700 hover:underline">← Contacts</Link>
       <h1 className="mt-2 text-xl font-semibold">{c.full_name}</h1>
       {org && (

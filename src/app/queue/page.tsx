@@ -50,7 +50,7 @@ export default async function QueuePage() {
   const recent = (recentData ?? []) as unknown as Array<{ id: string; subject: string | null; status: string; ts: string; contact: { id: string; full_name: string | null; email: string | null } | null }>;
 
   return (
-    <main className="w-full px-[50px] py-8">
+    <main className="px-8 py-6">
       <header className="mb-6 flex items-baseline justify-between border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Approval queue</h1>
         <span className="text-sm text-neutral-500">{drafts.length} draft{drafts.length === 1 ? "" : "s"}</span>

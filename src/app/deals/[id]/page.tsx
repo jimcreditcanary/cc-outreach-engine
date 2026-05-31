@@ -62,7 +62,7 @@ export default async function DealDetail({
   const timeline = (events ?? []) as unknown as { type: string; ts: string; payload: { message?: string } | null }[];
 
   return (
-    <main className="w-full px-[50px] py-8">
+    <main className="px-8 py-6">
       <Link href="/deals" className="text-sm text-blue-700 hover:underline">← Deals</Link>
       <h1 className="mt-2 text-xl font-semibold">{deal.title ?? "(untitled deal)"}</h1>
       <p className="mb-4 text-sm text-neutral-500">

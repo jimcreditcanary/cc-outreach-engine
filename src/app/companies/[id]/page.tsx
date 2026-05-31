@@ -51,7 +51,7 @@ export default async function CompanyDetail({
   }
 
   return (
-    <main className="w-full px-[50px] py-8">
+    <main className="px-8 py-6">
       <Link href="/companies" className="text-sm text-blue-700 hover:underline">← Companies</Link>
       <h1 className="mt-2 mb-4 text-xl font-semibold">{org.name}</h1>
 

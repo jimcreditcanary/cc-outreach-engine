@@ -29,6 +29,7 @@
     "@anthropic-ai/sdk": "^0.80.0",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.100.1",
+    "lucide-react": "^1.17.0",
     "mammoth": "^1.12.0",
     "next": "16.2.1",
     "node-html-parser": "^7.1.0",

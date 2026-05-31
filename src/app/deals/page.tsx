@@ -71,7 +71,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
   };
 
   return (
-    <main className="w-full px-[50px] py-8">
+    <main className="px-8 py-6">
       <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Deals</h1>
         <span className="text-sm text-neutral-500">{deals.length}</span>

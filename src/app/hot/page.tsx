@@ -51,7 +51,7 @@ export default async function HotPage() {
   const deals = (data ?? []) as unknown as DealRow[];
 
   return (
-    <main className="w-full px-[50px] py-8">
+    <main className="px-8 py-6">
       <header className="mb-6 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Hot — VP sales beast mode</h1>
         <p className="text-sm text-neutral-500">

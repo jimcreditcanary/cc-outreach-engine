@@ -37,7 +37,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
   const qp = (p: number) => `/companies?${new URLSearchParams({ ...(q ? { q } : {}), page: String(p) })}`;
 
   return (
-    <main className="w-full px-[50px] py-8">
+    <main className="px-8 py-6">
       <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Companies</h1>
         <span className="text-sm text-neutral-500">{total}{q ? " matches" : ""} · showing {orgs.length === 0 ? 0 : from + 1}–{from + orgs.length}</span>
