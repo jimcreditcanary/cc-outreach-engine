@@ -26,8 +26,10 @@ function client(): Anthropic {
   return _client;
 }
 
-/** Opus 4.7 is the default; override per-deployment via ANTHROPIC_MODEL. */
-export const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-4-7";
+/** Opus 4.7 is the default; override per-deployment via ANTHROPIC_MODEL.
+ *  Uses `||` (not `??`) so an empty-string env var — which happens when a
+ *  GitHub Actions secret is referenced but not set — still falls back. */
+export const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL?.trim() || "claude-opus-4-7";
 
 export type Effort = "low" | "medium" | "high" | "max";
 
