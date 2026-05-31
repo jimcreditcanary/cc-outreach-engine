@@ -10,6 +10,7 @@ const PUBLIC_PREFIXES = [
   "/api/postmark",
   "/api/cron",
   "/api/auth", // reserved for future OAuth callback if needed
+  "/unsubscribe", // clicked from outreach emails — recipient isn't logged in
 ];
 
 export async function middleware(req: NextRequest) {
