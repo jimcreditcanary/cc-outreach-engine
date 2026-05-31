@@ -2,7 +2,15 @@
   "crons": [
     {
       "path": "/api/cron/daily",
-      "schedule": "0 7 * * 1-5"
+      "schedule": "0 6 * * 1-5"
+    },
+    {
+      "path": "/api/cron/generate",
+      "schedule": "30 6 * * 1-5"
+    },
+    {
+      "path": "/api/cron/send",
+      "schedule": "0,30 8-16 * * 1-5"
     }
   ]
 }
