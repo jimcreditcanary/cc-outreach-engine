@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact } from "../../actions";
+import { setNewsletterSubscription } from "../../newsletter/actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 
@@ -71,6 +72,15 @@ export default async function ContactDetail({
             ✨ Generate draft for this contact
           </PendingButton>
           <span className="ml-2 text-xs text-neutral-400">Bypasses tier/sector filters — lands in the queue.</span>
+        </form>
+      )}
+
+      {c.email && (
+        <form action={setNewsletterSubscription} className="mb-4 flex items-center gap-2 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
+          <input type="hidden" name="contact_id" value={c.id} />
+          <input id="news" type="checkbox" name="subscribed" defaultChecked={c.newsletter_subscribed} />
+          <label htmlFor="news">Subscribe to monthly newsletter</label>
+          <button className="ml-auto rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100">Update</button>
         </form>
       )}
 

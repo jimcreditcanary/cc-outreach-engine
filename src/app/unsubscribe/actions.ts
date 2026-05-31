@@ -40,8 +40,12 @@ export async function submitUnsubscribe(formData: FormData) {
   // Snooze every contact at this email so the generator/sender both skip them.
   // `9999-12-31` is the "never" sentinel; if a recontact_at was chosen we use
   // that instead so they can reappear in the funnel when that date passes.
+  // Also clear the newsletter opt-in so monthly broadcasts skip them too.
   const snooze_until = recontact_at ?? "9999-12-31T00:00:00Z";
-  await db.from("contacts").update({ snooze_until }).ilike("email", email);
+  await db
+    .from("contacts")
+    .update({ snooze_until, newsletter_subscribed: false })
+    .ilike("email", email);
 
   redirect("/unsubscribe/thanks");
 }
