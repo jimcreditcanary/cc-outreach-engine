@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { answerMeddiccGap, generateDraftForContact, reseedDealMeddicc } from "../actions";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 // answerMeddiccGap + ✨ Draft follow-up run Claude (sometimes both back-to-back).
@@ -111,27 +112,36 @@ export default async function HotPage() {
                       className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
                     />
                     <div className="flex flex-wrap gap-2">
-                      <button className="rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800">
+                      <PendingButton
+                        className="rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800"
+                        pendingLabel="Re-qualifying…"
+                      >
                         Submit answer → re-qualify
-                      </button>
+                      </PendingButton>
                     </div>
                   </form>
                 ) : (
                   <form action={reseedDealMeddicc} className="text-sm">
                     <input type="hidden" name="deal_id" value={d.id} />
                     <p className="mb-2 text-neutral-500">No MEDDICC question yet — re-seed to generate one.</p>
-                    <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100">
+                    <PendingButton
+                      className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                      pendingLabel="Seeding MEDDICC…"
+                    >
                       Re-seed MEDDICC
-                    </button>
+                    </PendingButton>
                   </form>
                 )}
 
                 {d.primary_contact_id && (
                   <form action={generateDraftForContact} className="mt-3 border-t border-neutral-100 pt-3">
                     <input type="hidden" name="contact_id" value={d.primary_contact_id} />
-                    <button className="rounded border border-amber-300 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50">
+                    <PendingButton
+                      className="rounded border border-amber-300 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50"
+                      pendingLabel="Drafting follow-up…"
+                    >
                       ✨ Draft follow-up email to primary contact
-                    </button>
+                    </PendingButton>
                   </form>
                 )}
               </li>

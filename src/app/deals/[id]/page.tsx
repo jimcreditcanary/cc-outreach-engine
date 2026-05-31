@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { updateDeal, deleteDeal, uploadProposal, addDealContact, removeDealContact, reseedDealMeddicc } from "../../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 // Proposal upload + AI markdown conversion + MEDDICC auto-seed can run 20s+.
@@ -27,8 +28,15 @@ const MEDDICC: { key: string; label: string }[] = [
   { key: "competition", label: "Competition" },
 ];
 
-export default async function DealDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function DealDetail({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ uploaded?: string }>;
+}) {
   const { id } = await params;
+  const { uploaded } = await searchParams;
   const db = serviceClient();
   const { data: deal } = await db.from("deals").select("*, organisation:organisations(id, name, tier)").eq("id", id).maybeSingle();
   if (!deal) notFound();
@@ -142,12 +150,22 @@ export default async function DealDetail({ params }: { params: Promise<{ id: str
       {/* Proposal */}
       <section className="mt-8 text-sm">
         <h2 className="mb-2 font-semibold">Proposal {deal.proposal_exists ? <span className="rounded bg-emerald-100 px-1.5 text-xs text-emerald-700">attached</span> : <span className="text-neutral-400">— none</span>}</h2>
+        {uploaded && (
+          <div className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            ✓ Proposal uploaded, converted to markdown, MEDDICC seeded. View the new biggest gap on <a href="/hot" className="underline">/hot</a>.
+          </div>
+        )}
         <form action={uploadProposal} className="mb-3 flex flex-wrap items-center gap-2">
           <input type="hidden" name="deal_id" value={deal.id} />
           <input type="file" name="file" accept=".pdf,.docx,.txt,.md" className="text-sm" required />
-          <button className="rounded bg-neutral-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800">Upload → convert to markdown</button>
+          <PendingButton
+            className="rounded bg-neutral-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
+            pendingLabel="Uploading + extracting + seeding MEDDICC…"
+          >
+            Upload → convert to markdown
+          </PendingButton>
         </form>
-        <p className="mb-2 text-xs text-neutral-400">PDF / DOCX / TXT / MD. Converted to clean markdown by AI, then it flips the deal into T1/T2 and feeds MEDDICC.</p>
+        <p className="mb-2 text-xs text-neutral-400">PDF / DOCX / TXT / MD. Converted to clean markdown by AI (typically 20-40s for a PDF), then it flips the deal into T1/T2 and feeds MEDDICC.</p>
         {deal.proposal_text && (
           <details className="rounded border border-neutral-200 bg-white p-3">
             <summary className="cursor-pointer text-neutral-600">View proposal markdown ({deal.proposal_text.length} chars)</summary>
@@ -163,9 +181,12 @@ export default async function DealDetail({ params }: { params: Promise<{ id: str
           {deal.proposal_exists && (
             <form action={reseedDealMeddicc}>
               <input type="hidden" name="deal_id" value={deal.id} />
-              <button className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100">
+              <PendingButton
+                className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100"
+                pendingLabel="Re-seeding…"
+              >
                 Re-seed
-              </button>
+              </PendingButton>
             </form>
           )}
         </div>

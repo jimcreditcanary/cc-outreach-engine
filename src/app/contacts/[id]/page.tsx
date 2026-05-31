@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact } from "../../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 // ✨ Generate-draft-for-this-contact calls Claude.
@@ -63,9 +64,12 @@ export default async function ContactDetail({
       {c.email && (
         <form action={generateDraftForContact} className="mb-4">
           <input type="hidden" name="contact_id" value={c.id} />
-          <button className="rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800">
+          <PendingButton
+            className="rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800"
+            pendingLabel="Drafting…"
+          >
             ✨ Generate draft for this contact
-          </button>
+          </PendingButton>
           <span className="ml-2 text-xs text-neutral-400">Bypasses tier/sector filters — lands in the queue.</span>
         </form>
       )}

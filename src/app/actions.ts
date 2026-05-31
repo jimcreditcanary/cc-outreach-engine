@@ -697,5 +697,8 @@ export async function uploadProposal(formData: FormData) {
   } catch (e) {
     console.error("auto-seed MEDDICC failed", e);
   }
+  // Redirect (not just revalidate) so the file input clears + the page
+  // visibly re-renders with the new "proposal attached" badge.
   revalidatePath(`/deals/${dealId}`);
+  redirect(`/deals/${dealId}?uploaded=1`);
 }

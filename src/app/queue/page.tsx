@@ -1,5 +1,6 @@
 import { serviceClient } from "@/lib/db/client";
 import { approveDraft, rejectDraft, updateDraft, regenerateDraft, sendDraftNow } from "../actions";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 // Regenerate + Send-now invoke Claude / Postmark — give them runway.
@@ -90,31 +91,35 @@ export default async function QueuePage() {
                     className="w-full rounded border border-neutral-300 px-2 py-1.5 font-sans text-sm leading-relaxed text-neutral-700"
                   />
                   <div className="flex flex-wrap gap-2">
-                    <button
+                    <PendingButton
                       formAction={sendDraftNow}
                       className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                      pendingLabel="Sending…"
                     >
                       Save &amp; send now
-                    </button>
-                    <button
+                    </PendingButton>
+                    <PendingButton
                       formAction={approveDraft}
                       className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
+                      pendingLabel="Approving…"
                     >
                       Save &amp; approve (cron sends)
-                    </button>
-                    <button
+                    </PendingButton>
+                    <PendingButton
                       formAction={updateDraft}
                       className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                      pendingLabel="Saving…"
                     >
                       Save
-                    </button>
-                    <button
+                    </PendingButton>
+                    <PendingButton
                       formAction={regenerateDraft}
                       className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100"
+                      pendingLabel="Regenerating…"
                       title="Re-run the AI with the current prompt (replaces this draft)"
                     >
                       ↻ Regenerate
-                    </button>
+                    </PendingButton>
                   </div>
 
                   <div className="mt-1 flex flex-wrap items-center gap-2 rounded border border-neutral-200 bg-neutral-50 p-2">
