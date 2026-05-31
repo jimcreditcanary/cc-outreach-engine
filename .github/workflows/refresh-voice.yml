@@ -1,0 +1,47 @@
+name: Weekly voice spec refresh
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Refresh voice spec from live data
+        env:
+          ANTHROPIC_API_KEY:          ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL:            ${{ secrets.ANTHROPIC_MODEL }}
+          NEXT_PUBLIC_SUPABASE_URL:   ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run refresh-voice
+
+      - name: Open PR if the spec changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/voice-refresh
+          delete-branch: true
+          commit-message: "Weekly voice spec refresh (auto)"
+          title: "Weekly voice refresh"
+          body: |
+            Automated refresh of `creditcanary-voice-spec.md` from the live signal:
+            - last 30 **sent** drafts (with edit diffs)
+            - last 30 **draft_rejections** (with reasons)
+
+            Eyeball the diff. Merge if it sharpens Jim's voice; close the PR if not.
+          labels: |
+            voice
+            automated
