@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
   // dies with "Object.defineProperty called on non-object"). Marking them
   // external tells Next to load them as regular Node deps at runtime rather
   // than try to bundle them.
-  serverExternalPackages: ["pdf-parse", "mammoth"],
+  serverExternalPackages: ["unpdf", "mammoth"],
   // Proposal uploads are PDF/DOCX — easily larger than the default 1MB
   // server-action limit. Bump to 25MB.
   experimental: {

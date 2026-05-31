@@ -2,10 +2,12 @@
 // (pdf / docx / txt / md), then have Claude render it as clean, faithful
 // Markdown for storage on the deal (feeds T1 + MEDDICC seeding).
 //
-// NOTE: pdf-parse / mammoth are imported lazily *inside* the functions.
-// They run module-load side-effects that break the Next RSC bundle if
-// imported at top level (this module is reachable from every page via
-// actions.ts), so they must only load when an upload actually happens.
+// PDF: uses `unpdf` — a serverless-native fork of pdfjs that works in
+// Vercel/edge Node runtimes (the original pdf-parse + pdfjs-dist crashes
+// on `DOMMatrix is not defined`).
+// DOCX: mammoth.
+// Heavy deps loaded lazily inside the functions so this module stays
+// import-safe for the rest of the RSC bundle.
 
 import { generateText } from "../ai/claude";
 
@@ -21,14 +23,10 @@ export async function extractRawText(buf: Buffer, filename: string): Promise<str
     return value;
   }
   if (ext === "pdf") {
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: new Uint8Array(buf) });
-    try {
-      const r = await parser.getText();
-      return r.text;
-    } finally {
-      await parser.destroy();
-    }
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const pdf = await getDocumentProxy(new Uint8Array(buf));
+    const { text } = await extractText(pdf, { mergePages: true });
+    return Array.isArray(text) ? text.join("\n") : String(text);
   }
   throw new Error(`Unsupported file .${ext} — use ${SUPPORTED.join(", ")}`);
 }
