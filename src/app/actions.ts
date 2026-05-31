@@ -525,6 +525,7 @@ export async function createDeal(formData: FormData) {
   const organisation_id = str(formData.get("organisation_id"));
   if (!title || !organisation_id) return;
   const db = serviceClient();
+  const tcvIn = formData.get("tcv") ?? formData.get("value");
   const { data, error } = await db
     .from("deals")
     .insert({
@@ -532,7 +533,9 @@ export async function createDeal(formData: FormData) {
       organisation_id,
       status: str(formData.get("status")) ?? "open",
       stage: str(formData.get("stage")),
-      value: formData.get("value") ? Number(formData.get("value")) : null,
+      value: formData.get("value") ? Number(formData.get("value")) : tcvIn ? Number(tcvIn) : null,
+      tcv: tcvIn ? Number(tcvIn) : null,
+      arr: formData.get("arr") ? Number(formData.get("arr")) : null,
     })
     .select("id")
     .single();
@@ -556,7 +559,9 @@ export async function updateDeal(formData: FormData) {
       title: str(formData.get("title")),
       status: str(formData.get("status")) ?? "open",
       stage: str(formData.get("stage")),
-      value: formData.get("value") ? Number(formData.get("value")) : null,
+      value: formData.get("tcv") ? Number(formData.get("tcv")) : formData.get("value") ? Number(formData.get("value")) : null,
+      tcv: formData.get("tcv") ? Number(formData.get("tcv")) : null,
+      arr: formData.get("arr") ? Number(formData.get("arr")) : null,
       organisation_id,
       primary_contact_id: str(formData.get("primary_contact_id")),
     })

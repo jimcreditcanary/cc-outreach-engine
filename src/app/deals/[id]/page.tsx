@@ -94,7 +94,8 @@ export default async function DealDetail({
             {[...new Set([...DEAL_STAGES, ...(deal.stage ? [deal.stage] : [])])].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        <div><label className={lbl}>Value (£)</label><input name="value" type="number" defaultValue={deal.value ?? ""} className={field} /></div>
+        <div><label className={lbl}>TCV — total contract value (£)</label><input name="tcv" type="number" defaultValue={deal.tcv ?? deal.value ?? ""} className={field} /></div>
+        <div><label className={lbl}>ARR — annual recurring revenue (£)</label><input name="arr" type="number" defaultValue={deal.arr ?? ""} className={field} /></div>
         <div className="col-span-2">
           <label className={lbl}>Primary contact{(orgContacts ?? []).length === 0 ? " (company has none on file — pick from all)" : ""}</label>
           <select name="primary_contact_id" defaultValue={deal.primary_contact_id ?? ""} className={field}>
