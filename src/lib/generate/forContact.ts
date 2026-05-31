@@ -36,12 +36,11 @@ export async function regenerateForContact(db: DB, contactId: string): Promise<D
     .limit(15);
   const assets = (assetRows ?? []) as (AssetOption & { id: string })[];
 
-  const { data: notes } = await db
-    .from("notes")
-    .select("content")
-    .eq("organisation_id", org.id)
-    .order("noted_at", { ascending: false })
-    .limit(3);
+  const [{ data: notes }, { data: enriched }] = await Promise.all([
+    db.from("notes").select("content").eq("organisation_id", org.id).order("noted_at", { ascending: false }).limit(3),
+    db.from("organisations").select("company_summary, recent_posts").eq("id", org.id).maybeSingle(),
+  ]);
+  const posts = (enriched?.recent_posts ?? []) as { title: string; published_at: string | null }[];
 
   // Recent press signals matched to this sector.
   const since = new Date(Date.now() - 45 * 86_400_000).toISOString();
@@ -67,6 +66,8 @@ export async function regenerateForContact(db: DB, contactId: string): Promise<D
     tier: org.tier,
     label: contact.label as string | null,
     notes: (notes ?? []).map((n) => String(n.content)).filter(Boolean),
+    org_summary: (enriched?.company_summary as string | null) ?? null,
+    recent_posts: posts.slice(0, 3),
   };
   const signals = matchSignals(recentSignals, org.sector as Sector);
   return generateDraft(ctx, assets, signals);

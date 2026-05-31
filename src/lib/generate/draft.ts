@@ -19,6 +19,10 @@ export interface ContactCtx {
   label?: string | null;
   /** Recent org notes — the "what's changed since we spoke" context (T2). */
   notes: string[];
+  /** Optional AI-written summary of the company (from their own website). */
+  org_summary?: string | null;
+  /** Optional last 3 recent posts from the company's blog/news feed. */
+  recent_posts?: { title: string; published_at: string | null }[];
 }
 
 export interface AssetOption {
@@ -87,7 +91,7 @@ CONTACT
   CRM label: ${ctx.label ?? "—"}
   Tier: ${tierNote}
 
-RECENT CRM NOTES (context — never quote a client name from these in the email):
+${ctx.org_summary ? `ABOUT ${ctx.org_name.toUpperCase()} (from their own website — fair game to reference):\n  ${ctx.org_summary}\n\n` : ""}${ctx.recent_posts && ctx.recent_posts.length > 0 ? `RECENT POSTS ON THEIR BLOG / NEWS (real, current — feel free to reference one if it's a genuine hook):\n${ctx.recent_posts.slice(0, 3).map((p) => `  - "${p.title}"${p.published_at ? ` (${new Date(p.published_at).toLocaleDateString("en-GB")})` : ""}`).join("\n")}\n\n` : ""}RECENT CRM NOTES (context — never quote a client name from these in the email):
 ${notes}
 
 CANDIDATE CONTENT ASSETS (link exactly ONE of these in the body if a genuinely

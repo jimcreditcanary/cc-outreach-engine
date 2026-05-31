@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { updateOrg, deleteOrg, mergeOrg, addNote, updateNote, deleteNote, createDeal, setDealStatus, deleteDeal } from "../../actions";
+import { updateOrg, deleteOrg, mergeOrg, addNote, updateNote, deleteNote, createDeal, setDealStatus, deleteDeal, enrichCompanyAction } from "../../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { PendingButton } from "@/components/PendingButton";
+
+// Enrichment takes 15-30s (homepage scrape + AI summary + feed discovery).
+export const maxDuration = 60;
 
 export const dynamic = "force-dynamic";
 
@@ -157,6 +161,47 @@ export default async function CompanyDetail({
             ))}
           </ul>
         </div>
+      </section>
+
+      {/* Enrichment: AI summary + recent posts from their own site/feed. */}
+      <section className="mt-8 text-sm">
+        <div className="mb-2 flex items-baseline gap-3">
+          <h2 className="font-semibold">From the web</h2>
+          <span className="text-xs text-neutral-400">
+            {org.enriched_at ? `Last refreshed ${new Date(org.enriched_at).toLocaleDateString("en-GB")}` : "Not enriched yet"}
+          </span>
+          <form action={enrichCompanyAction} className="ml-auto">
+            <input type="hidden" name="id" value={org.id} />
+            <PendingButton
+              className="rounded border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+              pendingLabel="Crawling + summarising…"
+              title={org.website ? `Scrape ${org.website} + auto-discover RSS` : "Add a website first"}
+            >
+              ✨ Enrich from web
+            </PendingButton>
+          </form>
+        </div>
+        {!org.website && (
+          <p className="text-xs text-neutral-400">No website on file. Add one above and save, then enrich.</p>
+        )}
+        {org.company_summary && (
+          <p className="mb-3 rounded border border-neutral-200 bg-neutral-50 p-2 text-neutral-700">
+            {org.company_summary}
+          </p>
+        )}
+        {Array.isArray(org.recent_posts) && org.recent_posts.length > 0 && (
+          <div>
+            <h3 className="mb-1 text-xs uppercase tracking-wide text-neutral-500">Recent posts</h3>
+            <ul className="space-y-1 text-neutral-600">
+              {(org.recent_posts as { title: string; url: string; published_at: string | null; summary: string }[]).map((p) => (
+                <li key={p.url}>
+                  <a href={p.url} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">{p.title}</a>
+                  {p.published_at && <span className="ml-1 text-xs text-neutral-400">· {new Date(p.published_at).toLocaleDateString("en-GB")}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
 
       <section className="mt-8 text-sm">

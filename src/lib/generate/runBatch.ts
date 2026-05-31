@@ -91,12 +91,11 @@ export async function runGenerateBatch(db: DB, limit: number): Promise<GenerateB
     const org = c.organisation as unknown as { id: string; name: string; sector: string; tier: number | null };
     const assets = await loadAssetsForSector(db, org.sector, assetCache);
 
-    const { data: notes } = await db
-      .from("notes")
-      .select("content")
-      .eq("organisation_id", org.id)
-      .order("noted_at", { ascending: false })
-      .limit(3);
+    const [{ data: notes }, { data: enriched }] = await Promise.all([
+      db.from("notes").select("content").eq("organisation_id", org.id).order("noted_at", { ascending: false }).limit(3),
+      db.from("organisations").select("company_summary, recent_posts").eq("id", org.id).maybeSingle(),
+    ]);
+    const posts = (enriched?.recent_posts ?? []) as { title: string; published_at: string | null }[];
 
     const ctx: ContactCtx = {
       first_name: String(c.full_name ?? "there").trim().split(/\s+/)[0] || "there",
@@ -108,6 +107,8 @@ export async function runGenerateBatch(db: DB, limit: number): Promise<GenerateB
       tier: org.tier,
       label: c.label as string | null,
       notes: (notes ?? []).map((n) => String(n.content)).filter(Boolean),
+      org_summary: (enriched?.company_summary as string | null) ?? null,
+      recent_posts: posts.slice(0, 3),
     };
 
     const signals = matchSignals(recentSignals, org.sector as Sector);

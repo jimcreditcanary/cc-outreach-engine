@@ -9,6 +9,7 @@ import { extractRawText, toMarkdown } from "@/lib/proposals/extract";
 import { seedDealMeddicc } from "@/lib/meddicc/seedDeal";
 import { regenerateForContact } from "@/lib/generate/forContact";
 import { sendBroadcast } from "@/lib/send/postmark";
+import { enrichCompany } from "@/lib/enrich/company";
 
 const str = (v: FormDataEntryValue | null): string | null => {
   const s = String(v ?? "").trim();
@@ -355,6 +356,20 @@ export async function deleteOrg(formData: FormData) {
   await serviceClient().from("organisations").delete().eq("id", id);
   revalidatePath("/companies");
   redirect("/companies");
+}
+
+/** Scrape the company website + auto-discover their RSS/blog feed,
+ *  AI-summarise + store last 5 posts on the org row. */
+export async function enrichCompanyAction(formData: FormData) {
+  const id = String(formData.get("id"));
+  if (!id) return;
+  const db = serviceClient();
+  const res = await enrichCompany(db, id);
+  await logEvent(db, {
+    organisation_id: id,
+    message: `Enriched from web — summary ${res.summary ? "✓" : "—"}, ${res.posts.length} post${res.posts.length === 1 ? "" : "s"} (${res.source.feed ? "RSS" : "no feed"})`,
+  });
+  revalidatePath(`/companies/${id}`);
 }
 
 /** Merge source org INTO target: re-point all children, then delete source. */
