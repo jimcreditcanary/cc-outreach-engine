@@ -4,8 +4,24 @@ import { saveLinkedInEdits, markLinkedInDone } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-const DAILY = 30;
+const DAILY_CAP = 15;
 const SECTORS = ["bank", "broker", "building_society", "credit_union", "direct_lender", "marketplace", "sme_lender", "utility"];
+
+/** Most recent 08:00 UK time, expressed as a UTC ISO string. Used to count
+ *  today's LinkedIn touches against the daily cap. Approximation: uses
+ *  08:00 UTC, which is 08:00 UK in winter (GMT) and 09:00 UK in summer
+ *  (BST). Close enough for a daily-rhythm reset. */
+function linkedinDayStartUtc(now: Date): string {
+  const ukToday = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const candidate = new Date(`${ukToday}T08:00:00Z`);
+  if (now < candidate) candidate.setDate(candidate.getDate() - 1);
+  return candidate.toISOString();
+}
 
 interface Row {
   id: string;
@@ -23,13 +39,15 @@ const fld = "rounded border border-neutral-300 px-2 py-1 text-sm";
 
 export default async function LinkedInPage() {
   const db = serviceClient();
-  const [{ data }, { data: orgs }] = await Promise.all([
+  const dayStart = linkedinDayStartUtc(new Date());
+  const [{ data }, { data: orgs }, { count: doneToday }] = await Promise.all([
     db
       .from("contacts")
       .select("id, full_name, job_title, email, mobile, linkedin_url, label, linkedin_connected, organisation:organisations(id, name, sector, is_partner)")
       .eq("linkedin_connected", false)
       .limit(4000),
     db.from("organisations").select("id, name").order("name").limit(1000),
+    db.from("events").select("*", { count: "exact", head: true }).eq("type", "linkedin_note").gte("ts", dayStart),
   ]);
 
   // ICP buyer contacts only (sector set, not partner). We still show contacts
@@ -39,7 +57,10 @@ export default async function LinkedInPage() {
   );
   icp.sort((a, b) => (b.label === "Prospect" ? 1 : 0) - (a.label === "Prospect" ? 1 : 0));
 
-  const withUrl = icp.filter((r) => r.linkedin_url).slice(0, DAILY);
+  const done = doneToday ?? 0;
+  const remaining = Math.max(0, DAILY_CAP - done);
+  const capHit = remaining === 0;
+  const withUrl = icp.filter((r) => r.linkedin_url).slice(0, remaining);
   const needsResearch = icp.filter((r) => !r.linkedin_url).slice(0, 15);
 
   return (
@@ -47,11 +68,24 @@ export default async function LinkedInPage() {
       <header className="mb-6 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">LinkedIn — today</h1>
         <p className="text-sm text-neutral-500">
-          Edit inline, open the profile, send the connection, drop a hook, Done. {icp.filter((r) => r.linkedin_url).length} with a
-          profile · {needsResearch.length}+ need research.
+          Edit inline, open the profile, send the connection, drop a hook, Done.{" "}
+          <span className={capHit ? "font-medium text-emerald-700" : "font-medium text-neutral-700"}>
+            {done}/{DAILY_CAP} sent today
+          </span>
+          {!capHit && ` · ${remaining} left in cap`}
+          {capHit && " — back at 8am tomorrow"}
         </p>
       </header>
 
+      {capHit ? (
+        <section className="mb-8 rounded-lg border border-emerald-200 bg-emerald-50/50 p-6 text-center">
+          <h2 className="mb-1 text-lg font-semibold text-emerald-900">Done for today ✓</h2>
+          <p className="text-sm text-emerald-800">
+            You&apos;ve sent the {DAILY_CAP} LinkedIn touches for today. Pacing protects deliverability and your sanity.
+            Fresh batch unlocks at 8am tomorrow.
+          </p>
+        </section>
+      ) : (
       <section className="mb-8">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500">Has profile ({withUrl.length})</h2>
         <ul className="space-y-3">
@@ -91,8 +125,9 @@ export default async function LinkedInPage() {
           ))}
         </ul>
       </section>
+      )}
 
-      {needsResearch.length > 0 && (
+      {needsResearch.length > 0 && !capHit && (
         <section>
           <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Needs research ({needsResearch.length})</h2>
           <p className="mb-3 text-xs text-neutral-400">No LinkedIn URL on file — click a name to look them up and paste their profile URL.</p>
