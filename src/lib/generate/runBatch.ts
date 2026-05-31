@@ -101,6 +101,7 @@ export async function runGenerateBatch(db: DB, limit: number): Promise<GenerateB
     const ctx: ContactCtx = {
       first_name: String(c.full_name ?? "there").trim().split(/\s+/)[0] || "there",
       full_name: String(c.full_name ?? ""),
+      email: String(c.email ?? ""),
       job_title: c.job_title as string | null,
       org_name: org.name,
       sector: org.sector,

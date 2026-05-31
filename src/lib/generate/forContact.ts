@@ -22,7 +22,7 @@ interface OrgEmbed {
 export async function regenerateForContact(db: DB, contactId: string): Promise<DraftResult | null> {
   const { data: contact } = await db
     .from("contacts")
-    .select("id, full_name, job_title, label, organisation:organisations(id, name, sector, tier)")
+    .select("id, full_name, email, job_title, label, organisation:organisations(id, name, sector, tier)")
     .eq("id", contactId)
     .maybeSingle();
   if (!contact) return null;
@@ -60,6 +60,7 @@ export async function regenerateForContact(db: DB, contactId: string): Promise<D
   const ctx: ContactCtx = {
     first_name: String(contact.full_name ?? "there").trim().split(/\s+/)[0] || "there",
     full_name: String(contact.full_name ?? ""),
+    email: String(contact.email ?? ""),
     job_title: contact.job_title as string | null,
     org_name: org.name,
     sector: org.sector,

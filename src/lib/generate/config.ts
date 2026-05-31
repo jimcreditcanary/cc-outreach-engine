@@ -21,12 +21,22 @@ export const SIGNATURE_HTML = `<p>Jim</p>
 Credit Canary<br>
 <a href="mailto:jim@creditcanary.co.uk">jim@creditcanary.co.uk</a></p>`;
 
-/** Unsubscribe footer. Uses Postmark's {{{ pm:unsubscribe }}} token so the
- * Broadcast stream treats the email as compliant (suppresses the auto-footer)
- * and we control the copy. The link text reads as a personal opt-out, not
- * a generic 'Unsubscribe'. Replaced server-side with a tracked URL. */
-export const UNSUB_FOOTER_TEXT = `\n\n—\nNot a fit? No hard feelings — let me know here: {{{ pm:unsubscribe }}}`;
-export const UNSUB_FOOTER_HTML = `<p style="color:#999;font-size:12px;margin-top:24px">Not a fit? No hard feelings — <a href="{{{ pm:unsubscribe }}}" style="color:#999">tell me why and I'll stop</a>.</p>`;
+/** Production URL for the unsubscribe page (overridable for previews). */
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://cc-outreach-engine.vercel.app";
+
+/** Unsubscribe footer with the recipient's email pre-baked in. Bypasses
+ * Postmark's {{{ pm:unsubscribe }}} token (which would point to their
+ * generic page) and instead lands on our own /unsubscribe form so we
+ * capture WHY + WHEN to retry. Email is URL-encoded. */
+export function unsubFooterText(email: string): string {
+  const url = `${APP_URL}/unsubscribe?e=${encodeURIComponent(email)}`;
+  return `\n\n—\nNot a fit? No hard feelings — let me know here: ${url}`;
+}
+
+export function unsubFooterHtml(email: string): string {
+  const url = `${APP_URL}/unsubscribe?e=${encodeURIComponent(email)}`;
+  return `<p style="color:#999;font-size:12px;margin-top:24px">Not a fit? No hard feelings — <a href="${url}" style="color:#999">tell me why and I'll stop</a>.</p>`;
+}
 
 let _system: string | null = null;
 

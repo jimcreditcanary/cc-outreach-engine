@@ -4,13 +4,14 @@
 
 import { z } from "zod";
 import { generateStructured } from "../ai/claude";
-import { buildSystemPrompt, SIGNATURE_TEXT, SIGNATURE_HTML, SCHEDULER_LINK, UNSUB_FOOTER_TEXT, UNSUB_FOOTER_HTML } from "./config";
+import { buildSystemPrompt, SIGNATURE_TEXT, SIGNATURE_HTML, SCHEDULER_LINK, unsubFooterText, unsubFooterHtml } from "./config";
 import { checkAnonymisation } from "./anonymisation";
 import type { MatchedSignal } from "../signals/triggers";
 
 export interface ContactCtx {
   first_name: string;
   full_name: string;
+  email: string;
   job_title?: string | null;
   org_name: string;
   sector: string;
@@ -111,11 +112,11 @@ Write the email now.`;
  */
 const hasLink = (s: string) => /https?:\/\/\S+/.test(s);
 
-function assemble(out: z.infer<typeof DraftSchema>): DraftResult {
+function assemble(out: z.infer<typeof DraftSchema>, email: string): DraftResult {
   return {
     subject: out.subject,
-    body_text: `${out.body_text.trim()}\n\n${SIGNATURE_TEXT}${UNSUB_FOOTER_TEXT}`,
-    body_html: renderHtml(out.body_text),
+    body_text: `${out.body_text.trim()}\n\n${SIGNATURE_TEXT}${unsubFooterText(email)}`,
+    body_html: renderHtml(out.body_text, email),
     angle: out.angle,
     asset_url: out.asset_url,
   };
@@ -142,7 +143,7 @@ export async function generateDraft(
     const anonClean = checkAnonymisation(`${out.subject}\n${out.body_text}`).clean;
     const linked = hasLink(out.body_text);
 
-    if (anonClean && linked) return assemble(out);
+    if (anonClean && linked) return assemble(out, ctx.email);
 
     if (anonClean) lastClean = out; // usable except for the missing link
     correction = !anonClean
@@ -154,13 +155,13 @@ export async function generateDraft(
   // scheduler CTA ourselves rather than discard a good draft.
   if (lastClean) {
     const body = `${lastClean.body_text.trim()}\n\nIf it's useful, grab a time here: ${SCHEDULER_LINK}`;
-    return assemble({ ...lastClean, body_text: body, asset_url: SCHEDULER_LINK });
+    return assemble({ ...lastClean, body_text: body, asset_url: SCHEDULER_LINK }, ctx.email);
   }
   return null; // failed the anonymisation gate twice
 }
 
 /** Native-looking HTML: system font, plain paragraphs, simple signature. */
-function renderHtml(bodyText: string): string {
+function renderHtml(bodyText: string, email: string): string {
   const paragraphs = bodyText
     .trim()
     .split(/\n\s*\n/)
@@ -169,7 +170,7 @@ function renderHtml(bodyText: string): string {
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">
 ${paragraphs}
 ${SIGNATURE_HTML}
-${UNSUB_FOOTER_HTML}
+${unsubFooterHtml(email)}
 </div>`;
 }
 
