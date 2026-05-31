@@ -126,6 +126,7 @@ export async function runGenerateBatch(db: DB, limit: number): Promise<GenerateB
       subject: draft.subject,
       body_html: draft.body_html,
       body_text: draft.body_text,
+      original_body_text: draft.body_text, // preserve Claude's untouched output for style-learning
       status: "queued",
     });
     if (insErr) throw insErr;

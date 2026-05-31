@@ -129,6 +129,7 @@ export async function generateDraftForContact(formData: FormData) {
     subject: draft.subject,
     body_html: draft.body_html,
     body_text: draft.body_text,
+    original_body_text: draft.body_text,
     status: "queued",
   });
   if (error) throw error;
@@ -153,6 +154,7 @@ export async function regenerateDraft(formData: FormData) {
       subject: draft.subject,
       body_text: draft.body_text,
       body_html: draft.body_html,
+      original_body_text: draft.body_text, // fresh Claude output = new "original"
       angle: draft.angle,
     })
     .eq("id", id);

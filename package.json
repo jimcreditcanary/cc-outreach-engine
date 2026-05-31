@@ -14,6 +14,7 @@
     "import": "tsx scripts/import.ts",
     "crawl": "tsx scripts/crawl.ts",
     "voice-spec": "tsx scripts/voice-spec.ts",
+    "refresh-voice": "tsx scripts/refresh-voice.ts",
     "tag-assets": "tsx scripts/tag-assets.ts",
     "generate": "tsx scripts/generate.ts",
     "review": "tsx scripts/review.ts",
