@@ -35,12 +35,16 @@ export default async function ContactDetail({
   if (!c) notFound();
   const org = c.organisation as { id: string; name: string | null } | null;
 
-  const [{ data: events }, { data: sends }, { data: orgs }, { data: notes }] = await Promise.all([
+  const [{ data: events }, { data: sends }, { data: orgs }, { data: notes }, { data: attended }] = await Promise.all([
     db.from("events").select("type, ts, payload").eq("contact_id", id).order("ts", { ascending: false }).limit(20),
     db.from("sends").select("subject, status, ts, clicked, replied").eq("contact_id", id).order("ts", { ascending: false }).limit(10),
     db.from("organisations").select("id, name").order("name", { ascending: true }).limit(1000),
     db.from("notes").select("id, content, noted_at").eq("contact_id", id).order("noted_at", { ascending: false }).limit(20),
+    db.from("conference_attendances")
+      .select("matched_via, conference:conferences(id, name, start_date, location)")
+      .eq("contact_id", id),
   ]);
+  const attendances = (attended ?? []) as unknown as { matched_via: string; conference: { id: string; name: string; start_date: string | null; location: string | null } | null }[];
 
   // Merge: search other contacts to fold into this one.
   let mergeCandidates: { id: string; full_name: string | null; email: string | null }[] = [];
@@ -154,6 +158,21 @@ export default async function ContactDetail({
           ))}
         </ul>
       </section>
+
+      {attendances.length > 0 && (
+        <section className="mt-8 text-sm">
+          <h2 className="mb-2 font-semibold">Events attended ({attendances.length})</h2>
+          <ul className="space-y-1 text-neutral-600">
+            {attendances.map((a) => a.conference && (
+              <li key={a.conference.id}>
+                <Link href={`/events/${a.conference.id}`} className="text-blue-700 hover:underline">{a.conference.name}</Link>
+                {a.conference.start_date && <span className="ml-2 text-neutral-400">{new Date(a.conference.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>}
+                {a.conference.location && <span className="ml-2 text-neutral-400">· {a.conference.location}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="mt-8 text-sm">
         <h2 className="mb-2 font-semibold">Timeline</h2>

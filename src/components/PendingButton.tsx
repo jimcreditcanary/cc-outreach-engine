@@ -14,20 +14,27 @@ export function PendingButton({
   className,
   formAction,
   title,
+  form,
+  disabled,
 }: {
   children: ReactNode;
   pendingLabel?: string;
   className?: string;
   formAction?: (formData: FormData) => Promise<void> | void;
   title?: string;
+  /** Associate this button with a <form id="..."> elsewhere in the document. */
+  form?: string;
+  /** Force-disable independent of pending (e.g. "nothing selected yet"). */
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
     <button
       className={`${className ?? ""} disabled:cursor-not-allowed disabled:opacity-60`}
       formAction={formAction}
-      disabled={pending}
+      disabled={pending || disabled}
       title={title}
+      form={form}
     >
       {pending ? (
         <span className="inline-flex items-center gap-1.5">

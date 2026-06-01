@@ -122,6 +122,31 @@ export async function approveDraft(formData: FormData) {
   revalidatePath("/queue");
 }
 
+/** Approve many drafts at once. The Outbox pattern: review hundreds, tick
+ *  the ones to ship, click once. Skips drafts that are no longer queued
+ *  (e.g. someone else just approved them) instead of erroring. */
+export async function bulkApproveDrafts(formData: FormData) {
+  const ids = formData.getAll("draft_id").map(String).filter(Boolean);
+  if (ids.length === 0) {
+    await flash("error", "No drafts selected");
+    return;
+  }
+  const db = serviceClient();
+  const { data: updated, error } = await db
+    .from("sends")
+    .update({ status: "approved" })
+    .in("id", ids)
+    .eq("status", "queued")
+    .select("id, contact_id, subject");
+  if (error) throw error;
+  for (const u of updated ?? []) {
+    await logEvent(db, { contact_id: u.contact_id, message: `Email approved (bulk): ${u.subject ?? ""}` });
+  }
+  const n = updated?.length ?? 0;
+  await flash("success", `Approved ${n} draft${n === 1 ? "" : "s"} — cron will send within the window`);
+  revalidatePath("/queue");
+}
+
 /** Force a draft into the queue for a specific contact, bypassing the
  *  generator's normal selection criteria (sector / tier / pipeline dedup).
  *  Surfaced as a button on the contact page — useful for ad-hoc outreach,

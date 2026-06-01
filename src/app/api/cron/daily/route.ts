@@ -7,7 +7,6 @@
 
 import { serviceClient } from "@/lib/db/client";
 import { refreshSignals } from "@/lib/signals/refresh";
-import { detectPressAlerts } from "@/lib/alerts/detect";
 
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -21,7 +20,8 @@ export async function GET(req: Request) {
   if (!authorized(req)) return new Response("unauthorized", { status: 401 });
   const db = serviceClient();
   const { inserted, log } = await refreshSignals(db);
-  // Rebuild contact-level alerts from the freshly-pulled press window.
-  const alerts = await detectPressAlerts(db, 14);
-  return Response.json({ ok: true, signals: { inserted, log }, alerts });
+  // Press signals are sector-level (used by the generator to pick angles).
+  // Org-specific alerts come from enrichment runs (fresh blog posts), not
+  // from press scanning — regulatory press names topics, not target firms.
+  return Response.json({ ok: true, signals: { inserted, log } });
 }

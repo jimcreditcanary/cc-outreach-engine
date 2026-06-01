@@ -6,6 +6,7 @@ import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
 import { OwnerPicker } from "@/components/OwnerPicker";
+import { decodeHtmlEntities } from "@/lib/text/decode";
 
 // Enrichment takes 15-30s (homepage scrape + AI summary + feed discovery).
 export const maxDuration = 60;
@@ -182,11 +183,11 @@ export default async function CompanyDetail({
                   {a.source && <span>· {a.source}</span>}
                 </div>
                 {a.link ? (
-                  <a href={a.link} target="_blank" rel="noreferrer" className="font-medium text-blue-700 hover:underline">{a.title}</a>
+                  <a href={a.link} target="_blank" rel="noreferrer" className="font-medium text-blue-700 hover:underline">{decodeHtmlEntities(a.title)}</a>
                 ) : (
-                  <span className="font-medium">{a.title}</span>
+                  <span className="font-medium">{decodeHtmlEntities(a.title)}</span>
                 )}
-                {a.summary && <p className="mt-1 text-neutral-600">{a.summary}</p>}
+                {a.summary && <p className="mt-1 text-neutral-600">{decodeHtmlEntities(a.summary)}</p>}
               </li>
             ))}
           </ul>

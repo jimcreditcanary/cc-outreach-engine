@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
-import { dismissAlertAction, undismissAlertAction, refreshAlertsAction } from "./actions";
+import { dismissAlertAction, undismissAlertAction } from "./actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
-import { PendingButton } from "@/components/PendingButton";
+import { decodeHtmlEntities } from "@/lib/text/decode";
 
 export const dynamic = "force-dynamic";
 
@@ -55,11 +55,6 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
           </p>
         </div>
         <OwnerFilter current={owner} pathname="/alerts" extraParams={{ show }} />
-        <form action={refreshAlertsAction}>
-          <PendingButton className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Scanning…">
-            ↻ Refresh
-          </PendingButton>
-        </form>
       </header>
 
       <div className="mb-4 flex items-center gap-2 text-xs">
@@ -91,12 +86,12 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
               </div>
               {a.link ? (
                 <a href={a.link} target="_blank" rel="noreferrer" className="font-medium text-neutral-900 hover:underline">
-                  {a.title}
+                  {decodeHtmlEntities(a.title)}
                 </a>
               ) : (
-                <span className="font-medium text-neutral-900">{a.title}</span>
+                <span className="font-medium text-neutral-900">{decodeHtmlEntities(a.title)}</span>
               )}
-              {a.summary && <p className="mt-1 text-sm text-neutral-600">{a.summary}</p>}
+              {a.summary && <p className="mt-1 text-sm text-neutral-600">{decodeHtmlEntities(a.summary)}</p>}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {a.source && <span className="text-xs text-neutral-400">via {a.source}</span>}
                 <form action={a.dismissed_at ? undismissAlertAction : dismissAlertAction} className="ml-auto">

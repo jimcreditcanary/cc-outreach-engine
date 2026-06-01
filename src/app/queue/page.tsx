@@ -1,8 +1,9 @@
 import { serviceClient } from "@/lib/db/client";
-import { approveDraft, rejectDraft, updateDraft, regenerateDraft, sendDraftNow } from "../actions";
+import { approveDraft, rejectDraft, updateDraft, regenerateDraft, sendDraftNow, bulkApproveDrafts } from "../actions";
 import { PendingButton } from "@/components/PendingButton";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
+import { BulkApproveBar } from "./BulkApproveBar";
 
 export const dynamic = "force-dynamic";
 // Regenerate + Send-now invoke Claude / Postmark — give them runway.
@@ -68,12 +69,22 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           Nothing to review. Generate drafts with <code className="rounded bg-neutral-200 px-1">npm run generate</code>.
         </p>
       ) : (
+        <>
+          {/* Bulk-approve outbox — checkboxes inside each draft card POST to
+              this form via HTML form="bulk-approve" association, so per-draft
+              edit forms keep working independently. */}
+          <form id="bulk-approve" action={bulkApproveDrafts} className="hidden" aria-hidden />
+          <BulkApproveBar total={drafts.length} />
+
         <ul className="space-y-5">
           {drafts.map((d) => {
             const org = d.contact?.organisation;
             return (
               <li key={d.id} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
                 <div className="mb-1 flex flex-wrap items-center gap-x-2 text-sm text-neutral-500">
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" name="draft_id" value={d.id} form="bulk-approve" className="h-4 w-4" />
+                  </label>
                   <span className="font-medium text-neutral-800">{d.contact?.full_name ?? "—"}</span>
                   <span>&lt;{d.contact?.email ?? "?"}&gt;</span>
                   {org?.name && (
@@ -151,6 +162,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
             );
           })}
         </ul>
+        </>
       )}
 
       {recent.length > 0 && (
