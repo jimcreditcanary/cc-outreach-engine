@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
-import { createConferenceAction } from "./actions";
+import { createConferenceAction, deleteConferenceAction } from "./actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
+import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
 
       <table className="w-full text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
-          <tr><th className="py-1">Event</th><th>When</th><th>Location</th><th className="text-right">Attendees</th></tr>
+          <tr><th className="py-1">Event</th><th>When</th><th>Location</th><th className="text-right">Attendees</th><th></th></tr>
         </thead>
         <tbody>
           {rows.map((r) => (
@@ -74,10 +75,22 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
               </td>
               <td className="text-neutral-600">{r.location ?? "—"}</td>
               <td className="text-right text-neutral-700">{counts.get(r.id) ?? 0}</td>
+              <td className="text-right">
+                <form>
+                  <input type="hidden" name="id" value={r.id} />
+                  <ConfirmSubmit
+                    formAction={deleteConferenceAction}
+                    className="text-xs text-red-600 hover:underline"
+                    message={`Delete event "${r.name}"? Attendance records go with it (contacts stay).`}
+                  >
+                    ×
+                  </ConfirmSubmit>
+                </form>
+              </td>
             </tr>
           ))}
           {rows.length === 0 && (
-            <tr><td colSpan={4} className="py-6 text-center text-neutral-400">No events yet — add one above.</td></tr>
+            <tr><td colSpan={5} className="py-6 text-center text-neutral-400">No events yet — add one above.</td></tr>
           )}
         </tbody>
       </table>
