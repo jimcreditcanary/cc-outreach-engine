@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import "./globals.css";
 import { currentUser } from "@/lib/auth/server";
 import { AppShell } from "@/components/AppShell";
+import { FlashToaster } from "@/components/FlashToaster";
 
 export const metadata: Metadata = {
   title: "Credit Canary — Outreach",
@@ -25,6 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ) : (
           children
         )}
+        <FlashToaster />
       </body>
     </html>
   );

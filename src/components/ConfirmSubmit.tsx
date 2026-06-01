@@ -1,10 +1,10 @@
 "use client";
 
-// Tiny client wrapper that fires a native confirm() before submitting a
-// destructive server action. Used for every delete/merge so a misclick can't
-// nuke a company/contact/deal/note. The server action is passed in as a
-// prop — works because Next serialises the action reference.
+// Confirm-before-submit button that ALSO shows a pending state via
+// useFormStatus — so deletes feel responsive and the misclick guard is
+// still in place. Spinner appears the moment the user confirms.
 
+import { useFormStatus } from "react-dom";
 import type { MouseEvent, ReactNode } from "react";
 
 export function ConfirmSubmit({
@@ -18,12 +18,26 @@ export function ConfirmSubmit({
   className?: string;
   message?: string;
 }) {
+  const { pending } = useFormStatus();
   const onClick = (e: MouseEvent<HTMLButtonElement>) => {
+    if (pending) return; // already in flight
     if (!window.confirm(message)) e.preventDefault();
   };
   return (
-    <button className={className} formAction={formAction} onClick={onClick}>
-      {children}
+    <button
+      className={`${className ?? ""} disabled:cursor-not-allowed disabled:opacity-60`}
+      formAction={formAction}
+      onClick={onClick}
+      disabled={pending}
+    >
+      {pending ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent" aria-hidden />
+          Working…
+        </span>
+      ) : (
+        children
+      )}
     </button>
   );
 }

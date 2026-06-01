@@ -6,6 +6,7 @@ import { serviceClient } from "@/lib/db/client";
 import { textToHtml } from "@/lib/generate/render";
 import { SIGNATURE_TEXT, SIGNATURE_HTML, unsubFooterText, unsubFooterHtml } from "@/lib/generate/config";
 import { sendBroadcast } from "@/lib/send/postmark";
+import { flash } from "@/lib/flash";
 
 const str = (v: FormDataEntryValue | null): string | null => {
   const s = String(v ?? "").trim();
@@ -21,6 +22,7 @@ export async function createNewsletter(formData: FormData) {
     .select("id")
     .single();
   if (error) throw error;
+  await flash("success", `Draft created: ${subject}`);
   revalidatePath("/newsletter");
   redirect(`/newsletter/${data.id}`);
 }
@@ -37,6 +39,7 @@ export async function updateNewsletter(formData: FormData) {
     .eq("id", id)
     .eq("status", "draft");
   if (error) throw error;
+  await flash("success", "Issue saved");
   revalidatePath(`/newsletter/${id}`);
 }
 
@@ -45,6 +48,7 @@ export async function deleteNewsletter(formData: FormData) {
   const db = serviceClient();
   const { error } = await db.from("newsletters").delete().eq("id", id);
   if (error) throw error;
+  await flash("success", "Issue deleted");
   revalidatePath("/newsletter");
   redirect("/newsletter");
 }
@@ -108,6 +112,7 @@ ${unsubFooterHtml(c.email!)}
     .from("newsletters")
     .update({ status: "sent", sent_at: new Date().toISOString(), sent_count: sent })
     .eq("id", id);
+  await flash("success", `Newsletter sent to ${sent} subscriber${sent === 1 ? "" : "s"}`);
   revalidatePath(`/newsletter/${id}`);
   revalidatePath("/newsletter");
 }
@@ -122,5 +127,6 @@ export async function setNewsletterSubscription(formData: FormData) {
     .update({ newsletter_subscribed: subscribed })
     .eq("id", contactId);
   if (error) throw error;
+  await flash("success", subscribed ? "Subscribed to newsletter" : "Unsubscribed from newsletter");
   revalidatePath(`/contacts/${contactId}`);
 }

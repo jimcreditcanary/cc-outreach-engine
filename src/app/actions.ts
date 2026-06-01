@@ -10,6 +10,7 @@ import { seedDealMeddicc } from "@/lib/meddicc/seedDeal";
 import { regenerateForContact } from "@/lib/generate/forContact";
 import { sendBroadcast } from "@/lib/send/postmark";
 import { enrichCompany } from "@/lib/enrich/company";
+import { flash } from "@/lib/flash";
 
 const str = (v: FormDataEntryValue | null): string | null => {
   const s = String(v ?? "").trim();
@@ -103,6 +104,7 @@ export async function approveDraft(formData: FormData) {
   await db.from("sends").update({ status: "approved" }).eq("id", id).eq("status", "queued");
   const { data: snap } = await db.from("sends").select("contact_id, subject").eq("id", id).maybeSingle();
   if (snap) await logEvent(db, { contact_id: snap.contact_id, message: `Email approved: ${snap.subject ?? ""}` });
+  await flash("success", "Draft approved — cron will send within the window");
   revalidatePath("/queue");
 }
 
@@ -134,6 +136,7 @@ export async function generateDraftForContact(formData: FormData) {
   });
   if (error) throw error;
   await logEvent(db, { contact_id: contactId, message: `Draft generated on demand: ${draft.subject}` });
+  await flash("success", "Draft generated — in the queue");
   revalidatePath(`/contacts/${contactId}`);
   redirect("/queue");
 }
@@ -160,6 +163,7 @@ export async function regenerateDraft(formData: FormData) {
     .eq("id", id);
   if (error) throw error;
   await logEvent(db, { contact_id: snap.contact_id, message: "Draft regenerated" });
+  await flash("success", "Draft regenerated");
   revalidatePath("/queue");
 }
 
@@ -182,6 +186,7 @@ export async function sendDraftNow(formData: FormData) {
   const { data: supp } = await db.from("suppressions").select("email").ilike("email", c.email);
   if ((supp ?? []).length > 0 || c.email_status === "bounced") {
     await db.from("sends").update({ status: "suppressed" }).eq("id", id);
+    await flash("error", `Not sent — ${c.email} is suppressed/bounced`);
     revalidatePath("/queue");
     return;
   }
@@ -212,8 +217,10 @@ export async function sendDraftNow(formData: FormData) {
       .eq("id", c.id);
   } catch (e) {
     await db.from("sends").update({ status: "failed" }).eq("id", id);
+    await flash("error", `Send failed: ${(e as Error).message}`);
     throw e;
   }
+  await flash("success", `Sent to ${c.email}`);
   revalidatePath("/queue");
 }
 
@@ -242,6 +249,7 @@ export async function rejectDraft(formData: FormData) {
     await logEvent(db, { contact_id: snap.contact_id, message: `Draft rejected — ${reason}${note ? `: ${note}` : ""}` });
   }
   await db.from("sends").delete().eq("id", id).eq("status", "queued");
+  await flash("info", "Draft rejected — feedback saved");
   revalidatePath("/queue");
 }
 
@@ -273,6 +281,7 @@ export async function saveLinkedInEdits(formData: FormData) {
     await db.from("organisations").update({ sector }).eq("id", organisation_id);
   }
   await logEvent(db, { contact_id: id, organisation_id, message: "LinkedIn details edited" });
+  await flash("success", "Saved");
   revalidatePath("/linkedin");
 }
 
@@ -307,6 +316,7 @@ export async function markLinkedInDone(formData: FormData) {
     payload: { hook: hook ?? "" },
   });
   await logEvent(db, { contact_id: id, organisation_id, message: `LinkedIn connection sent${hook ? `: "${hook.slice(0, 80)}"` : ""}` });
+  await flash("success", "Marked connected");
   revalidatePath("/linkedin");
 }
 
@@ -323,6 +333,7 @@ export async function createOrg(formData: FormData) {
     .single();
   if (error) throw error;
   await logEvent(db, { organisation_id: data.id, message: `Company created: ${name}` });
+  await flash("success", `Company created: ${name}`);
   revalidatePath("/companies");
   redirect(`/companies/${data.id}`);
 }
@@ -347,6 +358,7 @@ export async function updateOrg(formData: FormData) {
     .eq("id", id);
   if (error) throw error;
   await logEvent(db, { organisation_id: id, message: "Company details updated" });
+  await flash("success", "Company saved");
   // redirect forces a fresh server render (revalidatePath alone was serving
   // the cached page, which looked like the edit had reverted).
   revalidatePath("/companies");
@@ -356,6 +368,7 @@ export async function updateOrg(formData: FormData) {
 export async function deleteOrg(formData: FormData) {
   const id = String(formData.get("id"));
   await serviceClient().from("organisations").delete().eq("id", id);
+  await flash("success", "Company deleted");
   revalidatePath("/companies");
   redirect("/companies");
 }
@@ -371,6 +384,7 @@ export async function enrichCompanyAction(formData: FormData) {
     organisation_id: id,
     message: `Enriched from web — summary ${res.summary ? "✓" : "—"}, ${res.posts.length} post${res.posts.length === 1 ? "" : "s"} (${res.source.feed ? "RSS" : "no feed"})`,
   });
+  await flash("success", `Enriched — summary ${res.summary ? "✓" : "—"}, ${res.posts.length} post${res.posts.length === 1 ? "" : "s"} ${res.source.feed ? "via RSS" : "(no feed)"}`);
   revalidatePath(`/companies/${id}`);
 }
 
@@ -391,6 +405,7 @@ export async function mergeOrg(formData: FormData) {
   const { error } = await db.from("organisations").delete().eq("id", source);
   if (error) throw error;
   await logEvent(db, { organisation_id: target, message: `Merged in duplicate company${src?.name ? `: ${src.name}` : ""}` });
+  await flash("success", `Merged ${src?.name ?? "duplicate"} in`);
   revalidatePath("/companies");
   redirect(`/companies/${target}`);
 }
@@ -409,6 +424,7 @@ export async function createContact(formData: FormData) {
     .single();
   if (error) throw error;
   await logEvent(db, { contact_id: data.id, organisation_id, message: `Contact created: ${full_name}` });
+  await flash("success", `Contact created: ${full_name}`);
   revalidatePath("/contacts");
   redirect(`/contacts/${data.id}`);
 }
@@ -433,6 +449,7 @@ export async function updateContact(formData: FormData) {
     .eq("id", id);
   if (error) throw error;
   await logEvent(db, { contact_id: id, organisation_id, message: "Contact details updated" });
+  await flash("success", "Contact saved");
   revalidatePath("/contacts");
   redirect(`/contacts/${id}`);
 }
@@ -440,6 +457,7 @@ export async function updateContact(formData: FormData) {
 export async function deleteContact(formData: FormData) {
   const id = String(formData.get("id"));
   await serviceClient().from("contacts").delete().eq("id", id);
+  await flash("success", "Contact deleted");
   revalidatePath("/contacts");
   redirect("/contacts");
 }
@@ -464,6 +482,7 @@ export async function mergeContact(formData: FormData) {
   const { error } = await db.from("contacts").delete().eq("id", source);
   if (error) throw error;
   await logEvent(db, { contact_id: target, message: `Merged in duplicate contact${src?.full_name ? `: ${src.full_name}` : ""}` });
+  await flash("success", `Merged ${src?.full_name ?? "duplicate"} in`);
   revalidatePath("/contacts");
   redirect(`/contacts/${target}`);
 }
@@ -507,6 +526,7 @@ export async function addNote(formData: FormData) {
     }
   }
 
+  await flash("success", "Note added");
   if (contact_id) revalidatePath(`/contacts/${contact_id}`);
   if (organisation_id) revalidatePath(`/companies/${organisation_id}`);
 }
@@ -521,6 +541,7 @@ export async function updateNote(formData: FormData) {
   const { error } = await db.from("notes").update({ content }).eq("id", id);
   if (error) throw error;
   await logEvent(db, { contact_id: n?.contact_id, organisation_id: n?.organisation_id, message: "Note edited" });
+  await flash("success", "Note saved");
   if (back) revalidatePath(back);
 }
 
@@ -532,6 +553,7 @@ export async function deleteNote(formData: FormData) {
   const { error } = await db.from("notes").delete().eq("id", id);
   if (error) throw error;
   await logEvent(db, { contact_id: n?.contact_id, organisation_id: n?.organisation_id, message: "Note deleted" });
+  await flash("success", "Note deleted");
   if (back) revalidatePath(back);
 }
 
@@ -559,6 +581,7 @@ export async function createDeal(formData: FormData) {
   if (error) throw error;
   await rederiveTier(db, organisation_id);
   await logEvent(db, { organisation_id, deal_id: data.id, message: `Deal created: ${title}` });
+  await flash("success", `Deal created: ${title}`);
   revalidatePath(`/companies/${organisation_id}`);
   redirect(`/deals/${data.id}`);
 }
@@ -587,6 +610,7 @@ export async function updateDeal(formData: FormData) {
   await rederiveTier(db, organisation_id);
   if (prevOrg && prevOrg !== organisation_id) await rederiveTier(db, prevOrg);
   await logEvent(db, { organisation_id, deal_id: id, message: "Deal updated" });
+  await flash("success", "Deal saved");
   revalidatePath("/deals");
   redirect(`/deals/${id}`);
 }
@@ -605,6 +629,7 @@ export async function setDealStatus(formData: FormData) {
   if (error) throw error;
   await rederiveTier(db, deal.organisation_id);
   await logEvent(db, { organisation_id: deal.organisation_id, deal_id: id, message: `Deal status → ${status}` });
+  await flash("success", `Deal status → ${status}`);
   if (deal.organisation_id) revalidatePath(`/companies/${deal.organisation_id}`);
   revalidatePath("/deals");
 }
@@ -618,6 +643,7 @@ export async function deleteDeal(formData: FormData) {
   if (error) throw error;
   await rederiveTier(db, organisation_id);
   await logEvent(db, { organisation_id, message: `Deal deleted${d?.title ? `: ${d.title}` : ""}` });
+  await flash("success", `Deal deleted${d?.title ? `: ${d.title}` : ""}`);
   revalidatePath("/deals");
   redirect("/deals");
 }
@@ -633,6 +659,7 @@ export async function addDealContact(formData: FormData) {
     .upsert({ deal_id, contact_id, role }, { onConflict: "deal_id,contact_id" });
   if (error) throw error;
   await logEvent(db, { deal_id, contact_id, message: `Added deal stakeholder${role ? ` (${role})` : ""}` });
+  await flash("success", `Stakeholder added${role ? ` as ${role}` : ""}`);
   revalidatePath(`/deals/${deal_id}`);
 }
 
@@ -647,6 +674,7 @@ export async function removeDealContact(formData: FormData) {
     .eq("contact_id", contact_id);
   if (error) throw error;
   await logEvent(db, { deal_id, contact_id, message: "Removed deal stakeholder" });
+  await flash("success", "Stakeholder removed");
   revalidatePath(`/deals/${deal_id}`);
 }
 
@@ -678,6 +706,7 @@ export async function answerMeddiccGap(formData: FormData) {
     deal_id,
     message: `MEDDICC answered → new gap: ${gap ?? "(fully qualified)"}`,
   });
+  await flash("success", `MEDDICC re-qualified — new gap: ${gap ?? "(fully qualified)"}`);
   revalidatePath("/hot");
 }
 
@@ -689,6 +718,7 @@ export async function reseedDealMeddicc(formData: FormData) {
   const gap = await seedDealMeddicc(db, dealId);
   const { data: d } = await db.from("deals").select("organisation_id").eq("id", dealId).maybeSingle();
   if (gap) await logEvent(db, { organisation_id: d?.organisation_id, deal_id: dealId, message: `MEDDICC re-seeded manually (gap: ${gap})` });
+  await flash("success", gap ? `MEDDICC re-seeded — gap: ${gap}` : "MEDDICC re-seeded");
   revalidatePath(`/deals/${dealId}`);
 }
 
@@ -719,6 +749,7 @@ export async function uploadProposal(formData: FormData) {
   } catch (e) {
     console.error("auto-seed MEDDICC failed", e);
   }
+  await flash("success", `Proposal attached + MEDDICC seeded`);
   // Redirect (not just revalidate) so the file input clears + the page
   // visibly re-renders with the new "proposal attached" badge.
   revalidatePath(`/deals/${dealId}`);

@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { authClient, currentUser } from "@/lib/auth/server";
 import { adminClient } from "@/lib/auth/admin";
+import { flash } from "@/lib/flash";
 
 const str = (v: FormDataEntryValue | null): string =>
   String(v ?? "").trim();
@@ -45,6 +46,7 @@ export async function createUserAction(formData: FormData) {
     email_confirm: true, // skip the confirmation email; instant access
   });
   if (error) throw error;
+  await flash("success", `User created: ${email}`);
   revalidatePath("/admin/users");
 }
 
@@ -57,6 +59,7 @@ export async function resetPasswordAction(formData: FormData) {
   const admin = adminClient();
   const { error } = await admin.auth.admin.updateUserById(id, { password });
   if (error) throw error;
+  await flash("success", "Password reset");
   revalidatePath("/admin/users");
 }
 
@@ -68,5 +71,6 @@ export async function deleteUserAction(formData: FormData) {
   const admin = adminClient();
   const { error } = await admin.auth.admin.deleteUser(id);
   if (error) throw error;
+  await flash("success", "User removed");
   revalidatePath("/admin/users");
 }
