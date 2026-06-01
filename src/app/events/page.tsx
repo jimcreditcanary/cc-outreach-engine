@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Trash2 } from "lucide-react";
 import { serviceClient } from "@/lib/db/client";
 import { createConferenceAction, deleteConferenceAction } from "./actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
@@ -75,15 +76,15 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
               </td>
               <td className="text-neutral-600">{r.location ?? "—"}</td>
               <td className="text-right text-neutral-700">{counts.get(r.id) ?? 0}</td>
-              <td className="text-right">
+              <td className="w-10 text-right">
                 <form>
                   <input type="hidden" name="id" value={r.id} />
                   <ConfirmSubmit
                     formAction={deleteConferenceAction}
-                    className="text-xs text-red-600 hover:underline"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-200 text-neutral-400 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600"
                     message={`Delete event "${r.name}"? Attendance records go with it (contacts stay).`}
                   >
-                    ×
+                    <Trash2 size={14} strokeWidth={1.75} aria-label="Delete event" />
                   </ConfirmSubmit>
                 </form>
               </td>
