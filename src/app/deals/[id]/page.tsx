@@ -7,6 +7,7 @@ import { PendingButton } from "@/components/PendingButton";
 import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
 import { OwnerPicker } from "@/components/OwnerPicker";
 import { RowIconAction } from "@/components/RowIconAction";
+import { FileInput } from "@/components/FileInput";
 
 export const dynamic = "force-dynamic";
 // Proposal upload + AI markdown conversion + MEDDICC auto-seed can run 20s+.
@@ -163,7 +164,7 @@ export default async function DealDetail({
         )}
         <form action={uploadProposal} className="mb-3 flex flex-wrap items-center gap-2">
           <input type="hidden" name="deal_id" value={deal.id} />
-          <input type="file" name="file" accept=".pdf,.docx,.txt,.md" className="text-sm" required />
+          <FileInput name="file" accept=".pdf,.docx,.txt,.md" required />
           <PendingButton
             className="rounded bg-neutral-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800"
             pendingLabel="Uploading + extracting + seeding MEDDICC…"

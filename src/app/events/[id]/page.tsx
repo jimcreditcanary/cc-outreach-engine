@@ -11,6 +11,7 @@ import {
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 import { RowIconAction } from "@/components/RowIconAction";
+import { FileInput } from "@/components/FileInput";
 import { listOperators } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
@@ -134,7 +135,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
         </p>
         <form action={uploadAttendeesAction} className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
           <input type="hidden" name="conference_id" value={ev.id} />
-          <input type="file" name="file" accept=".csv,.xlsx,.xls" required className="text-sm" />
+          <FileInput name="file" accept=".csv,.xlsx,.xls" required />
           <PendingButton
             className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
             pendingLabel="Matching + importing…"
