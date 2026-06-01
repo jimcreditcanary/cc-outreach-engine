@@ -113,13 +113,29 @@ function Section({ title, rows, emptyMsg }: { title: string; rows: Row[]; emptyM
                     {!m.organisation && !m.primary_contact && <span className="text-neutral-400">No CRM match — open to link</span>}
                   </div>
                 </div>
-                {m.brief && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-800">brief ✓</span>}
-                {m.online_url && <a href={m.online_url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">join</a>}
+                {m.brief && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">brief ✓</span>}
+                {m.online_url && (
+                  <a
+                    href={m.online_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-700"
+                  >
+                    Join
+                  </a>
+                )}
                 <form action={setSalesRelevantAction}>
                   <input type="hidden" name="id" value={m.id} />
                   <input type="hidden" name="relevant" value={m.sales_relevant ? "false" : "true"} />
-                  <button className="text-xs text-neutral-400 hover:text-neutral-700" title={m.sales_relevant ? "Mark as non-sales (hide)" : "Mark as sales-relevant"}>
-                    {m.sales_relevant ? "hide" : "include"}
+                  <button
+                    className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      m.sales_relevant
+                        ? "border-neutral-300 text-neutral-700 hover:bg-neutral-100"
+                        : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    }`}
+                    title={m.sales_relevant ? "Mark as non-sales (hides from this list)" : "Mark as sales-relevant"}
+                  >
+                    {m.sales_relevant ? "Hide" : "Include"}
                   </button>
                 </form>
               </li>
