@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/send",
       "schedule": "0,30 8-16 * * 1-5"
+    },
+    {
+      "path": "/api/cron/sync-calendar",
+      "schedule": "0 * * * *"
     }
   ]
 }

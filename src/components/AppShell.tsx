@@ -17,6 +17,7 @@ import {
   Users as UsersIcon,
   Briefcase,
   Mail,
+  Calendar,
   UserCog,
   ChevronsLeft,
   ChevronsRight,
@@ -32,6 +33,7 @@ const NAV = [
   { href: "/companies", label: "Companies", Icon: Building2 },
   { href: "/contacts", label: "Contacts", Icon: UsersIcon },
   { href: "/deals", label: "Deals", Icon: Briefcase },
+  { href: "/meetings", label: "Meetings", Icon: Calendar },
   { href: "/newsletter", label: "Newsletter", Icon: Mail },
   { href: "/admin/users", label: "Users", Icon: UserCog },
 ];
