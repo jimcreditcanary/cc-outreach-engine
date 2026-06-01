@@ -99,7 +99,12 @@ function Section({ title, rows, emptyMsg }: { title: string; rows: Row[]; emptyM
           {rows.map((m) => {
             const when = new Date(m.start_at);
             return (
-              <li key={m.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3 text-sm shadow-sm">
+              <li
+                key={m.id}
+                className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm shadow-sm ${
+                  m.sales_relevant ? "border-neutral-200 bg-white" : "border-dashed border-neutral-300 bg-neutral-50/60 opacity-70"
+                }`}
+              >
                 <div className="min-w-28 text-neutral-700">
                   <div className="font-medium">{when.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</div>
                   <div className="text-xs text-neutral-500">{when.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</div>
@@ -113,6 +118,11 @@ function Section({ title, rows, emptyMsg }: { title: string; rows: Row[]; emptyM
                     {!m.organisation && !m.primary_contact && <span className="text-neutral-400">No CRM match — open to link</span>}
                   </div>
                 </div>
+                {!m.sales_relevant && (
+                  <span className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-xs font-medium text-neutral-600">
+                    Non-sales
+                  </span>
+                )}
                 {m.brief && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">brief ✓</span>}
                 {m.online_url && (
                   <a
