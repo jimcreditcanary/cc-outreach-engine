@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { createDeal, deleteDeal } from "../actions";
-import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
+import { RowIconAction } from "@/components/RowIconAction";
 
 export const dynamic = "force-dynamic";
 
@@ -153,17 +153,15 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
               <td className="text-neutral-600">{d.stage ?? "—"}</td>
               <td className="text-neutral-600">{d.status}</td>
               <td className="text-right text-neutral-600">{typeof d.value === "number" ? `£${d.value.toLocaleString()}` : "—"}</td>
-              <td className="text-right">
+              <td className="w-10 text-right">
                 <form>
                   <input type="hidden" name="id" value={d.id} />
                   <input type="hidden" name="organisation_id" value={d.organisation?.id ?? ""} />
-                  <ConfirmSubmit
+                  <RowIconAction
+                    kind="delete"
                     formAction={deleteDeal}
-                    className="text-xs text-red-600 hover:underline"
-                    message={`Delete deal "${d.title ?? "(untitled)"}"? This cannot be undone.`}
-                  >
-                    ×
-                  </ConfirmSubmit>
+                    confirmMessage={`Delete deal "${d.title ?? "(untitled)"}"? This cannot be undone.`}
+                  />
                 </form>
               </td>
             </tr>

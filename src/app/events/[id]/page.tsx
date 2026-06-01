@@ -9,6 +9,7 @@ import {
 } from "../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
+import { RowIconAction } from "@/components/RowIconAction";
 
 export const dynamic = "force-dynamic";
 // CSV parse + per-row contact resolution can take 30s+ on big lists.
@@ -138,11 +139,11 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
                     </td>
                     <td className="text-neutral-600">{c?.email ?? "—"}</td>
                     <td><span className={`rounded px-1.5 py-0.5 text-xs ${matchBadge[a.matched_via] ?? "bg-neutral-100 text-neutral-700"}`}>{a.matched_via}</span></td>
-                    <td className="text-right">
+                    <td className="w-10 text-right">
                       <form action={removeAttendeeAction}>
                         <input type="hidden" name="conference_id" value={ev.id} />
                         <input type="hidden" name="contact_id" value={a.contact_id} />
-                        <button className="text-xs text-red-600 hover:underline">remove</button>
+                        <RowIconAction kind="remove" title="Remove from event" />
                       </form>
                     </td>
                   </tr>

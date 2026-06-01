@@ -6,6 +6,7 @@ import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
 import { OwnerPicker } from "@/components/OwnerPicker";
+import { RowIconAction } from "@/components/RowIconAction";
 
 export const dynamic = "force-dynamic";
 // Proposal upload + AI markdown conversion + MEDDICC auto-seed can run 20s+.
@@ -132,7 +133,7 @@ export default async function DealDetail({
               <form action={removeDealContact}>
                 <input type="hidden" name="deal_id" value={deal.id} />
                 <input type="hidden" name="contact_id" value={s.contact_id} />
-                <button className="text-xs text-red-600 hover:underline">remove</button>
+                <RowIconAction kind="remove" title="Remove stakeholder" />
               </form>
             </li>
           ))}

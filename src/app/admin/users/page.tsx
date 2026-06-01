@@ -2,6 +2,7 @@ import { adminClient } from "@/lib/auth/admin";
 import { currentUser } from "@/lib/auth/server";
 import { createUserAction, deleteUserAction, resetPasswordAction, reassignOwnershipAction } from "../../auth-actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { RowIconAction } from "@/components/RowIconAction";
 
 export const dynamic = "force-dynamic";
 
@@ -41,13 +42,12 @@ export default async function UsersPage() {
               {u.id !== me?.id && (
                 <form>
                   <input type="hidden" name="id" value={u.id} />
-                  <ConfirmSubmit
+                  <RowIconAction
+                    kind="delete"
                     formAction={deleteUserAction}
-                    className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                    message={`Remove ${u.email} from the operator team?`}
-                  >
-                    remove
-                  </ConfirmSubmit>
+                    confirmMessage={`Remove ${u.email} from the operator team?`}
+                    title="Remove user"
+                  />
                 </form>
               )}
             </div>

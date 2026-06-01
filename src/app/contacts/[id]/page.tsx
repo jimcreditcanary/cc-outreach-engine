@@ -7,6 +7,7 @@ import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
 import { OwnerPicker } from "@/components/OwnerPicker";
+import { RowIconAction } from "@/components/RowIconAction";
 
 export const dynamic = "force-dynamic";
 // ✨ Generate-draft-for-this-contact calls Claude.
@@ -149,9 +150,9 @@ export default async function ContactDetail({
                 <input type="hidden" name="id" value={n.id} />
                 <input type="hidden" name="back" value={`/contacts/${c.id}`} />
                 <textarea name="content" defaultValue={String(n.content)} rows={2} className={`${field} flex-1`} />
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col items-end gap-1">
                   <button className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300">Save</button>
-                  <ConfirmSubmit formAction={deleteNote} className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50" message="Delete this note?">Del</ConfirmSubmit>
+                  <RowIconAction kind="delete" formAction={deleteNote} confirmMessage="Delete this note?" />
                 </div>
               </form>
             </li>

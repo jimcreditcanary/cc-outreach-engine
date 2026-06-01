@@ -6,6 +6,7 @@ import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
 import { OwnerPicker } from "@/components/OwnerPicker";
+import { RowIconAction } from "@/components/RowIconAction";
 import { decodeHtmlEntities } from "@/lib/text/decode";
 
 // Enrichment takes 15-30s (homepage scrape + AI summary + feed discovery).
@@ -127,12 +128,10 @@ export default async function CompanyDetail({
                 <form action={deleteDeal}>
                   <input type="hidden" name="id" value={d.id} />
                   <input type="hidden" name="organisation_id" value={org.id} />
-                  <ConfirmSubmit
-                    className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50"
-                    message={`Delete deal "${d.title ?? "(untitled)"}"? This cannot be undone.`}
-                  >
-                    ×
-                  </ConfirmSubmit>
+                  <RowIconAction
+                    kind="delete"
+                    confirmMessage={`Delete deal "${d.title ?? "(untitled)"}"? This cannot be undone.`}
+                  />
                 </form>
               </li>
             ))}
@@ -159,9 +158,9 @@ export default async function CompanyDetail({
                   <input type="hidden" name="id" value={n.id} />
                   <input type="hidden" name="back" value={`/companies/${org.id}`} />
                   <textarea name="content" defaultValue={String(n.content)} rows={2} className={`${field} flex-1`} />
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col items-end gap-1">
                     <button className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300">Save</button>
-                    <ConfirmSubmit formAction={deleteNote} className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50" message="Delete this note?">Del</ConfirmSubmit>
+                    <RowIconAction kind="delete" formAction={deleteNote} confirmMessage="Delete this note?" />
                   </div>
                 </form>
               </li>

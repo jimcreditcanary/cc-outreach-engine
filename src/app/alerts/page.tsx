@@ -3,6 +3,7 @@ import { serviceClient } from "@/lib/db/client";
 import { dismissAlertAction, undismissAlertAction } from "./actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
+import { RowIconAction } from "@/components/RowIconAction";
 import { decodeHtmlEntities } from "@/lib/text/decode";
 
 export const dynamic = "force-dynamic";
@@ -96,9 +97,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
                 {a.source && <span className="text-xs text-neutral-400">via {a.source}</span>}
                 <form action={a.dismissed_at ? undismissAlertAction : dismissAlertAction} className="ml-auto">
                   <input type="hidden" name="id" value={a.id} />
-                  <button className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-100">
-                    {a.dismissed_at ? "Restore" : "Dismiss"}
-                  </button>
+                  <RowIconAction kind={a.dismissed_at ? "restore" : "dismiss"} />
                 </form>
               </div>
             </li>

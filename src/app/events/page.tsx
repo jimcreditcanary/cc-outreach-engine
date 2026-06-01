@@ -1,10 +1,9 @@
 import Link from "next/link";
-import { Trash2 } from "lucide-react";
 import { serviceClient } from "@/lib/db/client";
 import { createConferenceAction, deleteConferenceAction } from "./actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
-import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { RowIconAction } from "@/components/RowIconAction";
 
 export const dynamic = "force-dynamic";
 
@@ -79,13 +78,11 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
               <td className="w-10 text-right">
                 <form>
                   <input type="hidden" name="id" value={r.id} />
-                  <ConfirmSubmit
+                  <RowIconAction
+                    kind="delete"
                     formAction={deleteConferenceAction}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-200 text-neutral-400 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600"
-                    message={`Delete event "${r.name}"? Attendance records go with it (contacts stay).`}
-                  >
-                    <Trash2 size={14} strokeWidth={1.75} aria-label="Delete event" />
-                  </ConfirmSubmit>
+                    confirmMessage={`Delete event "${r.name}"? Attendance records go with it (contacts stay).`}
+                  />
                 </form>
               </td>
             </tr>

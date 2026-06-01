@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { createOrg, deleteOrg } from "../actions";
-import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
+import { RowIconAction } from "@/components/RowIconAction";
 
 export const dynamic = "force-dynamic";
 
@@ -88,16 +88,14 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
               <td className="text-neutral-600">{o.sector ?? "—"}</td>
               <td className="text-neutral-600">{o.tier ?? "—"}</td>
               <td className="text-neutral-600">{o.label ?? "—"}</td>
-              <td className="text-right">
+              <td className="w-10 text-right">
                 <form>
                   <input type="hidden" name="id" value={o.id} />
-                  <ConfirmSubmit
+                  <RowIconAction
+                    kind="delete"
                     formAction={deleteOrg}
-                    className="text-xs text-red-600 hover:underline"
-                    message={`Delete ${o.name}? Its deals, contacts, notes and history go with it.`}
-                  >
-                    ×
-                  </ConfirmSubmit>
+                    confirmMessage={`Delete ${o.name}? Its deals, contacts, notes and history go with it.`}
+                  />
                 </form>
               </td>
             </tr>
