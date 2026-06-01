@@ -46,7 +46,7 @@ export default async function NewsletterPage() {
         </thead>
         <tbody>
           {list.map((i) => (
-            <tr key={i.id} className="border-t border-neutral-100 hover:bg-neutral-50">
+            <tr key={i.id} className="border-t border-neutral-100 hover:bg-neutral-100">
               <td className="py-1.5">
                 <Link href={`/newsletter/${i.id}`} className="font-medium text-blue-700 hover:underline">{i.subject}</Link>
               </td>

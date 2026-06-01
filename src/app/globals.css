@@ -17,3 +17,13 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+/* Banded rows on every <table> in the app. Lives in @layer base so any
+ * per-row hover utility (hover:bg-neutral-100) still wins by specificity —
+ * the standing principle is "future tables are banded by default with no
+ * per-row className needed". */
+@layer base {
+  tbody tr:nth-child(even) {
+    background-color: rgb(245 245 245 / 0.6); /* ≈ neutral-100/60 */
+  }
+}

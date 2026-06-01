@@ -144,7 +144,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
         </thead>
         <tbody>
           {deals.map((d) => (
-            <tr key={d.id} className="border-t border-neutral-100 hover:bg-neutral-50">
+            <tr key={d.id} className="border-t border-neutral-100 hover:bg-neutral-100">
               <td className="py-1.5">
                 <Link href={`/deals/${d.id}`} className="font-medium text-blue-700 hover:underline">{d.title ?? "(untitled)"}</Link>
                 {d.proposal_exists && <span className="ml-1 rounded bg-emerald-100 px-1 text-xs text-emerald-700">proposal</span>}

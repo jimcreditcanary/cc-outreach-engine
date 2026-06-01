@@ -179,7 +179,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
                 const c = a.contact;
                 const ownerEmail = c?.owner_id ? (operatorEmailById.get(c.owner_id) ?? c.owner_id) : null;
                 return (
-                  <tr key={a.contact_id} className="border-t border-neutral-100 hover:bg-neutral-50">
+                  <tr key={a.contact_id} className="border-t border-neutral-100 hover:bg-neutral-100">
                     <td className="py-1.5">
                       {c ? (
                         <Link href={`/contacts/${c.id}`} className="font-medium text-blue-700 hover:underline">

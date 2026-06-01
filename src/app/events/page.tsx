@@ -68,7 +68,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id} className="border-t border-neutral-100 hover:bg-neutral-50">
+            <tr key={r.id} className="border-t border-neutral-100 hover:bg-neutral-100">
               <td className="py-1.5"><Link href={`/events/${r.id}`} className="font-medium text-blue-700 hover:underline">{r.name}</Link></td>
               <td className="text-neutral-600">
                 {r.start_date ? new Date(r.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}

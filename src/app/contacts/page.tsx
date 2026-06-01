@@ -70,7 +70,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
         </thead>
         <tbody>
           {contacts.map((c) => (
-            <tr key={c.id} className="border-t border-neutral-100 hover:bg-neutral-50">
+            <tr key={c.id} className="border-t border-neutral-100 hover:bg-neutral-100">
               <td className="py-1.5">
                 <Link href={`/contacts/${c.id}`} className="font-medium text-blue-700 hover:underline">{c.full_name}</Link>
               </td>

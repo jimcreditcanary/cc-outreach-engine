@@ -79,7 +79,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
         </thead>
         <tbody>
           {orgs.map((o) => (
-            <tr key={o.id} className="border-t border-neutral-100 hover:bg-neutral-50">
+            <tr key={o.id} className="border-t border-neutral-100 hover:bg-neutral-100">
               <td className="py-1.5">
                 <Link href={`/companies/${o.id}`} className="font-medium text-blue-700 hover:underline">
                   {o.name}
