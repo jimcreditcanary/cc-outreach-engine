@@ -5,6 +5,7 @@ import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
+import { Combobox } from "@/components/Combobox";
 
 export const dynamic = "force-dynamic";
 
@@ -57,10 +58,15 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       <form action={createContact} className="mb-5 flex flex-wrap gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
         <input name="full_name" placeholder="New contact name…" className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" required />
         <input name="email" placeholder="email…" className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" />
-        <select name="organisation_id" className="rounded border border-neutral-300 px-2 py-1.5 text-sm" defaultValue="">
-          <option value="">company…</option>
-          {(orgs ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
+        <div className="w-56">
+          <Combobox
+            name="organisation_id"
+            options={(orgs ?? []).map((o) => ({ id: o.id, label: o.name ?? "(unnamed)" }))}
+            placeholder="company…"
+            createField="new_organisation_name"
+            createLabel="Create company"
+          />
+        </div>
         <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Adding…">+ Add contact</PendingButton>
       </form>
 

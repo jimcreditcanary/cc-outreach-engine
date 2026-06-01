@@ -8,6 +8,7 @@ import { PendingButton } from "@/components/PendingButton";
 import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
 import { OwnerPicker } from "@/components/OwnerPicker";
 import { RowIconAction } from "@/components/RowIconAction";
+import { Combobox } from "@/components/Combobox";
 
 export const dynamic = "force-dynamic";
 // ✨ Generate-draft-for-this-contact calls Claude.
@@ -113,14 +114,17 @@ export default async function ContactDetail({
           </select>
         </div>
         <div><label className={lbl}>Mobile</label><input name="mobile" defaultValue={c.mobile ?? ""} className={field} placeholder="+44…" /></div>
-        <div>
+        <div className="col-span-2">
           <label className={lbl}>Company</label>
-          <select name="organisation_id" defaultValue={org?.id ?? ""} className={field}>
-            <option value="">— none —</option>
-            {(orgs ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
+          <Combobox
+            name="organisation_id"
+            defaultValue={org?.id ?? ""}
+            options={(orgs ?? []).map((o) => ({ id: o.id, label: o.name ?? "(unnamed)" }))}
+            placeholder="Type to search companies…"
+            createField="new_organisation_name"
+            createLabel="Create company"
+          />
         </div>
-        <div className="col-span-2"><label className={lbl}>…or new company (creates it)</label><input name="new_organisation_name" className={field} placeholder="Type a new company name to create + assign" /></div>
         <div className="col-span-2">
           <label className={lbl}>LinkedIn URL</label>
           <input name="linkedin_url" defaultValue={c.linkedin_url ?? ""} className={field} placeholder="https://linkedin.com/in/…" />

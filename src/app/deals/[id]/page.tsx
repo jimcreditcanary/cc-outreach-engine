@@ -8,6 +8,7 @@ import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomField
 import { OwnerPicker } from "@/components/OwnerPicker";
 import { RowIconAction } from "@/components/RowIconAction";
 import { FileInput } from "@/components/FileInput";
+import { Combobox } from "@/components/Combobox";
 
 export const dynamic = "force-dynamic";
 // Proposal upload + AI markdown conversion + MEDDICC auto-seed can run 20s+.
@@ -80,14 +81,13 @@ export default async function DealDetail({
         <div className="col-span-2"><label className={lbl}>Title</label><input name="title" defaultValue={deal.title ?? ""} className={field} /></div>
         <div>
           <label className={lbl}>Company</label>
-          <select name="organisation_id" defaultValue={org?.id ?? ""} className={field}>
-            <option value="">— none —</option>
-            {(orgs ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
-          <input
-            name="new_organisation_name"
-            placeholder="…or type a new company to create + assign"
-            className={`${field} mt-1`}
+          <Combobox
+            name="organisation_id"
+            defaultValue={org?.id ?? ""}
+            options={(orgs ?? []).map((o) => ({ id: o.id, label: o.name ?? "(unnamed)" }))}
+            placeholder="Type to search companies…"
+            createField="new_organisation_name"
+            createLabel="Create company"
           />
         </div>
         <div>
@@ -107,10 +107,16 @@ export default async function DealDetail({
         <div><label className={lbl}>ARR — annual recurring revenue (£)</label><input name="arr" type="number" defaultValue={deal.arr ?? ""} className={field} /></div>
         <div className="col-span-2">
           <label className={lbl}>Primary contact{(orgContacts ?? []).length === 0 ? " (company has none on file — pick from all)" : ""}</label>
-          <select name="primary_contact_id" defaultValue={deal.primary_contact_id ?? ""} className={field}>
-            <option value="">— none —</option>
-            {pickContacts.map((c) => <option key={c.id} value={c.id}>{c.full_name}{c.job_title ? ` — ${c.job_title}` : ""}</option>)}
-          </select>
+          <Combobox
+            name="primary_contact_id"
+            defaultValue={deal.primary_contact_id ?? ""}
+            options={pickContacts.map((c) => ({
+              id: c.id,
+              label: c.full_name ?? "(unnamed)",
+              sublabel: c.job_title ?? undefined,
+            }))}
+            placeholder="Type to search contacts…"
+          />
         </div>
         <OwnerPicker value={deal.owner_id ?? null} />
         <CustomFieldInputs entityType="deal" values={deal.custom_fields as Record<string, unknown> | null} />
@@ -147,10 +153,17 @@ export default async function DealDetail({
         </ul>
         <form action={addDealContact} className="flex gap-2">
           <input type="hidden" name="deal_id" value={deal.id} />
-          <select name="contact_id" className={`${field} flex-1`} defaultValue="" required>
-            <option value="" disabled>add a contact…</option>
-            {addable.map((c) => <option key={c.id} value={c.id}>{c.full_name}{c.job_title ? ` — ${c.job_title}` : ""}</option>)}
-          </select>
+          <Combobox
+            name="contact_id"
+            options={addable.map((c) => ({
+              id: c.id,
+              label: c.full_name ?? "(unnamed)",
+              sublabel: c.job_title ?? undefined,
+            }))}
+            placeholder="Type to find a contact to add…"
+            required
+            className="flex-1"
+          />
           <select name="role" className="w-44 rounded border border-neutral-300 px-2 py-1.5 text-sm" defaultValue="">
             <option value="">role…</option>
             {DEAL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}

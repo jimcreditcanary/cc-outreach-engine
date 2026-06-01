@@ -3,6 +3,7 @@ import { serviceClient } from "@/lib/db/client";
 import { saveLinkedInEdits, markLinkedInDone, markNotOnLinkedIn } from "../actions";
 import { currentUserId } from "@/lib/auth/owner";
 import { PendingButton } from "@/components/PendingButton";
+import { Combobox } from "@/components/Combobox";
 
 export const dynamic = "force-dynamic";
 
@@ -130,11 +131,16 @@ export default async function LinkedInPage() {
                   <input name="linkedin_url" defaultValue={r.linkedin_url ?? ""} placeholder="LinkedIn URL" className={`${fld} flex-1 min-w-[12rem]`} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <select name="organisation_id" defaultValue={r.organisation?.id ?? ""} className={`${fld} w-56`}>
-                    <option value="">— no company —</option>
-                    {(orgs ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                  </select>
-                  <input name="new_organisation_name" placeholder="…or new company name" className={`${fld} w-56`} />
+                  <div className="w-72">
+                    <Combobox
+                      name="organisation_id"
+                      defaultValue={r.organisation?.id ?? ""}
+                      options={(orgs ?? []).map((o) => ({ id: o.id, label: o.name ?? "(unnamed)" }))}
+                      placeholder="Type to search companies…"
+                      createField="new_organisation_name"
+                      createLabel="Create company"
+                    />
+                  </div>
                   <select name="org_sector" defaultValue={r.organisation?.sector ?? ""} className={`${fld} w-44`}>
                     <option value="">sector…</option>
                     {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}

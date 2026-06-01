@@ -5,6 +5,7 @@ import { currentUser } from "@/lib/auth/server";
 import { generateBriefAction, updateMeetingAction, deleteMeetingAction, setSalesRelevantAction, saveTranscriptAction, generatePostSummaryAction } from "../actions";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { Combobox } from "@/components/Combobox";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -144,24 +145,30 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
               <input type="hidden" name="notes" value={m.notes ?? ""} />
               <div>
                 <label className={lbl}>Company</label>
-                <select name="organisation_id" defaultValue={m.organisation_id ?? ""} className={field}>
-                  <option value="">—</option>
-                  {(orgs ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                </select>
+                <Combobox
+                  name="organisation_id"
+                  defaultValue={m.organisation_id ?? ""}
+                  options={(orgs ?? []).map((o) => ({ id: o.id, label: o.name ?? "(unnamed)" }))}
+                  placeholder="Type to search companies…"
+                />
               </div>
               <div>
                 <label className={lbl}>Primary contact</label>
-                <select name="primary_contact_id" defaultValue={m.primary_contact_id ?? ""} className={field}>
-                  <option value="">—</option>
-                  {(orgContacts ?? []).map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-                </select>
+                <Combobox
+                  name="primary_contact_id"
+                  defaultValue={m.primary_contact_id ?? ""}
+                  options={(orgContacts ?? []).map((c) => ({ id: c.id, label: c.full_name ?? "(unnamed)" }))}
+                  placeholder="Type to search contacts…"
+                />
               </div>
               <div>
                 <label className={lbl}>Deal</label>
-                <select name="deal_id" defaultValue={m.deal_id ?? ""} className={field}>
-                  <option value="">—</option>
-                  {(orgDeals ?? []).map((d) => <option key={d.id} value={d.id}>{d.title} ({d.status})</option>)}
-                </select>
+                <Combobox
+                  name="deal_id"
+                  defaultValue={m.deal_id ?? ""}
+                  options={(orgDeals ?? []).map((d) => ({ id: d.id, label: d.title ?? "(untitled)", sublabel: d.status }))}
+                  placeholder="Type to search deals…"
+                />
               </div>
               <PendingButton className="rounded bg-neutral-700 px-3 py-1 text-sm font-medium text-white hover:bg-neutral-800" pendingLabel="Saving…">
                 Save linkage
