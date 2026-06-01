@@ -84,6 +84,11 @@ export default async function DealDetail({
             <option value="">— none —</option>
             {(orgs ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
+          <input
+            name="new_organisation_name"
+            placeholder="…or type a new company to create + assign"
+            className={`${field} mt-1`}
+          />
         </div>
         <div>
           <label className={lbl}>Status</label>

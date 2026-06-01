@@ -737,7 +737,11 @@ export async function createDeal(formData: FormData) {
 export async function updateDeal(formData: FormData) {
   const id = String(formData.get("id"));
   const db = serviceClient();
-  const organisation_id = str(formData.get("organisation_id"));
+  // resolveCompany handles "new_organisation_name" → creates + returns id,
+  // otherwise falls back to the picked organisation_id. Same helper used
+  // by createContact / updateContact so the "or type a new one" pattern
+  // behaves identically across the CRM.
+  const organisation_id = await resolveCompany(db, formData);
   const prevOrg = str(formData.get("prev_organisation_id"));
   const custom_fields = await collectCustomFields(db, "deal", formData);
   // Changing company? If the new org differs, the existing primary contact
