@@ -1,9 +1,7 @@
-// Compact "show only my stuff / everyone's / a specific operator's" filter
-// that lives in the header of every list page + the dashboard. Renders as
-// a GET form so the result is a sharable URL — the page server-reads
-// searchParams.owner and applies it server-side.
+// Owner filter dropdown for list pages + dashboard. Renders as a GET form
+// so the choice survives in the URL (sharable, back-button friendly). The
+// page server-reads searchParams.owner and applies it server-side.
 
-import Link from "next/link";
 import { listOperators, currentUserId } from "@/lib/auth/owner";
 
 export async function OwnerFilter({
@@ -13,44 +11,40 @@ export async function OwnerFilter({
 }: {
   /** Raw ?owner= value from searchParams (may be undefined → defaults to "me"). */
   current: string | undefined;
-  /** Path the links point at, e.g. "/companies". */
+  /** Path the form posts at, e.g. "/companies". */
   pathname: string;
-  /** Other search params to preserve in the link URLs. */
+  /** Other search params to preserve when the dropdown changes. */
   extraParams?: Record<string, string | undefined>;
 }) {
   const [operators, me] = await Promise.all([listOperators(), currentUserId()]);
-  const effective = current ?? "me"; // default
-  const buildHref = (owner: string) => {
-    const sp = new URLSearchParams();
-    for (const [k, v] of Object.entries(extraParams)) if (v) sp.set(k, v);
-    sp.set("owner", owner);
-    return `${pathname}?${sp.toString()}`;
-  };
-  const pillBase = "rounded px-2 py-0.5 text-xs border";
-  const pillOn = "border-emerald-300 bg-emerald-50 text-emerald-800 font-medium";
-  const pillOff = "border-neutral-200 text-neutral-600 hover:bg-neutral-50";
-  const isUuid = effective.length >= 32;
+  const effective = current ?? "me";
+
   return (
-    <div className="flex flex-wrap items-center gap-1 text-xs text-neutral-500">
-      <span className="mr-1">Owner:</span>
-      <Link href={buildHref("me")} className={`${pillBase} ${effective === "me" ? pillOn : pillOff}`}>
-        Me
-      </Link>
-      <Link href={buildHref("all")} className={`${pillBase} ${effective === "all" ? pillOn : pillOff}`}>
-        Everyone
-      </Link>
-      {operators
-        .filter((o) => o.id !== me)
-        .map((o) => (
-          <Link
-            key={o.id}
-            href={buildHref(o.id)}
-            className={`${pillBase} ${isUuid && effective === o.id ? pillOn : pillOff}`}
-            title={o.email ?? o.id}
-          >
-            {(o.email ?? o.id).split("@")[0]}
-          </Link>
-        ))}
-    </div>
+    <form action={pathname} method="get" className="flex items-center gap-2 text-xs text-neutral-500">
+      {/* Preserve other filters in the URL when the operator changes. */}
+      {Object.entries(extraParams).map(([k, v]) =>
+        v ? <input key={k} type="hidden" name={k} value={v} /> : null,
+      )}
+      <label htmlFor="owner-filter" className="uppercase tracking-wide">Owner</label>
+      <select
+        id="owner-filter"
+        name="owner"
+        defaultValue={effective}
+        className="rounded border border-neutral-300 bg-white px-2 py-1 text-sm"
+      >
+        <option value="me">Me{me ? "" : ""}</option>
+        <option value="all">All users</option>
+        {operators
+          .filter((o) => o.id !== me)
+          .map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.email ?? o.id}
+            </option>
+          ))}
+      </select>
+      <button className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100">
+        Apply
+      </button>
+    </form>
   );
 }

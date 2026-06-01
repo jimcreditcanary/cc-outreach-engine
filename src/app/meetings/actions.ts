@@ -67,3 +67,16 @@ export async function deleteMeetingAction(formData: FormData) {
   revalidatePath("/meetings");
   redirect("/meetings");
 }
+
+/** Disconnect this operator's Microsoft / Outlook account. Just drops the
+ *  cached tokens — the next visit shows "Connect Outlook" again. Doesn't
+ *  delete existing meetings (you'd lose the brief + notes); just stops the
+ *  sync. To revoke from Microsoft's side too, sign out at
+ *  https://myaccount.microsoft.com → Connected apps. */
+export async function disconnectMicrosoftAction() {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  await serviceClient().from("ms_oauth_tokens").delete().eq("user_id", me.id);
+  await flash("success", "Outlook disconnected — Connect again to re-sync");
+  revalidatePath("/meetings");
+}

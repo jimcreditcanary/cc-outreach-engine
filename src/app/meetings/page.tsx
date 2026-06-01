@@ -2,8 +2,9 @@ import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { currentUser } from "@/lib/auth/server";
 import { isConnected } from "@/lib/microsoft/oauth";
-import { syncCalendarAction, setSalesRelevantAction } from "./actions";
+import { syncCalendarAction, setSalesRelevantAction, disconnectMicrosoftAction } from "./actions";
 import { PendingButton } from "@/components/PendingButton";
+import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -56,11 +57,21 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
               Connect Outlook
             </a>
           ) : (
-            <form action={syncCalendarAction}>
-              <PendingButton className="rounded bg-neutral-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800" pendingLabel="Syncing…">
-                ↻ Sync now
-              </PendingButton>
-            </form>
+            <>
+              <form action={syncCalendarAction}>
+                <PendingButton className="rounded bg-neutral-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800" pendingLabel="Syncing…">
+                  ↻ Sync now
+                </PendingButton>
+              </form>
+              <form action={disconnectMicrosoftAction}>
+                <ConfirmSubmit
+                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100"
+                  message="Disconnect Outlook? Existing meetings stay; sync stops until you reconnect."
+                >
+                  Disconnect
+                </ConfirmSubmit>
+              </form>
+            </>
           )}
         </div>
       </header>
