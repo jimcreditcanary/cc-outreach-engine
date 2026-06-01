@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
+import { currentUser } from "@/lib/auth/server";
 import { generateBriefAction, updateMeetingAction, deleteMeetingAction, setSalesRelevantAction, saveTranscriptAction, generatePostSummaryAction } from "../actions";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
@@ -17,6 +18,12 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
   const { data: m } = await db.from("meetings").select("*, organisation:organisations(id, name), primary_contact:contacts(id, full_name), deal:deals(id, title)").eq("id", id).maybeSingle();
   if (!m) notFound();
 
+  // Soft per-user fence: a user can still load any meeting by direct URL
+  // (handy when sharing links across the team), but if it's not theirs we
+  // flag it so they know they're looking at someone else's calendar.
+  const meUser = await currentUser();
+  const notMine = meUser && m.owner_id && m.owner_id !== meUser.id;
+
   const [{ data: orgs }, { data: orgContacts }, { data: orgDeals }] = await Promise.all([
     db.from("organisations").select("id, name").order("name").limit(1000),
     m.organisation_id ? db.from("contacts").select("id, full_name").eq("organisation_id", m.organisation_id).order("full_name") : Promise.resolve({ data: [] }),
@@ -30,6 +37,11 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
   return (
     <main className="px-8 py-6">
       <Link href="/meetings" className="text-sm text-blue-700 hover:underline">← Meetings</Link>
+      {notMine && (
+        <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          ⚠ This meeting is on someone else&apos;s calendar. You can read it but the brief, notes and transcript belong to its owner.
+        </div>
+      )}
       <header className="mb-4 mt-2 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">{m.subject ?? "(no subject)"}</h1>
         <p className="text-sm text-neutral-500">

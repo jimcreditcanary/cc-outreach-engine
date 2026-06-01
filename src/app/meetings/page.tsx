@@ -5,6 +5,8 @@ import { isConnected } from "@/lib/microsoft/oauth";
 import { syncCalendarAction, setSalesRelevantAction, disconnectMicrosoftAction } from "./actions";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { OwnerFilter } from "@/components/OwnerFilter";
+import { resolveOwnerFilter } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,12 +24,13 @@ interface Row {
   primary_contact: { id: string; full_name: string | null } | null;
 }
 
-export default async function MeetingsPage({ searchParams }: { searchParams: Promise<{ show?: string; ms_connected?: string; ms_error?: string }> }) {
+export default async function MeetingsPage({ searchParams }: { searchParams: Promise<{ show?: string; ms_connected?: string; ms_error?: string; owner?: string }> }) {
   const sp = await searchParams;
   const showAll = sp.show === "all";
   const db = serviceClient();
   const me = await currentUser();
   const connected = me ? await isConnected(db, me.id) : false;
+  const ownerId = await resolveOwnerFilter(sp.owner);
 
   let query = db
     .from("meetings")
@@ -35,6 +38,7 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
     .order("start_at", { ascending: true })
     .gte("start_at", new Date(Date.now() - 7 * 86_400_000).toISOString());
   if (!showAll) query = query.eq("sales_relevant", true);
+  if (ownerId) query = query.eq("owner_id", ownerId);
   const { data } = await query;
   const rows = (data ?? []) as unknown as Row[];
 
@@ -44,13 +48,14 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
 
   return (
     <main className="px-8 py-6">
-      <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
+      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <div>
           <h1 className="text-xl font-semibold">Meetings</h1>
           <p className="text-sm text-neutral-500">
             Synced from Outlook. {connected ? `${upcoming.length} upcoming · ${past.length} recent` : "Microsoft account not connected yet."}
           </p>
         </div>
+        <OwnerFilter current={sp.owner} pathname="/meetings" extraParams={{ show: sp.show }} />
         <div className="flex items-center gap-2">
           {!connected ? (
             <a href="/api/auth/microsoft/start" className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">

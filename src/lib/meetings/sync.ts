@@ -91,6 +91,11 @@ export async function syncCalendar(db: DB, userId: string): Promise<SyncResult> 
         organisation_id,
         primary_contact_id,
         deal_id,
+        // Tag the meeting with whose calendar it came from. Microsoft event
+        // IDs are mailbox-unique, so if two operators are both invited to
+        // the same meeting they each get their own row (one per calendar
+        // copy) — which is what we want: each sees their own.
+        owner_id: userId,
         status: isPast ? "done" : "upcoming",
         updated_at: new Date().toISOString(),
       },
