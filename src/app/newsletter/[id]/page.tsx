@@ -31,6 +31,68 @@ export default async function NewsletterIssue({
   if (!issue) notFound();
   const isSent = issue.status === "sent";
 
+  // Analytics — only worth fetching after the issue has gone out. Aggregates
+  // every open/click/bounce/unsubscribe event tagged with this newsletter_id.
+  interface RecipientStats {
+    contact_id: string;
+    full_name: string | null;
+    email: string | null;
+    opens: number;
+    clicks: number;
+    bounced: boolean;
+    unsubscribed: boolean;
+  }
+  let recipients: RecipientStats[] = [];
+  let totals = { sent: 0, opens: 0, clicks: 0, uniqueOpens: 0, uniqueClicks: 0, bounces: 0, unsubs: 0 };
+  if (isSent) {
+    // Sent events for this issue → the recipient list + their contact ids.
+    const { data: sentEvents } = await db
+      .from("events")
+      .select("contact_id, contact:contacts(full_name, email)")
+      .eq("type", "email_sent")
+      .eq("source", "newsletter")
+      .eq("payload->>newsletter_id", id);
+    const sentArr = (sentEvents ?? []) as unknown as { contact_id: string; contact: { full_name: string | null; email: string | null } | null }[];
+    const byContact = new Map<string, RecipientStats>();
+    for (const r of sentArr) {
+      if (!byContact.has(r.contact_id)) {
+        byContact.set(r.contact_id, {
+          contact_id: r.contact_id,
+          full_name: r.contact?.full_name ?? null,
+          email: r.contact?.email ?? null,
+          opens: 0, clicks: 0, bounced: false, unsubscribed: false,
+        });
+      }
+    }
+
+    const { data: actionEvents } = await db
+      .from("events")
+      .select("contact_id, type")
+      .in("type", ["open", "click", "bounce", "unsubscribe"])
+      .eq("payload->>newsletter_id", id)
+      .in("contact_id", Array.from(byContact.keys()).length ? Array.from(byContact.keys()) : ["__none__"]);
+    for (const e of actionEvents ?? []) {
+      const r = byContact.get(e.contact_id as string);
+      if (!r) continue;
+      if (e.type === "open") r.opens++;
+      else if (e.type === "click") r.clicks++;
+      else if (e.type === "bounce") r.bounced = true;
+      else if (e.type === "unsubscribe") r.unsubscribed = true;
+    }
+
+    recipients = Array.from(byContact.values()).sort((a, b) => (b.clicks + b.opens) - (a.clicks + a.opens));
+    totals = {
+      sent: recipients.length,
+      opens: recipients.reduce((s, r) => s + r.opens, 0),
+      clicks: recipients.reduce((s, r) => s + r.clicks, 0),
+      uniqueOpens: recipients.filter((r) => r.opens > 0).length,
+      uniqueClicks: recipients.filter((r) => r.clicks > 0).length,
+      bounces: recipients.filter((r) => r.bounced).length,
+      unsubs: recipients.filter((r) => r.unsubscribed).length,
+    };
+  }
+  const pct = (n: number) => (totals.sent ? `${Math.round((n / totals.sent) * 100)}%` : "—");
+
   // Live preview HTML (uses current saved body_text; for live preview as
   // they type, they'd Save first — keeps things simple + accurate).
   const previewHtml = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">
@@ -97,6 +159,48 @@ ${unsubFooterHtml("recipient@example.com")}
         </div>
       )}
 
+      {/* Analytics — only meaningful once the issue has shipped */}
+      {isSent && (
+        <section className="mt-6">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Analytics</h2>
+          <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+            <Stat label="Recipients" value={`${totals.sent}`} />
+            <Stat label="Unique opens" value={`${totals.uniqueOpens}`} sub={`${pct(totals.uniqueOpens)} · ${totals.opens} total`} />
+            <Stat label="Unique clicks" value={`${totals.uniqueClicks}`} sub={`${pct(totals.uniqueClicks)} · ${totals.clicks} total`} />
+            <Stat label="Bounces · unsubs" value={`${totals.bounces} · ${totals.unsubs}`} sub={`${pct(totals.bounces)} bounce`} />
+          </div>
+          <p className="mb-3 text-xs text-neutral-400">
+            Opens are noisy (Apple/Gmail prefetch inflates them). Clicks are the real engagement signal.
+          </p>
+          {recipients.length > 0 && (
+            <details className="rounded border border-neutral-200 bg-white p-3">
+              <summary className="cursor-pointer text-sm text-neutral-600">Per-recipient breakdown ({recipients.length})</summary>
+              <table className="mt-3 w-full text-sm">
+                <thead className="text-left text-xs uppercase text-neutral-400">
+                  <tr><th className="py-1">Contact</th><th>Email</th><th className="text-right">Opens</th><th className="text-right">Clicks</th><th className="text-right">Status</th></tr>
+                </thead>
+                <tbody>
+                  {recipients.map((r) => (
+                    <tr key={r.contact_id} className="border-t border-neutral-100">
+                      <td className="py-1.5">
+                        <Link href={`/contacts/${r.contact_id}`} className="text-blue-700 hover:underline">{r.full_name ?? "(unnamed)"}</Link>
+                      </td>
+                      <td className="text-neutral-600">{r.email ?? "—"}</td>
+                      <td className="text-right text-neutral-700">{r.opens || ""}</td>
+                      <td className="text-right text-neutral-700">{r.clicks || ""}</td>
+                      <td className="text-right">
+                        {r.bounced && <span className="rounded bg-red-100 px-1.5 text-xs text-red-700">bounced</span>}
+                        {r.unsubscribed && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-xs text-neutral-700">unsub</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          )}
+        </section>
+      )}
+
       {/* Preview */}
       {(preview || isSent) && (
         <section className="mt-6">
@@ -110,5 +214,15 @@ ${unsubFooterHtml("recipient@example.com")}
         </section>
       )}
     </main>
+  );
+}
+
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white p-3">
+      <div className="text-xs uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className="mt-0.5 text-xl font-semibold text-neutral-900">{value}</div>
+      {sub && <div className="mt-0.5 text-xs text-neutral-400">{sub}</div>}
+    </div>
   );
 }

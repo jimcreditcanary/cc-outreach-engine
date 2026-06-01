@@ -159,5 +159,17 @@ export async function enrichCompany(db: DB, orgId: string): Promise<EnrichmentRe
     })
     .eq("id", orgId);
 
+  // Surface fresh posts as alerts so the operator sees "X just published Y"
+  // on /alerts without having to crawl every company page. Best-effort.
+  try {
+    const { data: orgRow } = await db.from("organisations").select("id, name, owner_id").eq("id", orgId).maybeSingle();
+    if (orgRow && posts.length) {
+      const { detectPostAlerts } = await import("../alerts/detect");
+      await detectPostAlerts(db, orgRow as { id: string; name: string | null; owner_id: string | null }, posts);
+    }
+  } catch (e) {
+    console.error("post-alert detection failed", e);
+  }
+
   return { summary, posts, source: { html: !!html, feed: feedUrl } };
 }

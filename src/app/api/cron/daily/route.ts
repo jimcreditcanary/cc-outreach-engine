@@ -7,6 +7,7 @@
 
 import { serviceClient } from "@/lib/db/client";
 import { refreshSignals } from "@/lib/signals/refresh";
+import { detectPressAlerts } from "@/lib/alerts/detect";
 
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -18,6 +19,9 @@ function authorized(req: Request): boolean {
 
 export async function GET(req: Request) {
   if (!authorized(req)) return new Response("unauthorized", { status: 401 });
-  const { inserted, log } = await refreshSignals(serviceClient());
-  return Response.json({ ok: true, inserted, log });
+  const db = serviceClient();
+  const { inserted, log } = await refreshSignals(db);
+  // Rebuild contact-level alerts from the freshly-pulled press window.
+  const alerts = await detectPressAlerts(db, 14);
+  return Response.json({ ok: true, signals: { inserted, log }, alerts });
 }

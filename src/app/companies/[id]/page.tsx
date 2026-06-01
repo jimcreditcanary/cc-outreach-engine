@@ -32,13 +32,15 @@ export default async function CompanyDetail({
   const { data: org } = await db.from("organisations").select("*").eq("id", id).maybeSingle();
   if (!org) notFound();
 
-  const [{ data: contacts }, { data: deals }, { data: notes }, { data: events }] = await Promise.all([
+  const [{ data: contacts }, { data: deals }, { data: notes }, { data: events }, { data: orgAlerts }] = await Promise.all([
     db.from("contacts").select("id, full_name, job_title, email").eq("organisation_id", id).limit(100),
     db.from("deals").select("id, title, status, value").eq("organisation_id", id),
     db.from("notes").select("id, content, noted_at").eq("organisation_id", id).order("noted_at", { ascending: false }).limit(20),
     db.from("events").select("type, ts, payload").eq("organisation_id", id).order("ts", { ascending: false }).limit(30),
+    db.from("alerts").select("id, kind, title, link, summary, source, ts").eq("organisation_id", id).is("dismissed_at", null).order("ts", { ascending: false }).limit(10),
   ]);
   const timeline = (events ?? []) as unknown as { type: string; ts: string; payload: { message?: string } | null }[];
+  const alerts = (orgAlerts ?? []) as { id: string; kind: string; title: string; link: string | null; summary: string | null; source: string | null; ts: string }[];
 
   // Merge: search other companies to fold into this one.
   let mergeCandidates: { id: string; name: string | null }[] = [];
@@ -166,6 +168,30 @@ export default async function CompanyDetail({
           </ul>
         </div>
       </section>
+
+      {/* Alerts — press mentions + fresh posts for this org */}
+      {alerts.length > 0 && (
+        <section className="mt-8 text-sm">
+          <h2 className="mb-2 font-semibold">Alerts ({alerts.length})</h2>
+          <ul className="space-y-2">
+            {alerts.map((a) => (
+              <li key={a.id} className="rounded border border-amber-200 bg-amber-50/40 p-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium uppercase text-amber-800">{a.kind}</span>
+                  <span>{new Date(a.ts).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                  {a.source && <span>· {a.source}</span>}
+                </div>
+                {a.link ? (
+                  <a href={a.link} target="_blank" rel="noreferrer" className="font-medium text-blue-700 hover:underline">{a.title}</a>
+                ) : (
+                  <span className="font-medium">{a.title}</span>
+                )}
+                {a.summary && <p className="mt-1 text-neutral-600">{a.summary}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Enrichment: AI summary + recent posts from their own site/feed. */}
       <section className="mt-8 text-sm">

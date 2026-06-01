@@ -20,6 +20,10 @@ export interface SendInput {
   /** Owner of the send — used to pick the per-user sender identity. Falls
    *  back to env defaults when null / no user_settings row. */
   ownerId?: string | null;
+  /** Enable Postmark open tracking. Off by default for cold outreach
+   *  (Apple/Gmail prefetch makes opens unreliable, §6) — flip on for
+   *  newsletters where opens are still a useful relative metric. */
+  trackOpens?: boolean;
 }
 
 export interface SendResult {
@@ -68,7 +72,7 @@ export async function sendBroadcast(input: SendInput): Promise<SendResult> {
     TextBody: input.textBody,
     ReplyTo: replyTo,
     MessageStream: process.env.POSTMARK_BROADCAST_STREAM ?? "outreach",
-    TrackOpens: false,
+    TrackOpens: input.trackOpens ?? false,
     TrackLinks: Models.LinkTrackingOptions.HtmlOnly,
     Tag: input.tag,
   });

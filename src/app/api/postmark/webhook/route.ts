@@ -27,6 +27,22 @@ async function sendByMessageId(db: DB, messageId?: string) {
   return data ?? null;
 }
 
+/** Find the contact a newsletter went to via the email_sent event. Newsletter
+ *  sends don't live in `sends` (that's outreach only) — they only leave a
+ *  trail in `events`. The earlier email_sent row carries the message_id +
+ *  the contact_id, so newsletter analytics can join through that. */
+async function newsletterSendByMessageId(db: DB, messageId?: string) {
+  if (!messageId) return null;
+  const { data } = await db
+    .from("events")
+    .select("contact_id, organisation_id, payload")
+    .eq("type", "email_sent")
+    .eq("source", "newsletter")
+    .eq("payload->>postmark_message_id", messageId)
+    .maybeSingle();
+  return data ?? null;
+}
+
 export async function POST(req: Request) {
   if (!authorized(req)) return new Response("unauthorized", { status: 401 });
 
@@ -48,6 +64,37 @@ export async function POST(req: Request) {
           type: "click",
           source: "postmark",
           payload: { message_id: messageId, url: body.OriginalLink ?? null },
+        });
+      } else {
+        // Maybe it's a newsletter click — log it against the right contact
+        // and tag the newsletter_id so /newsletter/[id] can aggregate.
+        const nl = await newsletterSendByMessageId(db, messageId);
+        if (nl) {
+          const payload = nl.payload as { newsletter_id?: string } | null;
+          await db.from("events").insert({
+            contact_id: nl.contact_id,
+            organisation_id: nl.organisation_id,
+            type: "click",
+            source: "newsletter",
+            payload: { message_id: messageId, url: body.OriginalLink ?? null, newsletter_id: payload?.newsletter_id ?? null },
+          });
+        }
+      }
+      break;
+    }
+    case "Open": {
+      // We don't track opens for cold outreach (§6 — prefetch noise), but
+      // newsletter opens are still useful as a relative metric. Log only
+      // when the message_id maps to a newsletter send.
+      const nl = await newsletterSendByMessageId(db, messageId);
+      if (nl) {
+        const payload = nl.payload as { newsletter_id?: string } | null;
+        await db.from("events").insert({
+          contact_id: nl.contact_id,
+          organisation_id: nl.organisation_id,
+          type: "open",
+          source: "newsletter",
+          payload: { message_id: messageId, newsletter_id: payload?.newsletter_id ?? null },
         });
       }
       break;
@@ -100,7 +147,7 @@ export async function POST(req: Request) {
       }
       break;
     }
-    // "Open", "Delivery", others — acknowledge, do nothing.
+    // "Delivery", others — acknowledge, do nothing.
   }
 
   return Response.json({ ok: true });

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { saveLinkedInEdits, markLinkedInDone } from "../actions";
+import { currentUserId } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 
@@ -40,14 +41,36 @@ const fld = "rounded border border-neutral-300 px-2 py-1 text-sm";
 export default async function LinkedInPage() {
   const db = serviceClient();
   const dayStart = linkedinDayStartUtc(new Date());
+  const me = await currentUserId();
+
+  // Per-user cap: each operator works their own queue + counts only their
+  // own touches against the daily 15. Contacts owned by other users are
+  // hidden from this surface (use the contact's detail page if you really
+  // need to act on someone else's row).
+  let contactQ = db
+    .from("contacts")
+    .select("id, full_name, job_title, email, mobile, linkedin_url, label, linkedin_connected, organisation:organisations(id, name, sector, is_partner)")
+    .eq("linkedin_connected", false)
+    .limit(4000);
+  if (me) contactQ = contactQ.eq("owner_id", me);
+
+  // Count today's linkedin_note events, scoped to contacts owned by this
+  // operator. Pre-fetch their ids so the count query stays a single round-trip.
+  let ownedContactIds: string[] = [];
+  if (me) {
+    const { data: owned } = await db.from("contacts").select("id").eq("owner_id", me).limit(50000);
+    ownedContactIds = (owned ?? []).map((r) => r.id as string);
+  }
+  let doneTodayQ = db.from("events").select("*", { count: "exact", head: true }).eq("type", "linkedin_note").gte("ts", dayStart);
+  if (me) {
+    // .in on an empty list returns nothing; sub in a sentinel so the count is 0.
+    doneTodayQ = doneTodayQ.in("contact_id", ownedContactIds.length ? ownedContactIds : ["__none__"]);
+  }
+
   const [{ data }, { data: orgs }, { count: doneToday }] = await Promise.all([
-    db
-      .from("contacts")
-      .select("id, full_name, job_title, email, mobile, linkedin_url, label, linkedin_connected, organisation:organisations(id, name, sector, is_partner)")
-      .eq("linkedin_connected", false)
-      .limit(4000),
+    contactQ,
     db.from("organisations").select("id, name").order("name").limit(1000),
-    db.from("events").select("*", { count: "exact", head: true }).eq("type", "linkedin_note").gte("ts", dayStart),
+    doneTodayQ,
   ]);
 
   // ICP buyer contacts only (sector set, not partner). We still show contacts

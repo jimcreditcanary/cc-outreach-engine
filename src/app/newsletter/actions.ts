@@ -98,7 +98,7 @@ ${unsubFooterHtml(c.email!)}
 </div>`;
 
     try {
-      const res = await sendBroadcast({ to: c.email!, subject, htmlBody: htmlFinal, textBody: textFinal, tag: "newsletter", ownerId: newsletterOwner });
+      const res = await sendBroadcast({ to: c.email!, subject, htmlBody: htmlFinal, textBody: textFinal, tag: "newsletter", ownerId: newsletterOwner, trackOpens: true });
       await db.from("events").insert({
         contact_id: c.id,
         organisation_id: c.organisation_id,
