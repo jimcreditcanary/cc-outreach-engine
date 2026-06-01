@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { updateDeal, deleteDeal, uploadProposal, addDealContact, removeDealContact, reseedDealMeddicc } from "../../actions";
+import { updateDeal, deleteDeal, uploadProposal, addDealContact, removeDealContact, reseedDealMeddicc, addNote, updateNote, deleteNote } from "../../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
@@ -46,12 +46,14 @@ export default async function DealDetail({
   if (!deal) notFound();
   const org = deal.organisation as { id: string; name: string | null; tier: number | null } | null;
 
-  const [{ data: orgContacts }, { data: links }, { data: orgs }, { data: events }] = await Promise.all([
+  const [{ data: orgContacts }, { data: links }, { data: orgs }, { data: events }, { data: dealNotes }] = await Promise.all([
     org ? db.from("contacts").select("id, full_name, job_title").eq("organisation_id", org.id).order("full_name") : Promise.resolve({ data: [] }),
     db.from("deal_contacts").select("contact_id, role, contact:contacts(id, full_name, job_title)").eq("deal_id", id),
     db.from("organisations").select("id, name").order("name").limit(1000),
     db.from("events").select("type, ts, payload").eq("deal_id", id).order("ts", { ascending: false }).limit(30),
+    db.from("notes").select("id, content, noted_at").eq("deal_id", id).order("noted_at", { ascending: false }).limit(20),
   ]);
+  const notes = (dealNotes ?? []) as { id: string; content: string; noted_at: string | null }[];
   const stakeholders = (links ?? []) as unknown as { contact_id: string; role: string | null; contact: { id: string; full_name: string | null; job_title: string | null } | null }[];
   const linkedIds = new Set(stakeholders.map((s) => s.contact_id));
   // Primary/stakeholder pickers normally scope to the deal's company. If the
@@ -231,6 +233,34 @@ export default async function DealDetail({
         {deal.next_best_action && (
           <pre className="mt-3 whitespace-pre-wrap break-words rounded bg-amber-50 p-3 font-sans text-sm text-amber-900">{deal.next_best_action}</pre>
         )}
+      </section>
+
+      {/* Notes — deal-scoped */}
+      <section className="mt-8 text-sm">
+        <h2 className="mb-2 font-semibold">Notes ({notes.length})</h2>
+        <form action={addNote} className="mb-3 flex gap-2">
+          <input type="hidden" name="deal_id" value={deal.id} />
+          <input type="hidden" name="organisation_id" value={org?.id ?? ""} />
+          <input name="content" placeholder="Add a note on this deal…" className={`${field} flex-1`} />
+          <PendingButton className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700" pendingLabel="Adding…">Add</PendingButton>
+        </form>
+        <ul className="space-y-2 text-neutral-600">
+          {notes.map((n) => (
+            <li key={n.id} className="border-l-2 border-neutral-200 pl-2">
+              {n.noted_at && <div className="text-xs text-neutral-400">{new Date(n.noted_at).toLocaleDateString("en-GB")}</div>}
+              <form action={updateNote} className="flex items-start gap-2">
+                <input type="hidden" name="id" value={n.id} />
+                <input type="hidden" name="back" value={`/deals/${deal.id}`} />
+                <textarea name="content" defaultValue={String(n.content)} rows={2} className={`${field} flex-1`} />
+                <div className="flex flex-col items-end gap-1">
+                  <PendingButton className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300" pendingLabel="…">Save</PendingButton>
+                  <RowIconAction kind="delete" formAction={deleteNote} confirmMessage="Delete this note?" />
+                </div>
+              </form>
+            </li>
+          ))}
+          {notes.length === 0 && <li className="text-neutral-400">No notes yet on this deal.</li>}
+        </ul>
       </section>
 
       {/* Activity timeline */}

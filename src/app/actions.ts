@@ -633,39 +633,51 @@ export async function mergeContact(formData: FormData) {
 
 // ── CRM: notes ──────────────────────────────────────────────────────
 
-/** Add a free-text note against a company and/or contact. */
+/** Add a free-text note against any combination of company / contact / deal. */
 export async function addNote(formData: FormData) {
   const content = str(formData.get("content"));
   const organisation_id = str(formData.get("organisation_id"));
   const contact_id = str(formData.get("contact_id"));
+  const deal_id = str(formData.get("deal_id"));
   if (!content) return;
   const db = serviceClient();
   const owner_id = (await currentUserId()) ?? null;
+
+  // When the note is filed against a deal but the caller didn't pass an org,
+  // derive it from the deal so MEDDICC re-seeding + the org timeline both
+  // pick it up.
+  let derivedOrgId = organisation_id;
+  if (deal_id && !derivedOrgId) {
+    const { data: d } = await db.from("deals").select("organisation_id").eq("id", deal_id).maybeSingle();
+    derivedOrgId = d?.organisation_id as string | null;
+  }
+
   const { error } = await db.from("notes").insert({
     content,
-    organisation_id,
+    organisation_id: derivedOrgId,
     contact_id,
+    deal_id,
     author: "Jim",
     noted_at: new Date().toISOString(),
     owner_id,
   });
   if (error) throw error;
-  await logEvent(db, { contact_id, organisation_id, message: `Note added: ${content.slice(0, 80)}` });
+  await logEvent(db, { contact_id, organisation_id: derivedOrgId, deal_id, message: `Note added: ${content.slice(0, 80)}` });
 
   // Notes are the main fresh signal between proposal and close — re-seed
   // MEDDICC for any live deal on this org so /deals always reflects the
   // latest. Best-effort so a model hiccup never blocks the note save.
-  if (organisation_id) {
+  if (derivedOrgId) {
     try {
       const { data: live } = await db
         .from("deals")
         .select("id")
-        .eq("organisation_id", organisation_id)
+        .eq("organisation_id", derivedOrgId)
         .eq("status", "open")
         .eq("proposal_exists", true);
       for (const d of live ?? []) {
         const gap = await seedDealMeddicc(db, d.id);
-        if (gap) await logEvent(db, { organisation_id, deal_id: d.id, message: `MEDDICC re-seeded after new note (gap: ${gap})` });
+        if (gap) await logEvent(db, { organisation_id: derivedOrgId, deal_id: d.id, message: `MEDDICC re-seeded after new note (gap: ${gap})` });
       }
     } catch (e) {
       console.error("MEDDICC re-seed on note failed", e);
@@ -673,8 +685,9 @@ export async function addNote(formData: FormData) {
   }
 
   await flash("success", "Note added");
+  if (deal_id) revalidatePath(`/deals/${deal_id}`);
   if (contact_id) revalidatePath(`/contacts/${contact_id}`);
-  if (organisation_id) revalidatePath(`/companies/${organisation_id}`);
+  if (derivedOrgId) revalidatePath(`/companies/${derivedOrgId}`);
 }
 
 export async function updateNote(formData: FormData) {
