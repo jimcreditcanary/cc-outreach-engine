@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
-import { saveLinkedInEdits, markLinkedInDone } from "../actions";
+import { saveLinkedInEdits, markLinkedInDone, markNotOnLinkedIn } from "../actions";
 import { currentUserId } from "@/lib/auth/owner";
 import { PendingButton } from "@/components/PendingButton";
 
@@ -52,6 +52,7 @@ export default async function LinkedInPage() {
     .from("contacts")
     .select("id, full_name, job_title, email, mobile, linkedin_url, label, linkedin_connected, organisation:organisations(id, name, sector, is_partner)")
     .eq("linkedin_connected", false)
+    .eq("not_on_linkedin", false)
     .limit(4000);
   if (me) contactQ = contactQ.eq("owner_id", me);
 
@@ -154,12 +155,25 @@ export default async function LinkedInPage() {
       {needsResearch.length > 0 && !capHit && (
         <section>
           <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Needs research ({needsResearch.length})</h2>
-          <p className="mb-3 text-xs text-neutral-400">No LinkedIn URL on file — click a name to look them up and paste their profile URL.</p>
-          <ul className="space-y-1 text-sm text-neutral-600">
+          <p className="mb-3 text-xs text-neutral-400">
+            No LinkedIn URL on file — click a name to look them up and paste their profile URL,
+            or hit <em>Not on LinkedIn</em> if they genuinely don&apos;t have one.
+          </p>
+          <ul className="space-y-1 text-sm">
             {needsResearch.map((r) => (
-              <li key={r.id}>
-                <Link href={`/contacts/${r.id}`} className="text-blue-700 hover:underline">{r.full_name}</Link>
-                {" — "}{r.job_title} — {r.organisation?.name} ({r.organisation?.sector ?? "no sector"})
+              <li key={r.id} className="flex flex-wrap items-center gap-2 rounded border border-neutral-100 px-2 py-1.5 text-neutral-600 hover:bg-neutral-50">
+                <Link href={`/contacts/${r.id}`} className="font-medium text-blue-700 hover:underline">{r.full_name}</Link>
+                <span className="text-neutral-500">— {r.job_title} — {r.organisation?.name} ({r.organisation?.sector ?? "no sector"})</span>
+                <form action={markNotOnLinkedIn} className="ml-auto">
+                  <input type="hidden" name="contact_id" value={r.id} />
+                  <PendingButton
+                    className="rounded border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:border-neutral-400 hover:bg-neutral-100"
+                    pendingLabel="Saving…"
+                    title="They're genuinely not on LinkedIn — remove from research queue"
+                  >
+                    Not on LinkedIn
+                  </PendingButton>
+                </form>
               </li>
             ))}
           </ul>

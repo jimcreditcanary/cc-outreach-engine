@@ -330,6 +330,35 @@ export async function saveLinkedInEdits(formData: FormData) {
   revalidatePath("/linkedin");
 }
 
+/** Flag a contact as not having a LinkedIn presence so they stop appearing
+ *  on the /linkedin "Needs research" list. Reversible from the contact's
+ *  detail page. */
+export async function markNotOnLinkedIn(formData: FormData) {
+  const id = String(formData.get("contact_id"));
+  if (!id) return;
+  const db = serviceClient();
+  const { error } = await db
+    .from("contacts")
+    .update({ not_on_linkedin: true })
+    .eq("id", id);
+  if (error) throw error;
+  await logEvent(db, { contact_id: id, message: "Marked: not on LinkedIn" });
+  await flash("success", "Marked — won't appear in LinkedIn research again");
+  revalidatePath("/linkedin");
+  revalidatePath(`/contacts/${id}`);
+}
+
+/** Un-flag — sends the contact back to /linkedin if they still have no URL. */
+export async function unmarkNotOnLinkedIn(formData: FormData) {
+  const id = String(formData.get("contact_id"));
+  if (!id) return;
+  const db = serviceClient();
+  await db.from("contacts").update({ not_on_linkedin: false }).eq("id", id);
+  await flash("success", "Restored to LinkedIn research queue");
+  revalidatePath("/linkedin");
+  revalidatePath(`/contacts/${id}`);
+}
+
 export async function markLinkedInDone(formData: FormData) {
   const id = String(formData.get("contact_id"));
   if (!id) return;

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact } from "../../actions";
+import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact, unmarkNotOnLinkedIn } from "../../actions";
 import { setNewsletterSubscription } from "../../newsletter/actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
@@ -91,6 +91,16 @@ export default async function ContactDetail({
         </form>
       )}
 
+      {c.not_on_linkedin && (
+        <form action={unmarkNotOnLinkedIn} className="mb-4 flex items-center gap-2 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
+          <input type="hidden" name="contact_id" value={c.id} />
+          <span className="text-neutral-600">Flagged as not on LinkedIn — hidden from research queue.</span>
+          <PendingButton className="ml-auto rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100" pendingLabel="…">
+            Un-flag (return to queue)
+          </PendingButton>
+        </form>
+      )}
+
       <form action={updateContact} className="grid grid-cols-2 gap-3">
         <input type="hidden" name="id" value={c.id} />
         <div><label className={lbl}>Name</label><input name="full_name" defaultValue={c.full_name ?? ""} className={field} /></div>
@@ -111,7 +121,16 @@ export default async function ContactDetail({
           </select>
         </div>
         <div className="col-span-2"><label className={lbl}>…or new company (creates it)</label><input name="new_organisation_name" className={field} placeholder="Type a new company name to create + assign" /></div>
-        <div className="col-span-2"><label className={lbl}>LinkedIn URL</label><input name="linkedin_url" defaultValue={c.linkedin_url ?? ""} className={field} placeholder="https://linkedin.com/in/…" /></div>
+        <div className="col-span-2">
+          <label className={lbl}>LinkedIn URL</label>
+          <input name="linkedin_url" defaultValue={c.linkedin_url ?? ""} className={field} placeholder="https://linkedin.com/in/…" />
+          {c.not_on_linkedin && (
+            <div className="mt-1 flex items-center gap-2 text-xs text-neutral-500">
+              <span className="rounded bg-neutral-200 px-1.5 py-0.5 font-medium text-neutral-700">Flagged as not on LinkedIn</span>
+              <span>— hidden from /linkedin research queue.</span>
+            </div>
+          )}
+        </div>
         <div>
           <label className={lbl}>Label</label>
           <select name="label" defaultValue={c.label ?? ""} className={field}>
@@ -122,7 +141,7 @@ export default async function ContactDetail({
         <div><label className={lbl}>Snooze until (ISO)</label><input name="snooze_until" defaultValue={c.snooze_until ?? ""} className={field} placeholder="(blank = active)" /></div>
         <OwnerPicker value={c.owner_id ?? null} />
         <CustomFieldInputs entityType="contact" values={c.custom_fields as Record<string, unknown> | null} />
-        <div className="col-span-2 flex gap-2">
+        <div className="col-span-2 flex flex-wrap gap-2">
           <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">Save</PendingButton>
           <ConfirmSubmit
             formAction={deleteContact}
