@@ -6,7 +6,7 @@ import { serviceClient } from "@/lib/db/client";
 import { currentUserId } from "@/lib/auth/owner";
 import { parseTabular } from "@/lib/import/parse";
 import { normalizeHeader } from "@/lib/import/headers";
-import { matchAttendees, type AttendeeRow } from "@/lib/conferences/matchAttendees";
+import { matchAttendees, buildCompanyOwnerMap, type AttendeeRow } from "@/lib/conferences/matchAttendees";
 import { flash } from "@/lib/flash";
 
 const str = (v: FormDataEntryValue | null): string | null => {
@@ -62,6 +62,26 @@ export async function deleteConferenceAction(formData: FormData) {
   redirect("/events");
 }
 
+/** Set the operators attending a conference. Whole-set semantics: the form
+ *  posts every checked user_id; we delete what's missing + insert what's
+ *  new in one transaction-ish pass. Attending operators get round-robin
+ *  ownership of uploaded attendees, divided by company. */
+export async function setConferenceOperatorsAction(formData: FormData) {
+  const conference_id = String(formData.get("conference_id"));
+  const userIds = formData.getAll("user_id").map(String).filter(Boolean);
+  if (!conference_id) return;
+  const db = serviceClient();
+  // Replace the existing set.
+  await db.from("conference_operators").delete().eq("conference_id", conference_id);
+  if (userIds.length) {
+    const rows = userIds.map((user_id) => ({ conference_id, user_id }));
+    const { error } = await db.from("conference_operators").insert(rows);
+    if (error) throw error;
+  }
+  await flash("success", `${userIds.length} operator${userIds.length === 1 ? "" : "s"} attending`);
+  revalidatePath(`/events/${conference_id}`);
+}
+
 export async function removeAttendeeAction(formData: FormData) {
   const conference_id = String(formData.get("conference_id"));
   const contact_id = String(formData.get("contact_id"));
@@ -106,8 +126,19 @@ export async function uploadAttendeesAction(formData: FormData) {
   });
 
   const db = serviceClient();
-  const owner_id = (await currentUserId()) ?? null;
-  const summary = await matchAttendees(db, rows, owner_id);
+  const uploader = (await currentUserId()) ?? null;
+
+  // Round-robin distribution: if operators are attending, divide companies
+  // between them so every contact at a given company shares one owner who
+  // owns the follow-up. Falls back to the uploader otherwise.
+  const { data: attending } = await db
+    .from("conference_operators")
+    .select("user_id")
+    .eq("conference_id", conference_id);
+  const operatorIds = (attending ?? []).map((r) => r.user_id as string);
+  const { ownerForRow, ownerForCompany } = buildCompanyOwnerMap(rows, operatorIds);
+
+  const summary = await matchAttendees(db, rows, uploader, operatorIds.length ? ownerForRow : undefined);
 
   // Persist the attendances. Upsert on the composite PK so re-uploads of
   // the same list don't error — they just keep the original matched_via.
@@ -124,9 +155,12 @@ export async function uploadAttendeesAction(formData: FormData) {
   }
 
   const { counts, skipped } = summary;
+  const distribution = operatorIds.length
+    ? ` Distributed across ${operatorIds.length} operator${operatorIds.length === 1 ? "" : "s"} (${ownerForCompany.size} compan${ownerForCompany.size === 1 ? "y" : "ies"} round-robin'd).`
+    : "";
   await flash(
     "success",
-    `Imported ${inserts.length} attendee${inserts.length === 1 ? "" : "s"} — ${counts.email} matched by email, ${counts.name_company} by name, ${counts.created} created, ${counts.needs_research} need research${skipped ? `, ${skipped} skipped` : ""}.`,
+    `Imported ${inserts.length} attendee${inserts.length === 1 ? "" : "s"} — ${counts.email} matched by email, ${counts.name_company} by name, ${counts.created} created, ${counts.needs_research} need research${skipped ? `, ${skipped} skipped` : ""}.${distribution}`,
   );
   revalidatePath(`/events/${conference_id}`);
 }

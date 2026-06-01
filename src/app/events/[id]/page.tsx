@@ -6,10 +6,12 @@ import {
   deleteConferenceAction,
   uploadAttendeesAction,
   removeAttendeeAction,
+  setConferenceOperatorsAction,
 } from "../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 import { RowIconAction } from "@/components/RowIconAction";
+import { listOperators } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 // CSV parse + per-row contact resolution can take 30s+ on big lists.
@@ -35,6 +37,7 @@ interface AttendeeRow {
     email: string | null;
     job_title: string | null;
     needs_research: boolean;
+    owner_id: string | null;
     organisation: { id: string; name: string | null } | null;
   } | null;
 }
@@ -45,15 +48,29 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
   const { data: ev } = await db.from("conferences").select("*").eq("id", id).maybeSingle();
   if (!ev) notFound();
 
-  const { data: attendanceData } = await db
-    .from("conference_attendances")
-    .select(`
-      contact_id, matched_via,
-      contact:contacts(id, full_name, email, job_title, needs_research, organisation:organisations(id, name))
-    `)
-    .eq("conference_id", id)
-    .order("matched_via");
+  const [{ data: attendanceData }, { data: operatorRows }, allOperators] = await Promise.all([
+    db
+      .from("conference_attendances")
+      .select(`
+        contact_id, matched_via,
+        contact:contacts(id, full_name, email, job_title, needs_research, owner_id, organisation:organisations(id, name))
+      `)
+      .eq("conference_id", id)
+      .order("matched_via"),
+    db.from("conference_operators").select("user_id").eq("conference_id", id),
+    listOperators(),
+  ]);
   const attendees = (attendanceData ?? []) as unknown as AttendeeRow[];
+  const attendingIds = new Set((operatorRows ?? []).map((r) => r.user_id as string));
+  const operatorEmailById = new Map(allOperators.map((o) => [o.id, o.email ?? o.id]));
+
+  // Per-operator workload (how many contacts this operator now owns from
+  // this event's attendees). Only meaningful once the upload has run.
+  const byOperator = new Map<string, number>();
+  for (const a of attendees) {
+    const oid = a.contact?.owner_id ?? "unassigned";
+    byOperator.set(oid, (byOperator.get(oid) ?? 0) + 1);
+  }
 
   const byMatch: Record<string, number> = {};
   for (const a of attendees) byMatch[a.matched_via] = (byMatch[a.matched_via] ?? 0) + 1;
@@ -82,6 +99,30 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
           </ConfirmSubmit>
         </div>
       </form>
+
+      {/* Attending operators — who's on the ground, takes round-robin ownership */}
+      <section className="mt-8">
+        <h2 className="mb-2 text-sm font-semibold">Attending operators</h2>
+        <p className="mb-2 text-xs text-neutral-500">
+          Tick everyone who&apos;s attending. When attendees are uploaded, companies get divided round-robin between them so every
+          contact has one person on follow-up. With no one ticked, attendees just inherit the uploader.
+        </p>
+        <form action={setConferenceOperatorsAction} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+          <input type="hidden" name="conference_id" value={ev.id} />
+          <div className="mb-2 flex flex-wrap gap-2">
+            {allOperators.map((o) => (
+              <label key={o.id} className="flex items-center gap-2 rounded border border-neutral-200 bg-white px-2 py-1 text-sm">
+                <input type="checkbox" name="user_id" value={o.id} defaultChecked={attendingIds.has(o.id)} />
+                <span>{o.email ?? o.id}</span>
+              </label>
+            ))}
+            {allOperators.length === 0 && <span className="text-xs text-neutral-400">No operators yet — add some at /admin/users.</span>}
+          </div>
+          <PendingButton className="rounded bg-neutral-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800" pendingLabel="Saving…">
+            Save attending
+          </PendingButton>
+        </form>
+      </section>
 
       {/* Upload attendees */}
       <section className="mt-8">
@@ -113,16 +154,29 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
             ))}
           </span>
         </div>
+        {byOperator.size > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-1 text-xs text-neutral-500">
+            <span className="mr-1 uppercase tracking-wide">Workload:</span>
+            {Array.from(byOperator.entries())
+              .sort((a, b) => b[1] - a[1])
+              .map(([oid, n]) => (
+                <span key={oid} className="rounded border border-neutral-200 bg-white px-1.5 py-0.5">
+                  {oid === "unassigned" ? "unassigned" : (operatorEmailById.get(oid) ?? oid)}: <span className="font-medium text-neutral-700">{n}</span>
+                </span>
+              ))}
+          </div>
+        )}
         {attendees.length === 0 ? (
           <p className="text-sm text-neutral-400">No attendees yet — upload a list above.</p>
         ) : (
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase text-neutral-400">
-              <tr><th className="py-1">Contact</th><th>Title</th><th>Company</th><th>Email</th><th>Match</th><th></th></tr>
+              <tr><th className="py-1">Contact</th><th>Title</th><th>Company</th><th>Owner</th><th>Match</th><th></th></tr>
             </thead>
             <tbody>
               {attendees.map((a) => {
                 const c = a.contact;
+                const ownerEmail = c?.owner_id ? (operatorEmailById.get(c.owner_id) ?? c.owner_id) : null;
                 return (
                   <tr key={a.contact_id} className="border-t border-neutral-100 hover:bg-neutral-50">
                     <td className="py-1.5">
@@ -137,7 +191,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
                     <td className="text-neutral-600">
                       {c?.organisation ? <Link href={`/companies/${c.organisation.id}`} className="text-blue-700 hover:underline">{c.organisation.name}</Link> : "—"}
                     </td>
-                    <td className="text-neutral-600">{c?.email ?? "—"}</td>
+                    <td className="text-xs text-neutral-600">{ownerEmail ?? <span className="text-neutral-400">unassigned</span>}</td>
                     <td><span className={`rounded px-1.5 py-0.5 text-xs ${matchBadge[a.matched_via] ?? "bg-neutral-100 text-neutral-700"}`}>{a.matched_via}</span></td>
                     <td className="w-10 text-right">
                       <form action={removeAttendeeAction}>

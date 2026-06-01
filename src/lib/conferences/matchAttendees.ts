@@ -65,10 +65,51 @@ async function resolveOrg(db: SupabaseClient, name: string | null, ownerId: stri
   return null;
 }
 
+/** Optional per-row owner resolver. Returns the user id that should own
+ *  this attendee's contact (and any new company). Falls back to the
+ *  default owner when unset. */
+export type OwnerResolver = (row: AttendeeRow, index: number) => string | null;
+
+/** Build a round-robin company → operator mapping from a flat list of
+ *  attending operator ids. All contacts within a company go to the same
+ *  operator so no two operators chase the same account. Companies are
+ *  normalised + sorted so the assignment is deterministic across re-runs. */
+export function buildCompanyOwnerMap(
+  rows: AttendeeRow[],
+  operatorIds: string[],
+): { ownerForCompany: Map<string, string>; ownerForRow: OwnerResolver } {
+  const ownerForCompany = new Map<string, string>();
+  if (operatorIds.length === 0) {
+    // No operators picked → caller falls back to default owner.
+    return { ownerForCompany, ownerForRow: () => null };
+  }
+  const companies = Array.from(
+    new Set(rows.map((r) => norm(r.company ?? "")).filter(Boolean)),
+  ).sort();
+  // operatorIds is non-empty by the early-return above, so the modulo index
+  // is always a real string — the `!` is the only way to tell TS that under
+  // noUncheckedIndexedAccess.
+  companies.forEach((c, i) => {
+    ownerForCompany.set(c, operatorIds[i % operatorIds.length]!);
+  });
+  // Companyless rows fall through to per-row round-robin so they still get
+  // a real owner instead of all piling on the first operator.
+  let cursor = 0;
+  const ownerForRow: OwnerResolver = (row) => {
+    const key = norm(row.company ?? "");
+    if (key && ownerForCompany.has(key)) return ownerForCompany.get(key)!;
+    const id = operatorIds[cursor % operatorIds.length]!;
+    cursor++;
+    return id;
+  };
+  return { ownerForCompany, ownerForRow };
+}
+
 export async function matchAttendees(
   db: SupabaseClient,
   rows: AttendeeRow[],
   ownerId: string | null,
+  ownerForRow?: OwnerResolver,
 ): Promise<MatchSummary> {
   // Pre-load every contact once so the per-row waterfall doesn't N+1.
   const { data: contactRows } = await db
@@ -98,7 +139,11 @@ export async function matchAttendees(
   const counts = { email: 0, name_company: 0, created: 0, needs_research: 0 } as MatchSummary["counts"];
   let skipped = 0;
 
-  for (const raw of rows) {
+  for (let idx = 0; idx < rows.length; idx++) {
+    const raw = rows[idx]!; // bounded by rows.length, safe under noUncheckedIndexedAccess
+    // Pick the owner for this row: round-robin assignment when there are
+    // attending operators, otherwise the upload's default owner.
+    const rowOwner = (ownerForRow && ownerForRow(raw, idx)) ?? ownerId;
     const email = (raw.email ?? "").trim().toLowerCase();
     const fullName = (raw.full_name ?? "").trim();
     const jobTitle = (raw.job_title ?? "").trim();
@@ -107,19 +152,26 @@ export async function matchAttendees(
     // No usable identity at all → skip (don't pollute the DB with empty rows).
     if (!email && !fullName && !jobTitle) { skipped++; continue; }
 
-    // 1) Exact email match
+    // 1) Exact email match — reassign owner so the operator who's
+    //    following up at the conference now owns the contact.
     if (email && byEmail.has(email)) {
       const hit = byEmail.get(email)!;
+      if (rowOwner) {
+        await db.from("contacts").update({ owner_id: rowOwner }).eq("id", hit.id);
+      }
       outcomes.push({ contact_id: hit.id, matched_via: "email", full_name: hit.full_name, email: hit.email, company: hit.org_name });
       counts.email++;
       continue;
     }
 
-    // 2) Name + company normalised match
+    // 2) Name + company normalised match (also reassign).
     if (fullName && company) {
       const key = `${norm(fullName)}|${norm(company)}`;
       if (byNameCompany.has(key)) {
         const hit = byNameCompany.get(key)!;
+        if (rowOwner) {
+          await db.from("contacts").update({ owner_id: rowOwner }).eq("id", hit.id);
+        }
         outcomes.push({ contact_id: hit.id, matched_via: "name_company", full_name: hit.full_name, email: hit.email, company: hit.org_name });
         counts.name_company++;
         continue;
@@ -127,7 +179,7 @@ export async function matchAttendees(
     }
 
     // 3) Create — we have at least a name OR an email.
-    const orgId = await resolveOrg(db, company || null, ownerId);
+    const orgId = await resolveOrg(db, company || null, rowOwner);
     if (fullName || email) {
       const { data: created, error } = await db
         .from("contacts")
@@ -136,7 +188,7 @@ export async function matchAttendees(
           email: email || null,
           job_title: jobTitle || null,
           organisation_id: orgId,
-          owner_id: ownerId,
+          owner_id: rowOwner,
           email_status: "unverified",
         })
         .select("id, full_name, email")
@@ -165,7 +217,7 @@ export async function matchAttendees(
         full_name: placeholder,
         job_title: jobTitle || null,
         organisation_id: orgId,
-        owner_id: ownerId,
+        owner_id: rowOwner,
         email_status: "unverified",
         needs_research: true,
       })
