@@ -16,8 +16,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const STATUS = ["open", "won", "lost"];
-// Pipeline stages (from the Pipedrive export) + closed-lost for completeness.
-const DEAL_STAGES = ["Identify", "Qualify / Discovery", "Develop", "Commit", "Nurture", "Closed Won", "Closed Lost"];
+import { STAGES as DEAL_STAGES } from "@/lib/pipeline/stages";
 // MEDDICC stakeholder roles.
 const DEAL_ROLES = ["Economic Buyer", "Champion", "Decision Maker", "Influencer", "Technical Evaluator", "End User", "Coach", "Blocker"];
 const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";

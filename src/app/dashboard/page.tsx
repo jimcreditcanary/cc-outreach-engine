@@ -5,10 +5,9 @@ import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
+import { STAGES, stageProbability, stageProbabilityLabel } from "@/lib/pipeline/stages";
 
 export const dynamic = "force-dynamic";
-
-const STAGES = ["Identify", "Qualify / Discovery", "Develop", "Commit", "Nurture", "Closed Won", "Closed Lost"];
 
 const fmt = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
 const fmtCount = (n: number) => n.toLocaleString("en-GB");
@@ -100,23 +99,30 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const lostAll = rows.filter((d) => d.status === "lost");
   const winRate = wonAll.length + lostAll.length > 0 ? (wonAll.length / (wonAll.length + lostAll.length)) * 100 : 0;
 
-  // Pipeline by stage
+  // Pipeline by stage. Weighted = stage probability × TCV/ARR so the dashboard
+  // shows what we'd realistically book if every deal closed at its stage's
+  // historical conversion rate.
   const byStage = STAGES.map((s) => {
     const stageDeals = open.filter((d) => (d.stage ?? "") === s);
-    return {
-      stage: s,
-      count: stageDeals.length,
-      tcv: stageDeals.reduce((sum, d) => sum + dealSize(d), 0),
-      arr: stageDeals.reduce((sum, d) => sum + Number(d.arr ?? 0), 0),
-    };
+    const tcv = stageDeals.reduce((sum, d) => sum + dealSize(d), 0);
+    const arr = stageDeals.reduce((sum, d) => sum + Number(d.arr ?? 0), 0);
+    const prob = stageProbability(s);
+    return { stage: s, count: stageDeals.length, tcv, arr, weightedTcv: tcv * prob, weightedArr: arr * prob, probLabel: stageProbabilityLabel(s) };
   });
-  const unstaged = open.filter((d) => !d.stage || !STAGES.includes(d.stage));
+  const unstaged = open.filter((d) => !d.stage || !(STAGES as readonly string[]).includes(d.stage));
   const unstagedRow = unstaged.length > 0 ? {
     stage: "(no stage)",
     count: unstaged.length,
     tcv: unstaged.reduce((s, d) => s + dealSize(d), 0),
     arr: unstaged.reduce((s, d) => s + Number(d.arr ?? 0), 0),
+    weightedTcv: 0,
+    weightedArr: 0,
+    probLabel: "—",
   } : null;
+
+  // Workspace-wide weighted pipeline = sum of per-deal (TCV × stage probability).
+  const weightedTcv = open.reduce((s, d) => s + dealSize(d) * stageProbability(d.stage), 0);
+  const weightedArr = open.reduce((s, d) => s + Number(d.arr ?? 0) * stageProbability(d.stage), 0);
 
   // Recent deal movements (status changes) from event log
   const dealStatusChanges = (stageChangeEvents ?? []).filter((e) => {
@@ -145,9 +151,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* Top KPIs */}
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         <KPI label="Open pipeline (TCV)" value={fmt(openTcv)} sub={`${open.length} open deal${open.length === 1 ? "" : "s"}`} />
-        <KPI label="Open pipeline (ARR)" value={fmt(openArr)} sub={`${t1.length} live (T1)`} />
+        <KPI label="Weighted pipeline (TCV)" value={fmt(weightedTcv)} sub={`Stage probability × deal size · ARR ${fmt(weightedArr)}`} />
         <KPI label="Sent — last 7d" value={fmtCount(sentCount7 ?? 0)} sub={`${fmtCount(replyCount7 ?? 0)} replies · ${fmtCount(clickCount7 ?? 0)} clicks`} />
-        <KPI label="Queue / awaiting send" value={`${fmtCount(queuedCount ?? 0)} / ${fmtCount(approvedCount ?? 0)}`} sub={`<Link href="/queue">Open queue →</Link>`.replace(/<[^>]+>/g, "Open queue →")} />
+        <KPI label="Queue / awaiting send" value={`${fmtCount(queuedCount ?? 0)} / ${fmtCount(approvedCount ?? 0)}`} sub="Open queue →" />
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -162,33 +168,54 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Pipeline by stage</h2>
         <table className="w-full text-sm">
           <thead className="text-left text-xs uppercase text-neutral-400">
-            <tr><th className="py-1">Stage</th><th className="text-right">Deals</th><th className="text-right">TCV</th><th className="text-right">ARR</th></tr>
+            <tr>
+              <th className="py-1">Stage</th>
+              <th className="text-right">Prob.</th>
+              <th className="text-right">Deals</th>
+              <th className="text-right">TCV</th>
+              <th className="text-right">Weighted TCV</th>
+              <th className="text-right">ARR</th>
+              <th className="text-right">Weighted ARR</th>
+            </tr>
           </thead>
           <tbody>
             {byStage.filter((s) => s.count > 0).map((s) => (
               <tr key={s.stage} className="border-t border-neutral-100">
                 <td className="py-1.5"><Link href={`/deals?status=open`} className="text-blue-700 hover:underline">{s.stage}</Link></td>
+                <td className="text-right text-neutral-500">{s.probLabel}</td>
                 <td className="text-right text-neutral-700">{fmtCount(s.count)}</td>
                 <td className="text-right text-neutral-700">{fmt(s.tcv)}</td>
+                <td className="text-right font-medium text-neutral-900">{fmt(s.weightedTcv)}</td>
                 <td className="text-right text-neutral-700">{fmt(s.arr)}</td>
+                <td className="text-right font-medium text-neutral-900">{fmt(s.weightedArr)}</td>
               </tr>
             ))}
             {unstagedRow && (
               <tr className="border-t border-neutral-100 text-neutral-400">
                 <td className="py-1.5">{unstagedRow.stage}</td>
+                <td className="text-right">{unstagedRow.probLabel}</td>
                 <td className="text-right">{fmtCount(unstagedRow.count)}</td>
                 <td className="text-right">{fmt(unstagedRow.tcv)}</td>
+                <td className="text-right">{fmt(unstagedRow.weightedTcv)}</td>
                 <td className="text-right">{fmt(unstagedRow.arr)}</td>
+                <td className="text-right">{fmt(unstagedRow.weightedArr)}</td>
               </tr>
             )}
             <tr className="border-t-2 border-neutral-300 font-semibold">
               <td className="py-1.5">Total open</td>
+              <td className="text-right text-neutral-400"></td>
               <td className="text-right">{fmtCount(open.length)}</td>
               <td className="text-right">{fmt(openTcv)}</td>
+              <td className="text-right">{fmt(weightedTcv)}</td>
               <td className="text-right">{fmt(openArr)}</td>
+              <td className="text-right">{fmt(weightedArr)}</td>
             </tr>
           </tbody>
         </table>
+        <p className="mt-2 text-xs text-neutral-400">
+          Weighted = stage probability × deal size. Defaults: Identify 10% · Qualify 25% · Develop 50% · Commit 75% · Nurture 5%.
+          Tweak in <code>src/lib/pipeline/stages.ts</code>.
+        </p>
       </section>
 
       <p className="text-xs text-neutral-400">
