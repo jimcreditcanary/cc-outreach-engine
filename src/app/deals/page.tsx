@@ -2,6 +2,8 @@ import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { createDeal, deleteDeal } from "../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { OwnerFilter } from "@/components/OwnerFilter";
+import { resolveOwnerFilter } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +28,10 @@ interface DealRow {
   organisation: { id: string; name: string | null; tier: number | null } | null;
 }
 
-export default async function DealsPage({ searchParams }: { searchParams: Promise<{ tier?: string; status?: string }> }) {
-  const { tier, status } = await searchParams;
+export default async function DealsPage({ searchParams }: { searchParams: Promise<{ tier?: string; status?: string; owner?: string }> }) {
+  const { tier, status, owner } = await searchParams;
   const db = serviceClient();
+  const ownerId = await resolveOwnerFilter(owner);
 
   const meddiccCols = MEDDICC.map((m) => `meddicc_${m.key}_filled`).join(", ");
   let query = db
@@ -37,16 +40,19 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
     .order("value", { ascending: false, nullsFirst: false })
     .limit(500);
   if (status) query = query.eq("status", status);
+  if (ownerId) query = query.eq("owner_id", ownerId);
+  let nudgeQuery = db
+    .from("deals")
+    .select(`id, title, value, next_best_action, ${meddiccCols}, organisation:organisations(name, sector)`)
+    .eq("status", "open")
+    .eq("proposal_exists", true)
+    .order("value", { ascending: false, nullsFirst: false });
+  if (ownerId) nudgeQuery = nudgeQuery.eq("owner_id", ownerId);
   const [{ data }, { data: nudgeData }, { data: orgData }] = await Promise.all([
     query,
     // "Needs action" feed (the old T1 view): live deals with a proposal,
     // each with its single next-best-action + MEDDICC gaps.
-    db
-      .from("deals")
-      .select(`id, title, value, next_best_action, ${meddiccCols}, organisation:organisations(name, sector)`)
-      .eq("status", "open")
-      .eq("proposal_exists", true)
-      .order("value", { ascending: false, nullsFirst: false }),
+    nudgeQuery,
     db.from("organisations").select("id, name").order("name").limit(1000),
   ]);
   let deals = (data ?? []) as unknown as DealRow[];
@@ -72,8 +78,9 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
 
   return (
     <main className="px-8 py-6">
-      <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
+      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Deals</h1>
+        <OwnerFilter current={owner} pathname="/deals" extraParams={{ tier, status }} />
         <span className="text-sm text-neutral-500">{deals.length}</span>
       </header>
 

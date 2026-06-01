@@ -2,6 +2,8 @@ import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { createOrg, deleteOrg } from "../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { OwnerFilter } from "@/components/OwnerFilter";
+import { resolveOwnerFilter } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 
@@ -19,27 +21,30 @@ interface OrgRow {
 
 const PAGE = 100;
 
-export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
-  const { q, page: pageStr } = await searchParams;
+export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string }> }) {
+  const { q, page: pageStr, owner } = await searchParams;
   const page = Math.max(1, parseInt(pageStr ?? "1") || 1);
   const from = (page - 1) * PAGE;
   const db = serviceClient();
+  const ownerId = await resolveOwnerFilter(owner);
   let query = db
     .from("organisations")
     .select("id, name, sector, tier, label, is_partner, icp", { count: "exact" })
     .order("name", { ascending: true })
     .range(from, from + PAGE - 1);
   if (q) query = query.ilike("name", `%${q}%`);
+  if (ownerId) query = query.eq("owner_id", ownerId);
   const { data, count } = await query;
   const orgs = (data ?? []) as OrgRow[];
   const total = count ?? orgs.length;
   const lastPage = Math.max(1, Math.ceil(total / PAGE));
-  const qp = (p: number) => `/companies?${new URLSearchParams({ ...(q ? { q } : {}), page: String(p) })}`;
+  const qp = (p: number) => `/companies?${new URLSearchParams({ ...(q ? { q } : {}), ...(owner ? { owner } : {}), page: String(p) })}`;
 
   return (
     <main className="px-8 py-6">
-      <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
+      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Companies</h1>
+        <OwnerFilter current={owner} pathname="/companies" extraParams={{ q }} />
         <span className="text-sm text-neutral-500">{total}{q ? " matches" : ""} · showing {orgs.length === 0 ? 0 : from + 1}–{from + orgs.length}</span>
       </header>
 

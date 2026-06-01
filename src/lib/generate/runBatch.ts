@@ -43,7 +43,7 @@ export async function runGenerateBatch(db: DB, limit: number): Promise<GenerateB
 
   const { data: contacts, error } = await db
     .from("contacts")
-    .select("id, full_name, email, job_title, label, last_touched_at, snooze_until, organisation:organisations(id, name, sector, tier, is_partner)")
+    .select("id, full_name, email, job_title, label, last_touched_at, snooze_until, owner_id, organisation:organisations(id, name, sector, tier, is_partner)")
     .not("email", "is", null)
     .limit(3000);
   if (error) throw error;
@@ -128,6 +128,7 @@ export async function runGenerateBatch(db: DB, limit: number): Promise<GenerateB
       body_text: draft.body_text,
       original_body_text: draft.body_text, // preserve Claude's untouched output for style-learning
       status: "queued",
+      owner_id: (c.owner_id as string | null) ?? null, // queue this draft for the contact's assignee
     });
     if (insErr) throw insErr;
     queued++;

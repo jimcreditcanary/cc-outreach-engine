@@ -3,6 +3,8 @@
 
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
+import { OwnerFilter } from "@/components/OwnerFilter";
+import { resolveOwnerFilter } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 
@@ -28,10 +30,22 @@ interface DealRow {
   organisation: { tier: number | null } | null;
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ owner?: string }> }) {
+  const { owner } = await searchParams;
   const db = serviceClient();
+  const ownerId = await resolveOwnerFilter(owner);
   const since7 = daysAgo(7);
   const since30 = daysAgo(30);
+
+  // Build each query and optionally narrow by owner. PostgrestFilterBuilder's
+  // chained types don't survive being passed through a generic wrapper, so we
+  // keep the .eq() calls inline.
+  const dealsQ      = db.from("deals").select("id, status, stage, value, tcv, arr, proposal_exists, created_at, organisation:organisations(tier)").limit(2000);
+  const sent7Q      = db.from("sends").select("*", { count: "exact", head: true }).eq("status", "sent").gte("ts", since7);
+  const queuedQ     = db.from("sends").select("*", { count: "exact", head: true }).eq("status", "queued");
+  const approvedQ   = db.from("sends").select("*", { count: "exact", head: true }).eq("status", "approved");
+  const newCt7Q     = db.from("contacts").select("*", { count: "exact", head: true }).gte("created_at", since7);
+  const prospectQ   = db.from("contacts").select("*", { count: "exact", head: true }).eq("label", "Prospect");
 
   const [
     { data: deals },
@@ -45,15 +59,16 @@ export default async function DashboardPage() {
     { count: prospectCount },
     { data: stageChangeEvents },
   ] = await Promise.all([
-    db.from("deals").select("id, status, stage, value, tcv, arr, proposal_exists, created_at, organisation:organisations(tier)").limit(2000),
-    db.from("sends").select("*", { count: "exact", head: true }).eq("status", "sent").gte("ts", since7),
-    db.from("sends").select("*", { count: "exact", head: true }).eq("status", "queued"),
-    db.from("sends").select("*", { count: "exact", head: true }).eq("status", "approved"),
+    ownerId ? dealsQ.eq("owner_id", ownerId)    : dealsQ,
+    ownerId ? sent7Q.eq("owner_id", ownerId)    : sent7Q,
+    ownerId ? queuedQ.eq("owner_id", ownerId)   : queuedQ,
+    ownerId ? approvedQ.eq("owner_id", ownerId) : approvedQ,
+    // Events don't carry owner_id — reply/click/bounce counts stay workspace-wide.
     db.from("events").select("*", { count: "exact", head: true }).eq("type", "reply").gte("ts", since7),
     db.from("events").select("*", { count: "exact", head: true }).eq("type", "click").gte("ts", since7),
     db.from("events").select("*", { count: "exact", head: true }).eq("type", "bounce").gte("ts", since30),
-    db.from("contacts").select("*", { count: "exact", head: true }).gte("created_at", since7),
-    db.from("contacts").select("*", { count: "exact", head: true }).eq("label", "Prospect"),
+    ownerId ? newCt7Q.eq("owner_id", ownerId)   : newCt7Q,
+    ownerId ? prospectQ.eq("owner_id", ownerId) : prospectQ,
     db.from("events").select("ts, payload").eq("type", "crm_change").gte("ts", since7).limit(500),
   ]);
 
@@ -105,9 +120,12 @@ export default async function DashboardPage() {
 
   return (
     <main className="px-8 py-6">
-      <header className="mb-6 border-b border-neutral-200 pb-3">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
-        <p className="text-sm text-neutral-500">Pipeline, outreach activity and lead movement. Numbers, not charts.</p>
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-3 border-b border-neutral-200 pb-3">
+        <div>
+          <h1 className="text-xl font-semibold">Dashboard</h1>
+          <p className="text-sm text-neutral-500">Pipeline, outreach activity and lead movement. Numbers, not charts.</p>
+        </div>
+        <OwnerFilter current={owner} pathname="/dashboard" />
       </header>
 
       {/* Top KPIs */}

@@ -1,6 +1,8 @@
 import { serviceClient } from "@/lib/db/client";
 import { approveDraft, rejectDraft, updateDraft, regenerateDraft, sendDraftNow } from "../actions";
 import { PendingButton } from "@/components/PendingButton";
+import { OwnerFilter } from "@/components/OwnerFilter";
+import { resolveOwnerFilter } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 // Regenerate + Send-now invoke Claude / Postmark — give them runway.
@@ -30,29 +32,34 @@ interface Draft {
   } | null;
 }
 
-export default async function QueuePage() {
+export default async function QueuePage({ searchParams }: { searchParams: Promise<{ owner?: string }> }) {
+  const { owner } = await searchParams;
   const db = serviceClient();
-  const [{ data }, { data: recentData }] = await Promise.all([
-    db
-      .from("sends")
-      .select("id, subject, body_text, angle, contact:contacts(full_name, email, organisation:organisations(name, sector))")
-      .eq("status", "queued")
-      .order("ts", { ascending: false }),
-    // Recently-acted-on: approved (awaiting send) + sent + suppressed/failed.
-    db
-      .from("sends")
-      .select("id, subject, status, ts, contact:contacts(id, full_name, email)")
-      .in("status", ["approved", "sent", "suppressed", "failed"])
-      .order("ts", { ascending: false })
-      .limit(30),
-  ]);
+  const ownerId = await resolveOwnerFilter(owner);
+  let q1 = db
+    .from("sends")
+    .select("id, subject, body_text, angle, contact:contacts(full_name, email, organisation:organisations(name, sector))")
+    .eq("status", "queued")
+    .order("ts", { ascending: false });
+  let q2 = db
+    .from("sends")
+    .select("id, subject, status, ts, contact:contacts(id, full_name, email)")
+    .in("status", ["approved", "sent", "suppressed", "failed"])
+    .order("ts", { ascending: false })
+    .limit(30);
+  if (ownerId) {
+    q1 = q1.eq("owner_id", ownerId);
+    q2 = q2.eq("owner_id", ownerId);
+  }
+  const [{ data }, { data: recentData }] = await Promise.all([q1, q2]);
   const drafts = (data ?? []) as unknown as Draft[];
   const recent = (recentData ?? []) as unknown as Array<{ id: string; subject: string | null; status: string; ts: string; contact: { id: string; full_name: string | null; email: string | null } | null }>;
 
   return (
     <main className="px-8 py-6">
-      <header className="mb-6 flex items-baseline justify-between border-b border-neutral-200 pb-3">
+      <header className="mb-6 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Approval queue</h1>
+        <OwnerFilter current={owner} pathname="/queue" />
         <span className="text-sm text-neutral-500">{drafts.length} draft{drafts.length === 1 ? "" : "s"}</span>
       </header>
 

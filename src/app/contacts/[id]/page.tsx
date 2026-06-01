@@ -6,6 +6,7 @@ import { setNewsletterSubscription } from "../../newsletter/actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
+import { OwnerPicker } from "@/components/OwnerPicker";
 
 export const dynamic = "force-dynamic";
 // ✨ Generate-draft-for-this-contact calls Claude.
@@ -114,6 +115,7 @@ export default async function ContactDetail({
           </select>
         </div>
         <div><label className={lbl}>Snooze until (ISO)</label><input name="snooze_until" defaultValue={c.snooze_until ?? ""} className={field} placeholder="(blank = active)" /></div>
+        <OwnerPicker value={c.owner_id ?? null} />
         <CustomFieldInputs entityType="contact" values={c.custom_fields as Record<string, unknown> | null} />
         <div className="col-span-2 flex gap-2">
           <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>

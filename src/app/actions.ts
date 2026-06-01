@@ -11,6 +11,7 @@ import { regenerateForContact } from "@/lib/generate/forContact";
 import { sendBroadcast } from "@/lib/send/postmark";
 import { enrichCompany } from "@/lib/enrich/company";
 import { flash } from "@/lib/flash";
+import { currentUserId } from "@/lib/auth/owner";
 import {
   loadCustomFieldDefs,
   parseCustomFieldsFromForm,
@@ -64,6 +65,12 @@ async function rederiveTier(db: DB, organisation_id: string | null) {
     .eq("organisation_id", organisation_id);
   const tier = deriveTier((deals ?? []) as DealTierInput[]);
   await db.from("organisations").update({ tier }).eq("id", organisation_id);
+}
+
+/** Owner-id read from the edit form, or null for unassigned. Empty string in
+ *  the form means the operator explicitly cleared the owner. */
+function ownerFromForm(formData: FormData): string | null {
+  return str(formData.get("owner_id"));
 }
 
 /** Resolve a company id from a select value, creating one if a new name was typed. */
@@ -131,6 +138,10 @@ export async function generateDraftForContact(formData: FormData) {
     .select("id")
     .eq("url", draft.asset_url)
     .maybeSingle();
+  // Inherit owner from the contact so this draft lands in that operator's
+  // queue — falls back to the signed-in user if the contact has none yet.
+  const { data: ownerRow } = await db.from("contacts").select("owner_id").eq("id", contactId).maybeSingle();
+  const owner_id = ownerRow?.owner_id ?? (await currentUserId()) ?? null;
   const { error } = await db.from("sends").insert({
     contact_id: contactId,
     angle: draft.angle,
@@ -140,6 +151,7 @@ export async function generateDraftForContact(formData: FormData) {
     body_text: draft.body_text,
     original_body_text: draft.body_text,
     status: "queued",
+    owner_id,
   });
   if (error) throw error;
   await logEvent(db, { contact_id: contactId, message: `Draft generated on demand: ${draft.subject}` });
@@ -395,9 +407,10 @@ export async function createOrg(formData: FormData) {
   const name = str(formData.get("name"));
   if (!name) return;
   const db = serviceClient();
+  const owner_id = (await currentUserId()) ?? null;
   const { data, error } = await db
     .from("organisations")
-    .insert({ name, sector: str(formData.get("sector")), icp: true })
+    .insert({ name, sector: str(formData.get("sector")), icp: true, owner_id })
     .select("id")
     .single();
   if (error) throw error;
@@ -424,6 +437,7 @@ export async function updateOrg(formData: FormData) {
       customer_category: str(formData.get("customer_category")),
       customer_sub_category: str(formData.get("customer_sub_category")),
       industry: str(formData.get("industry")),
+      owner_id: ownerFromForm(formData),
       custom_fields,
     })
     .eq("id", id);
@@ -488,9 +502,10 @@ export async function createContact(formData: FormData) {
   if (!full_name) return;
   const db = serviceClient();
   const organisation_id = await resolveCompany(db, formData);
+  const owner_id = (await currentUserId()) ?? null;
   const { data, error } = await db
     .from("contacts")
-    .insert({ full_name, email: str(formData.get("email")), organisation_id })
+    .insert({ full_name, email: str(formData.get("email")), organisation_id, owner_id })
     .select("id")
     .single();
   if (error) throw error;
@@ -517,6 +532,7 @@ export async function updateContact(formData: FormData) {
       label: str(formData.get("label")),
       email_status: str(formData.get("email_status")) ?? "unverified",
       snooze_until: str(formData.get("snooze_until")),
+      owner_id: ownerFromForm(formData),
       custom_fields,
     })
     .eq("id", id);
@@ -638,6 +654,7 @@ export async function createDeal(formData: FormData) {
   if (!title || !organisation_id) return;
   const db = serviceClient();
   const tcvIn = formData.get("tcv") ?? formData.get("value");
+  const owner_id = (await currentUserId()) ?? null;
   const { data, error } = await db
     .from("deals")
     .insert({
@@ -648,6 +665,7 @@ export async function createDeal(formData: FormData) {
       value: formData.get("value") ? Number(formData.get("value")) : tcvIn ? Number(tcvIn) : null,
       tcv: tcvIn ? Number(tcvIn) : null,
       arr: formData.get("arr") ? Number(formData.get("arr")) : null,
+      owner_id,
     })
     .select("id")
     .single();
@@ -678,6 +696,7 @@ export async function updateDeal(formData: FormData) {
       arr: formData.get("arr") ? Number(formData.get("arr")) : null,
       organisation_id,
       primary_contact_id: str(formData.get("primary_contact_id")),
+      owner_id: ownerFromForm(formData),
       custom_fields,
     })
     .eq("id", id);

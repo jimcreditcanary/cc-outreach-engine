@@ -2,6 +2,8 @@ import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { createContact, deleteContact } from "../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { OwnerFilter } from "@/components/OwnerFilter";
+import { resolveOwnerFilter } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 
@@ -17,17 +19,19 @@ interface ContactRow {
 
 const PAGE = 100;
 
-export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
-  const { q, page: pageStr } = await searchParams;
+export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string }> }) {
+  const { q, page: pageStr, owner } = await searchParams;
   const page = Math.max(1, parseInt(pageStr ?? "1") || 1);
   const from = (page - 1) * PAGE;
   const db = serviceClient();
+  const ownerId = await resolveOwnerFilter(owner);
   let query = db
     .from("contacts")
     .select("id, full_name, email, job_title, label, email_status, organisation:organisations(name)", { count: "exact" })
     .order("full_name", { ascending: true })
     .range(from, from + PAGE - 1);
   if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%`);
+  if (ownerId) query = query.eq("owner_id", ownerId);
   const [{ data, count }, { data: orgs }] = await Promise.all([
     query,
     db.from("organisations").select("id, name").order("name", { ascending: true }).limit(1000),
@@ -35,12 +39,13 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   const contacts = (data ?? []) as unknown as ContactRow[];
   const total = count ?? contacts.length;
   const lastPage = Math.max(1, Math.ceil(total / PAGE));
-  const qp = (p: number) => `/contacts?${new URLSearchParams({ ...(q ? { q } : {}), page: String(p) })}`;
+  const qp = (p: number) => `/contacts?${new URLSearchParams({ ...(q ? { q } : {}), ...(owner ? { owner } : {}), page: String(p) })}`;
 
   return (
     <main className="px-8 py-6">
-      <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
+      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Contacts</h1>
+        <OwnerFilter current={owner} pathname="/contacts" extraParams={{ q }} />
         <span className="text-sm text-neutral-500">{total}{q ? " matches" : ""} · showing {contacts.length === 0 ? 0 : from + 1}–{from + contacts.length}</span>
       </header>
 

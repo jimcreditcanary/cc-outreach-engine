@@ -5,6 +5,7 @@ import { updateOrg, deleteOrg, mergeOrg, addNote, updateNote, deleteNote, create
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
+import { OwnerPicker } from "@/components/OwnerPicker";
 
 // Enrichment takes 15-30s (homepage scrape + AI summary + feed discovery).
 export const maxDuration = 60;
@@ -80,6 +81,7 @@ export default async function CompanyDetail({
         <div><label className={lbl}>Industry (raw)</label><input name="industry" defaultValue={org.industry ?? ""} className={field} /></div>
         <div className="flex items-end gap-2"><input type="checkbox" name="is_partner" defaultChecked={org.is_partner} id="ip" /><label htmlFor="ip" className="text-sm">Partner (excluded from outreach)</label></div>
         <div className="col-span-2"><label className={lbl}>Notes (top-line)</label><textarea name="top_line_notes" defaultValue={org.top_line_notes ?? ""} rows={3} className={field} /></div>
+        <OwnerPicker value={org.owner_id ?? null} />
         <CustomFieldInputs entityType="organisation" values={org.custom_fields as Record<string, unknown> | null} />
         <div className="col-span-2 flex gap-2">
           <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
