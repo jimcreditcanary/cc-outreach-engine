@@ -19,6 +19,7 @@ import {
   Mail,
   Calendar,
   UserCog,
+  Settings as SettingsIcon,
   ChevronsLeft,
   ChevronsRight,
   LogOut,
@@ -36,6 +37,7 @@ const NAV = [
   { href: "/meetings", label: "Meetings", Icon: Calendar },
   { href: "/newsletter", label: "Newsletter", Icon: Mail },
   { href: "/admin/users", label: "Users", Icon: UserCog },
+  { href: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
 export function AppShell({

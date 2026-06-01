@@ -6,6 +6,7 @@ import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { syncCalendar } from "@/lib/meetings/sync";
 import { generateMeetingBrief } from "@/lib/meetings/brief";
+import { generatePostMeetingSummary } from "@/lib/meetings/postSummary";
 import { flash } from "@/lib/flash";
 
 const str = (v: FormDataEntryValue | null): string | null => {
@@ -29,6 +30,41 @@ export async function generateBriefAction(formData: FormData) {
   if (!id) return;
   await generateMeetingBrief(serviceClient(), id);
   await flash("success", "Brief generated");
+  revalidatePath(`/meetings/${id}`);
+}
+
+/** Save a pasted transcript (and any notes) without running the AI. */
+export async function saveTranscriptAction(formData: FormData) {
+  const id = String(formData.get("id"));
+  const transcript = str(formData.get("transcript"));
+  if (!id) return;
+  await serviceClient()
+    .from("meetings")
+    .update({ transcript, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  await flash("success", "Transcript saved");
+  revalidatePath(`/meetings/${id}`);
+}
+
+/** AI post-meeting summary from the pasted transcript. If the meeting is
+ *  linked to a deal, the summary is also stored as a note + MEDDICC re-seeds. */
+export async function generatePostSummaryAction(formData: FormData) {
+  const id = String(formData.get("id"));
+  const transcript = str(formData.get("transcript"));
+  if (!id) return;
+  const db = serviceClient();
+  // Persist whatever's in the textarea first so the AI sees the latest paste.
+  if (transcript !== null) {
+    await db.from("meetings").update({ transcript, updated_at: new Date().toISOString() }).eq("id", id);
+  }
+  const res = await generatePostMeetingSummary(db, id);
+  if (!res) {
+    await flash("error", "Add a transcript or notes first, then summarise.");
+  } else if (res.meddicc_re_seeded) {
+    await flash("success", `Summary generated · MEDDICC re-seeded${res.meddicc_biggest_gap ? ` (gap: ${res.meddicc_biggest_gap})` : ""}`);
+  } else {
+    await flash("success", "Summary generated");
+  }
   revalidatePath(`/meetings/${id}`);
 }
 

@@ -1,6 +1,6 @@
 import { adminClient } from "@/lib/auth/admin";
 import { currentUser } from "@/lib/auth/server";
-import { createUserAction, deleteUserAction, resetPasswordAction } from "../../auth-actions";
+import { createUserAction, deleteUserAction, resetPasswordAction, reassignOwnershipAction } from "../../auth-actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +55,40 @@ export default async function UsersPage() {
         ))}
         {users.length === 0 && <li className="text-neutral-400">No users yet.</li>}
       </ul>
+
+      {users.length >= 2 && (
+        <section className="mt-8 rounded-lg border border-neutral-200 bg-white p-4">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Reassign ownership</h2>
+          <p className="mb-3 text-xs text-neutral-500">
+            Bulk-move every company / contact / deal / send / meeting / note owned by one user to another.
+            Run this <em>before</em> removing a user — otherwise their rows fall back to unassigned and you&apos;ll need to claim each one by hand.
+          </p>
+          <form action={reassignOwnershipAction} className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">From</label>
+              <select name="source_id" className="rounded border border-neutral-300 px-2 py-1.5 text-sm" required defaultValue="">
+                <option value="" disabled>pick user…</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.email ?? u.id}</option>)}
+              </select>
+            </div>
+            <span className="self-center text-neutral-400">→</span>
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500">To</label>
+              <select name="target_id" className="rounded border border-neutral-300 px-2 py-1.5 text-sm" required defaultValue="">
+                <option value="" disabled>pick user…</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.email ?? u.id}</option>)}
+              </select>
+            </div>
+            <ConfirmSubmit
+              formAction={reassignOwnershipAction}
+              className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+              message="Re-assign EVERY row owned by the source user to the target user? Not reversible without a similar reverse run."
+            >
+              Re-assign all
+            </ConfirmSubmit>
+          </form>
+        </section>
+      )}
     </main>
   );
 }

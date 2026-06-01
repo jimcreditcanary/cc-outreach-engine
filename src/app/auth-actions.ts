@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { authClient, currentUser } from "@/lib/auth/server";
 import { adminClient } from "@/lib/auth/admin";
+import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
 
 const str = (v: FormDataEntryValue | null): string =>
@@ -71,6 +72,30 @@ export async function deleteUserAction(formData: FormData) {
   const admin = adminClient();
   const { error } = await admin.auth.admin.deleteUser(id);
   if (error) throw error;
-  await flash("success", "User removed");
+  await flash("success", "User removed — their owned rows are now unassigned (use Reassign to move them).");
+  revalidatePath("/admin/users");
+}
+
+/** Bulk re-assign every owned row from one operator to another. Useful
+ *  before deleting a user (set NULL on delete would leave everything
+ *  orphaned). Hits every entity with an owner_id column. */
+export async function reassignOwnershipAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const source = str(formData.get("source_id"));
+  const target = str(formData.get("target_id"));
+  if (!source || !target || source === target) return;
+  const db = serviceClient();
+  const tables = ["organisations", "contacts", "deals", "sends", "meetings", "notes"] as const;
+  let total = 0;
+  for (const t of tables) {
+    const { count, error } = await db
+      .from(t)
+      .update({ owner_id: target }, { count: "exact" })
+      .eq("owner_id", source);
+    if (error) throw error;
+    total += count ?? 0;
+  }
+  await flash("success", `Re-assigned ${total} row${total === 1 ? "" : "s"}`);
   revalidatePath("/admin/users");
 }

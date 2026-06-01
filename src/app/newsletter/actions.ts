@@ -6,6 +6,7 @@ import { serviceClient } from "@/lib/db/client";
 import { textToHtml } from "@/lib/generate/render";
 import { SIGNATURE_TEXT, SIGNATURE_HTML, unsubFooterText, unsubFooterHtml } from "@/lib/generate/config";
 import { sendBroadcast } from "@/lib/send/postmark";
+import { currentUserId } from "@/lib/auth/owner";
 import { flash } from "@/lib/flash";
 
 const str = (v: FormDataEntryValue | null): string | null => {
@@ -80,6 +81,9 @@ export async function sendNewsletter(formData: FormData) {
   ]);
   const suppressed = new Set((supp ?? []).map((s) => String(s.email).toLowerCase()));
 
+  // Newsletter goes out as the operator who hit Send (their FROM / Reply-To).
+  const newsletterOwner = await currentUserId();
+
   let sent = 0;
   for (const c of subs ?? []) {
     const email = String(c.email).toLowerCase();
@@ -94,7 +98,7 @@ ${unsubFooterHtml(c.email!)}
 </div>`;
 
     try {
-      const res = await sendBroadcast({ to: c.email!, subject, htmlBody: htmlFinal, textBody: textFinal, tag: "newsletter" });
+      const res = await sendBroadcast({ to: c.email!, subject, htmlBody: htmlFinal, textBody: textFinal, tag: "newsletter", ownerId: newsletterOwner });
       await db.from("events").insert({
         contact_id: c.id,
         organisation_id: c.organisation_id,

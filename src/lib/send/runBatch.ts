@@ -81,7 +81,7 @@ export async function runSendBatch(db: DB, opts: { batch?: number; force?: boole
   const suppressed = new Set((supp ?? []).map((s) => String(s.email).toLowerCase()));
   const { data: drafts, error } = await db
     .from("sends")
-    .select("id, subject, body_html, body_text, contact:contacts(id, full_name, email, email_status, organisation_id)")
+    .select("id, subject, body_html, body_text, owner_id, contact:contacts(id, full_name, email, email_status, organisation_id)")
     .eq("status", "approved")
     .order("ts", { ascending: true })
     .limit(limit);
@@ -106,6 +106,7 @@ export async function runSendBatch(db: DB, opts: { batch?: number; force?: boole
         htmlBody: d.body_html as string,
         textBody: d.body_text as string,
         tag: "outreach",
+        ownerId: (d as { owner_id?: string | null }).owner_id ?? null,
       });
       await db.from("sends").update({ status: "sent", postmark_message_id: res.messageId, ts: new Date().toISOString() }).eq("id", d.id);
       await db.from("events").insert({

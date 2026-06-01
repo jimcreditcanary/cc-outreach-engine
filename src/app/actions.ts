@@ -196,7 +196,7 @@ export async function sendDraftNow(formData: FormData) {
   await persistEdits(db, id, formData);
   const { data: row } = await db
     .from("sends")
-    .select("id, subject, body_html, body_text, status, contact:contacts(id, full_name, email, email_status, organisation_id)")
+    .select("id, subject, body_html, body_text, status, owner_id, contact:contacts(id, full_name, email, email_status, organisation_id)")
     .eq("id", id)
     .maybeSingle();
   const c = row?.contact as unknown as { id: string; full_name: string; email: string; email_status: string; organisation_id: string | null } | null;
@@ -217,6 +217,7 @@ export async function sendDraftNow(formData: FormData) {
       htmlBody: row.body_html as string,
       textBody: row.body_text as string,
       tag: "outreach",
+      ownerId: (row as { owner_id?: string | null }).owner_id ?? null,
     });
     await db
       .from("sends")
@@ -585,12 +586,14 @@ export async function addNote(formData: FormData) {
   const contact_id = str(formData.get("contact_id"));
   if (!content) return;
   const db = serviceClient();
+  const owner_id = (await currentUserId()) ?? null;
   const { error } = await db.from("notes").insert({
     content,
     organisation_id,
     contact_id,
     author: "Jim",
     noted_at: new Date().toISOString(),
+    owner_id,
   });
   if (error) throw error;
   await logEvent(db, { contact_id, organisation_id, message: `Note added: ${content.slice(0, 80)}` });

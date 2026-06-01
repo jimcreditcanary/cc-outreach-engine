@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { generateBriefAction, updateMeetingAction, deleteMeetingAction, setSalesRelevantAction } from "../actions";
+import { generateBriefAction, updateMeetingAction, deleteMeetingAction, setSalesRelevantAction, saveTranscriptAction, generatePostSummaryAction } from "../actions";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
@@ -79,6 +79,47 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
                 </PendingButton>
               </div>
             </form>
+          </section>
+
+          {/* Transcript + AI post-meeting summary */}
+          <section>
+            <div className="mb-2 flex items-center gap-3">
+              <h2 className="font-semibold">Transcript → AI summary</h2>
+              <span className="text-xs text-neutral-400">Paste a transcript (or rough notes) and let the AI write the summary.</span>
+            </div>
+            <form action={generatePostSummaryAction} className="space-y-2">
+              <input type="hidden" name="id" value={m.id} />
+              <textarea
+                name="transcript"
+                defaultValue={m.transcript ?? ""}
+                rows={10}
+                className={`${field} font-mono text-xs`}
+                placeholder={"Paste the Teams / Zoom / Otter transcript here, or rough notes if no transcript.\n\nThe AI will produce a structured post-meeting summary and (if a deal is linked) re-seed MEDDICC from the new context."}
+              />
+              <div className="flex flex-wrap gap-2">
+                <PendingButton
+                  formAction={saveTranscriptAction}
+                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                  pendingLabel="Saving…"
+                >
+                  Save transcript
+                </PendingButton>
+                <PendingButton
+                  className="rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800"
+                  pendingLabel="Summarising + re-seeding MEDDICC…"
+                >
+                  ✨ {m.post_summary ? "Regenerate summary" : "Generate summary"}
+                </PendingButton>
+                {m.post_summary_generated_at && (
+                  <span className="self-center text-xs text-neutral-400">
+                    Last: {new Date(m.post_summary_generated_at).toLocaleString("en-GB")}
+                  </span>
+                )}
+              </div>
+            </form>
+            {m.post_summary && (
+              <pre className="mt-3 whitespace-pre-wrap break-words rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 font-sans text-sm text-emerald-900">{m.post_summary}</pre>
+            )}
           </section>
         </div>
 
