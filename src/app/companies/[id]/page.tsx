@@ -4,6 +4,7 @@ import { serviceClient } from "@/lib/db/client";
 import { updateOrg, deleteOrg, mergeOrg, addNote, updateNote, deleteNote, createDeal, setDealStatus, deleteDeal, enrichCompanyAction } from "../../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
+import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
 
 // Enrichment takes 15-30s (homepage scrape + AI summary + feed discovery).
 export const maxDuration = 60;
@@ -79,6 +80,7 @@ export default async function CompanyDetail({
         <div><label className={lbl}>Industry (raw)</label><input name="industry" defaultValue={org.industry ?? ""} className={field} /></div>
         <div className="flex items-end gap-2"><input type="checkbox" name="is_partner" defaultChecked={org.is_partner} id="ip" /><label htmlFor="ip" className="text-sm">Partner (excluded from outreach)</label></div>
         <div className="col-span-2"><label className={lbl}>Notes (top-line)</label><textarea name="top_line_notes" defaultValue={org.top_line_notes ?? ""} rows={3} className={field} /></div>
+        <CustomFieldInputs entityType="organisation" values={org.custom_fields as Record<string, unknown> | null} />
         <div className="col-span-2 flex gap-2">
           <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
           <ConfirmSubmit
@@ -240,6 +242,8 @@ export default async function CompanyDetail({
         )}
         <p className="mt-2 text-xs text-neutral-400">Re-points the other company&apos;s contacts, deals & notes here, then deletes it. Not reversible.</p>
       </section>
+
+      <CustomFieldsManager entityType="organisation" />
     </main>
   );
 }

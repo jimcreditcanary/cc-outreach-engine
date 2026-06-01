@@ -11,6 +11,13 @@ import { regenerateForContact } from "@/lib/generate/forContact";
 import { sendBroadcast } from "@/lib/send/postmark";
 import { enrichCompany } from "@/lib/enrich/company";
 import { flash } from "@/lib/flash";
+import {
+  loadCustomFieldDefs,
+  parseCustomFieldsFromForm,
+  slugify,
+  type EntityType,
+  type FieldType,
+} from "@/lib/customFields";
 
 const str = (v: FormDataEntryValue | null): string | null => {
   const s = String(v ?? "").trim();
@@ -320,6 +327,68 @@ export async function markLinkedInDone(formData: FormData) {
   revalidatePath("/linkedin");
 }
 
+// ── Custom field defs (Companies / Contacts / Deals) ───────────────
+
+/** Add a new custom field schema entry for a given entity type. The label
+ *  is slugified to produce a stable field_key (the jsonb key on entities). */
+export async function addCustomFieldDef(formData: FormData) {
+  const entity_type = String(formData.get("entity_type")) as EntityType;
+  if (!["organisation", "contact", "deal"].includes(entity_type)) return;
+  const field_label = str(formData.get("field_label"));
+  const field_type = (str(formData.get("field_type")) ?? "text") as FieldType;
+  if (!field_label) return;
+  const field_key = slugify(field_label);
+  if (!field_key) return;
+  const optionsRaw = str(formData.get("options"));
+  const options =
+    field_type === "select" && optionsRaw
+      ? optionsRaw.split(/[,\n]/).map((s) => s.trim()).filter(Boolean)
+      : [];
+
+  const { error } = await serviceClient()
+    .from("custom_field_defs")
+    .insert({ entity_type, field_key, field_label, field_type, options });
+  if (error) {
+    await flash("error", `Couldn't add field: ${error.message}`);
+    return;
+  }
+  await flash("success", `Custom field added: ${field_label}`);
+  // Revalidate every detail page since the def is global to its entity type.
+  if (entity_type === "organisation") revalidatePath("/companies");
+  else if (entity_type === "contact") revalidatePath("/contacts");
+  else if (entity_type === "deal") revalidatePath("/deals");
+}
+
+export async function deleteCustomFieldDef(formData: FormData) {
+  const id = String(formData.get("id"));
+  if (!id) return;
+  const { data: def } = await serviceClient()
+    .from("custom_field_defs")
+    .select("entity_type, field_label")
+    .eq("id", id)
+    .maybeSingle();
+  const { error } = await serviceClient().from("custom_field_defs").delete().eq("id", id);
+  if (error) {
+    await flash("error", `Couldn't remove field: ${error.message}`);
+    return;
+  }
+  await flash("success", `Custom field removed${def?.field_label ? `: ${def.field_label}` : ""}`);
+  if (def?.entity_type === "organisation") revalidatePath("/companies");
+  else if (def?.entity_type === "contact") revalidatePath("/contacts");
+  else if (def?.entity_type === "deal") revalidatePath("/deals");
+}
+
+/** Collect + coerce the `custom_*` values from FormData using the defs
+ *  registered for this entity type. Used inside the entity update actions. */
+async function collectCustomFields(
+  db: DB,
+  entityType: EntityType,
+  formData: FormData,
+): Promise<Record<string, unknown>> {
+  const defs = await loadCustomFieldDefs(db, entityType);
+  return parseCustomFieldsFromForm(formData, defs);
+}
+
 // ── CRM: organisations ──────────────────────────────────────────────
 
 export async function createOrg(formData: FormData) {
@@ -341,6 +410,7 @@ export async function createOrg(formData: FormData) {
 export async function updateOrg(formData: FormData) {
   const id = String(formData.get("id"));
   const db = serviceClient();
+  const custom_fields = await collectCustomFields(db, "organisation", formData);
   const { error } = await db
     .from("organisations")
     .update({
@@ -354,6 +424,7 @@ export async function updateOrg(formData: FormData) {
       customer_category: str(formData.get("customer_category")),
       customer_sub_category: str(formData.get("customer_sub_category")),
       industry: str(formData.get("industry")),
+      custom_fields,
     })
     .eq("id", id);
   if (error) throw error;
@@ -433,6 +504,7 @@ export async function updateContact(formData: FormData) {
   const id = String(formData.get("id"));
   const db = serviceClient();
   const organisation_id = await resolveCompany(db, formData);
+  const custom_fields = await collectCustomFields(db, "contact", formData);
   const { error } = await db
     .from("contacts")
     .update({
@@ -445,6 +517,7 @@ export async function updateContact(formData: FormData) {
       label: str(formData.get("label")),
       email_status: str(formData.get("email_status")) ?? "unverified",
       snooze_until: str(formData.get("snooze_until")),
+      custom_fields,
     })
     .eq("id", id);
   if (error) throw error;
@@ -591,6 +664,7 @@ export async function updateDeal(formData: FormData) {
   const db = serviceClient();
   const organisation_id = str(formData.get("organisation_id"));
   const prevOrg = str(formData.get("prev_organisation_id"));
+  const custom_fields = await collectCustomFields(db, "deal", formData);
   // Changing company? If the new org differs, the existing primary contact
   // may belong to the old org — clear it unless a contact was chosen.
   const { error } = await db
@@ -604,6 +678,7 @@ export async function updateDeal(formData: FormData) {
       arr: formData.get("arr") ? Number(formData.get("arr")) : null,
       organisation_id,
       primary_contact_id: str(formData.get("primary_contact_id")),
+      custom_fields,
     })
     .eq("id", id);
   if (error) throw error;

@@ -4,6 +4,7 @@ import { serviceClient } from "@/lib/db/client";
 import { updateDeal, deleteDeal, uploadProposal, addDealContact, removeDealContact, reseedDealMeddicc } from "../../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
+import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomFieldsSection";
 
 export const dynamic = "force-dynamic";
 // Proposal upload + AI markdown conversion + MEDDICC auto-seed can run 20s+.
@@ -103,6 +104,7 @@ export default async function DealDetail({
             {pickContacts.map((c) => <option key={c.id} value={c.id}>{c.full_name}{c.job_title ? ` — ${c.job_title}` : ""}</option>)}
           </select>
         </div>
+        <CustomFieldInputs entityType="deal" values={deal.custom_fields as Record<string, unknown> | null} />
         <div className="col-span-2 flex gap-2">
           <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
           <ConfirmSubmit
@@ -220,6 +222,8 @@ export default async function DealDetail({
           {timeline.length === 0 && <li className="text-neutral-400">No activity yet.</li>}
         </ul>
       </section>
+
+      <CustomFieldsManager entityType="deal" />
     </main>
   );
 }
