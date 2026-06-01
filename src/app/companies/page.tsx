@@ -4,6 +4,7 @@ import { createOrg, deleteOrg } from "../actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
           <option value="">sector…</option>
           {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">+ Add company</button>
+        <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Adding…">+ Add company</PendingButton>
       </form>
 
       <table className="w-full text-sm">

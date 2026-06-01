@@ -192,9 +192,9 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
               <form action={setSalesRelevantAction}>
                 <input type="hidden" name="id" value={m.id} />
                 <input type="hidden" name="relevant" value={m.sales_relevant ? "false" : "true"} />
-                <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100">
+                <PendingButton className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="…">
                   {m.sales_relevant ? "Mark non-sales (hide)" : "Mark sales-relevant"}
-                </button>
+                </PendingButton>
               </form>
               <form action={deleteMeetingAction}>
                 <input type="hidden" name="id" value={m.id} />

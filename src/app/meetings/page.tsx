@@ -153,16 +153,17 @@ function Section({ title, rows, emptyMsg }: { title: string; rows: Row[]; emptyM
                 <form action={setSalesRelevantAction}>
                   <input type="hidden" name="id" value={m.id} />
                   <input type="hidden" name="relevant" value={m.sales_relevant ? "false" : "true"} />
-                  <button
+                  <PendingButton
                     className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                       m.sales_relevant
                         ? "border-neutral-300 text-neutral-700 hover:bg-neutral-100"
                         : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
                     }`}
                     title={m.sales_relevant ? "Mark as non-sales (hides from this list)" : "Mark as sales-relevant"}
+                    pendingLabel="…"
                   >
                     {m.sales_relevant ? "Hide" : "Include"}
-                  </button>
+                  </PendingButton>
                 </form>
               </li>
             );

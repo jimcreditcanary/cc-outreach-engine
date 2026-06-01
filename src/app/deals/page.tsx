@@ -4,6 +4,7 @@ import { createDeal, deleteDeal } from "../actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -107,7 +108,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
           {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
         <input name="value" type="number" placeholder="£ value" className="w-28 rounded border border-neutral-300 px-2 py-1.5 text-sm" />
-        <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">+ Add deal</button>
+        <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Adding…">+ Add deal</PendingButton>
       </form>
 
       {/* Needs action — live deals (open + proposal) with their next-best-action. */}

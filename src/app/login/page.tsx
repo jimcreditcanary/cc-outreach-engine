@@ -1,4 +1,5 @@
 import { loginAction } from "../auth-actions";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +27,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           required
           className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
         />
-        <button className="w-full rounded bg-amber-700 px-3 py-2 text-sm font-medium text-white hover:bg-amber-800">
+        <PendingButton className="w-full rounded bg-amber-700 px-3 py-2 text-sm font-medium text-white hover:bg-amber-800" pendingLabel="Signing in…">
           Sign in
-        </button>
+        </PendingButton>
         {error && <p className="text-sm text-red-600">{decodeURIComponent(error)}</p>}
       </form>
     </main>

@@ -3,6 +3,7 @@ import { currentUser } from "@/lib/auth/server";
 import { createUserAction, deleteUserAction, resetPasswordAction, reassignOwnershipAction } from "../../auth-actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { RowIconAction } from "@/components/RowIconAction";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function UsersPage() {
       <form action={createUserAction} className="mb-6 flex flex-wrap gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
         <input name="email" type="email" placeholder="email" className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" required />
         <input name="password" type="text" placeholder="temp password (8+ chars)" minLength={8} className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" required />
-        <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">+ Add user</button>
+        <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Creating…">+ Add user</PendingButton>
       </form>
       <p className="mb-4 text-xs text-neutral-400">User gets instant access — share the password with them, they can change it later via Supabase password reset.</p>
 
@@ -37,7 +38,7 @@ export default async function UsersPage() {
               <form action={resetPasswordAction} className="flex gap-1">
                 <input type="hidden" name="id" value={u.id} />
                 <input name="password" type="text" placeholder="new password" minLength={8} className="rounded border border-neutral-300 px-2 py-1 text-xs" required />
-                <button className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100">reset</button>
+                <PendingButton className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100" pendingLabel="…">reset</PendingButton>
               </form>
               {u.id !== me?.id && (
                 <form>

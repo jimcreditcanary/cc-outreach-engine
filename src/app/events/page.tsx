@@ -4,6 +4,7 @@ import { createConferenceAction, deleteConferenceAction } from "./actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
         <input name="location" placeholder="Location" className="rounded border border-neutral-300 px-2 py-1.5 text-sm" />
         <input name="start_date" type="date" className="rounded border border-neutral-300 px-2 py-1.5 text-sm" />
         <input name="end_date" type="date" className="rounded border border-neutral-300 px-2 py-1.5 text-sm" />
-        <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">+ Add event</button>
+        <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Creating…">+ Add event</PendingButton>
       </form>
 
       <table className="w-full text-sm">

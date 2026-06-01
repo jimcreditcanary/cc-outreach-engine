@@ -87,7 +87,7 @@ export default async function ContactDetail({
           <input type="hidden" name="contact_id" value={c.id} />
           <input id="news" type="checkbox" name="subscribed" defaultChecked={c.newsletter_subscribed} />
           <label htmlFor="news">Subscribe to monthly newsletter</label>
-          <button className="ml-auto rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100">Update</button>
+          <PendingButton className="ml-auto rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100" pendingLabel="…">Update</PendingButton>
         </form>
       )}
 
@@ -123,7 +123,7 @@ export default async function ContactDetail({
         <OwnerPicker value={c.owner_id ?? null} />
         <CustomFieldInputs entityType="contact" values={c.custom_fields as Record<string, unknown> | null} />
         <div className="col-span-2 flex gap-2">
-          <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
+          <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">Save</PendingButton>
           <ConfirmSubmit
             formAction={deleteContact}
             className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
@@ -140,7 +140,7 @@ export default async function ContactDetail({
           <input type="hidden" name="contact_id" value={c.id} />
           <input type="hidden" name="organisation_id" value={org?.id ?? ""} />
           <input name="content" placeholder="Add a note…" className={`${field} flex-1`} />
-          <button className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">Add</button>
+          <PendingButton className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700" pendingLabel="Adding…">Add</PendingButton>
         </form>
         <ul className="space-y-2 text-neutral-600">
           {(notes ?? []).map((n) => (
@@ -151,7 +151,7 @@ export default async function ContactDetail({
                 <input type="hidden" name="back" value={`/contacts/${c.id}`} />
                 <textarea name="content" defaultValue={String(n.content)} rows={2} className={`${field} flex-1`} />
                 <div className="flex flex-col items-end gap-1">
-                  <button className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300">Save</button>
+                  <PendingButton className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300" pendingLabel="…">Save</PendingButton>
                   <RowIconAction kind="delete" formAction={deleteNote} confirmMessage="Delete this note?" />
                 </div>
               </form>
@@ -205,9 +205,9 @@ export default async function ContactDetail({
                 <form action={mergeContact}>
                   <input type="hidden" name="source_id" value={m.id} />
                   <input type="hidden" name="target_id" value={c.id} />
-                  <button className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700">
+                  <PendingButton className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700" pendingLabel="Merging…">
                     Merge into {c.full_name} →
-                  </button>
+                  </PendingButton>
                 </form>
               </li>
             ))}

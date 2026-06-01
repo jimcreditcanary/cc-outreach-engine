@@ -1,4 +1,5 @@
 import { submitUnsubscribe } from "./actions";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -78,9 +79,9 @@ export default async function UnsubscribePage({
           <textarea name="note" rows={3} className="w-full rounded border border-neutral-300 px-3 py-2 text-sm" placeholder="(optional)" />
         </div>
 
-        <button className="w-full rounded bg-amber-700 px-3 py-2 text-sm font-medium text-white hover:bg-amber-800">
+        <PendingButton className="w-full rounded bg-amber-700 px-3 py-2 text-sm font-medium text-white hover:bg-amber-800" pendingLabel="Removing you…">
           Unsubscribe me
-        </button>
+        </PendingButton>
         {sp.error === "missing-email" && (
           <p className="text-sm text-red-600">We need your email to remove you.</p>
         )}

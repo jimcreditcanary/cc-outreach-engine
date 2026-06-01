@@ -88,7 +88,7 @@ export default async function CompanyDetail({
         <OwnerPicker value={org.owner_id ?? null} />
         <CustomFieldInputs entityType="organisation" values={org.custom_fields as Record<string, unknown> | null} />
         <div className="col-span-2 flex gap-2">
-          <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
+          <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">Save</PendingButton>
           <ConfirmSubmit
             formAction={deleteOrg}
             className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
@@ -123,7 +123,7 @@ export default async function CompanyDetail({
                   <select name="status" defaultValue={d.status} className="rounded border border-neutral-200 px-1 py-0.5 text-xs">
                     {DEAL_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
-                  <button className="rounded bg-neutral-100 px-2 py-0.5 text-xs hover:bg-neutral-200">set</button>
+                  <PendingButton className="rounded bg-neutral-100 px-2 py-0.5 text-xs hover:bg-neutral-200" pendingLabel="…">set</PendingButton>
                 </form>
                 <form action={deleteDeal}>
                   <input type="hidden" name="id" value={d.id} />
@@ -140,7 +140,7 @@ export default async function CompanyDetail({
             <input type="hidden" name="organisation_id" value={org.id} />
             <input name="title" placeholder="New deal title…" className={`${field} flex-1`} required />
             <input name="value" type="number" placeholder="£" className="w-24 rounded border border-neutral-300 px-2 py-1.5 text-sm" />
-            <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">+ Add deal</button>
+            <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Adding…">+ Add deal</PendingButton>
           </form>
         </div>
         <div>
@@ -148,7 +148,7 @@ export default async function CompanyDetail({
           <form action={addNote} className="mb-3 flex gap-2">
             <input type="hidden" name="organisation_id" value={org.id} />
             <input name="content" placeholder="Add a note…" className={`${field} flex-1`} />
-            <button className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">Add</button>
+            <PendingButton className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700" pendingLabel="Adding…">Add</PendingButton>
           </form>
           <ul className="space-y-2 text-neutral-600">
             {(notes ?? []).map((n) => (
@@ -159,7 +159,7 @@ export default async function CompanyDetail({
                   <input type="hidden" name="back" value={`/companies/${org.id}`} />
                   <textarea name="content" defaultValue={String(n.content)} rows={2} className={`${field} flex-1`} />
                   <div className="flex flex-col items-end gap-1">
-                    <button className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300">Save</button>
+                    <PendingButton className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300" pendingLabel="…">Save</PendingButton>
                     <RowIconAction kind="delete" formAction={deleteNote} confirmMessage="Delete this note?" />
                   </div>
                 </form>
@@ -260,9 +260,9 @@ export default async function CompanyDetail({
                 <form action={mergeOrg}>
                   <input type="hidden" name="source_id" value={c.id} />
                   <input type="hidden" name="target_id" value={org.id} />
-                  <button className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700">
+                  <PendingButton className="rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700" pendingLabel="Merging…">
                     Merge into {org.name} →
-                  </button>
+                  </PendingButton>
                 </form>
               </li>
             ))}

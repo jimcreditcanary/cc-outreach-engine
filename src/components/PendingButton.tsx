@@ -2,8 +2,13 @@
 
 // Submit button that knows when its parent <form> is in-flight. Disables
 // itself, swaps to the pending label, and shows a tiny spinner — so any
-// AI-heavy server action (upload, generate, send, answer) has visible
-// progress instead of looking frozen.
+// server action has visible progress instead of looking frozen.
+//
+// STANDING PRINCIPLE: every form-submit button in the CRM uses this
+// component. Do NOT reach for a plain <button> inside a <form action={...}>.
+// Even fast actions feel snappier with a spinner over double-click guards.
+// Sister components: <ConfirmSubmit> (destructive + confirm), <RowIconAction>
+// (in-table chips), <FileInput> (file picker styling).
 
 import { useFormStatus } from "react-dom";
 import type { ReactNode } from "react";

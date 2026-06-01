@@ -150,12 +150,13 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                       placeholder="what specifically? (helps it learn)"
                       className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm"
                     />
-                    <button
+                    <PendingButton
                       formAction={rejectDraft}
                       className="rounded border border-red-300 px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50"
+                      pendingLabel="Rejecting…"
                     >
                       Reject
-                    </button>
+                    </PendingButton>
                   </div>
                 </form>
               </li>

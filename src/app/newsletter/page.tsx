@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { createNewsletter } from "./actions";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export default async function NewsletterPage() {
 
       <form action={createNewsletter} className="mb-6 flex flex-wrap gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
         <input name="subject" placeholder="Issue subject…" required className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" />
-        <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">+ New issue</button>
+        <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Creating…">+ New issue</PendingButton>
       </form>
 
       <table className="w-full text-sm">

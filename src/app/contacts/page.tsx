@@ -4,6 +4,7 @@ import { createContact, deleteContact } from "../actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
           <option value="">company…</option>
           {(orgs ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
-        <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">+ Add contact</button>
+        <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Adding…">+ Add contact</PendingButton>
       </form>
 
       <table className="w-full text-sm">

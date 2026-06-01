@@ -90,7 +90,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
         <div><label className={lbl}>End date</label><input type="date" name="end_date" defaultValue={ev.end_date ?? ""} className={field} /></div>
         <div className="col-span-2"><label className={lbl}>Notes</label><textarea name="notes" defaultValue={ev.notes ?? ""} rows={3} className={field} /></div>
         <div className="col-span-2 flex gap-2">
-          <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
+          <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">Save</PendingButton>
           <ConfirmSubmit
             formAction={deleteConferenceAction}
             className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"

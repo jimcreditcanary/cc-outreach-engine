@@ -110,7 +110,7 @@ export default async function DealDetail({
         <OwnerPicker value={deal.owner_id ?? null} />
         <CustomFieldInputs entityType="deal" values={deal.custom_fields as Record<string, unknown> | null} />
         <div className="col-span-2 flex gap-2">
-          <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Save</button>
+          <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">Save</PendingButton>
           <ConfirmSubmit
             formAction={deleteDeal}
             className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
@@ -150,7 +150,7 @@ export default async function DealDetail({
             <option value="">role…</option>
             {DEAL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
-          <button className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">Add</button>
+          <PendingButton className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700" pendingLabel="Adding…">Add</PendingButton>
         </form>
       </section>
 

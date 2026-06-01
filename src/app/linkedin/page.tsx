@@ -2,6 +2,7 @@ import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { saveLinkedInEdits, markLinkedInDone } from "../actions";
 import { currentUserId } from "@/lib/auth/owner";
+import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
 
@@ -140,8 +141,8 @@ export default async function LinkedInPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <input name="hook" placeholder="One-line hook / note…" className={`${fld} flex-1`} />
-                  <button className="rounded border border-neutral-300 px-3 py-1 text-sm font-medium text-neutral-700 hover:bg-neutral-100">Save edits</button>
-                  <button formAction={markLinkedInDone} className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700">Done — connected</button>
+                  <PendingButton className="rounded border border-neutral-300 px-3 py-1 text-sm font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Saving…">Save edits</PendingButton>
+                  <PendingButton formAction={markLinkedInDone} className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700" pendingLabel="Marking…">Done — connected</PendingButton>
                 </div>
               </form>
             </li>
