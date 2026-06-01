@@ -60,7 +60,7 @@ function isGroup(n: NavEntry): n is Group {
 const NAV: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
   {
-    key: "deals", label: "Deals", Icon: Briefcase,
+    key: "pipeline", label: "Pipeline", Icon: Briefcase,
     children: [
       { href: "/deals", label: "Deals", Icon: Briefcase },
       { href: "/hot",   label: "Hot",   Icon: Flame },
@@ -92,8 +92,8 @@ const NAV: NavEntry[] = [
   {
     key: "settings", label: "Settings", Icon: SettingsIcon,
     children: [
-      { href: "/settings",    label: "Settings", Icon: SettingsIcon },
-      { href: "/admin/users", label: "Users",    Icon: UserCog },
+      { href: "/settings",    label: "Setup", Icon: SettingsIcon },
+      { href: "/admin/users", label: "Users", Icon: UserCog },
     ],
   },
 ];
