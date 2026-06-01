@@ -117,6 +117,8 @@ export default async function DealDetail({
               sublabel: c.job_title ?? undefined,
             }))}
             placeholder="Type to search contacts…"
+            createField="new_primary_contact_name"
+            createLabel="Create contact"
           />
         </div>
         <OwnerPicker value={deal.owner_id ?? null} />
@@ -161,9 +163,11 @@ export default async function DealDetail({
               label: c.full_name ?? "(unnamed)",
               sublabel: c.job_title ?? undefined,
             }))}
-            placeholder="Type to find a contact to add…"
+            placeholder="Type to find or create a contact…"
             required
             className="flex-1"
+            createField="new_contact_name"
+            createLabel="Create contact"
           />
           <select name="role" className="w-44 rounded border border-neutral-300 px-2 py-1.5 text-sm" defaultValue="">
             <option value="">role…</option>

@@ -73,6 +73,35 @@ function ownerFromForm(formData: FormData): string | null {
   return str(formData.get("owner_id"));
 }
 
+/** Resolve a contact id from a Combobox: either the picked id or a typed
+ *  name → creates a new contact attached to the supplied org/owner. Mirrors
+ *  resolveCompany's shape so every "create new on the fly" select behaves
+ *  the same way. */
+async function resolveContact(
+  db: DB,
+  formData: FormData,
+  fieldName: string,
+  createField: string,
+  ctx: { organisation_id: string | null; owner_id: string | null },
+): Promise<string | null> {
+  const newName = str(formData.get(createField));
+  if (newName) {
+    const { data, error } = await db
+      .from("contacts")
+      .insert({
+        full_name: newName,
+        organisation_id: ctx.organisation_id,
+        owner_id: ctx.owner_id,
+        email_status: "unverified",
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data.id;
+  }
+  return str(formData.get(fieldName));
+}
+
 /** Resolve a company id from a select value, creating one if a new name was typed. */
 async function resolveCompany(db: DB, formData: FormData): Promise<string | null> {
   const newName = str(formData.get("new_organisation_name"));
@@ -757,8 +786,13 @@ export async function updateDeal(formData: FormData) {
   const organisation_id = await resolveCompany(db, formData);
   const prevOrg = str(formData.get("prev_organisation_id"));
   const custom_fields = await collectCustomFields(db, "deal", formData);
-  // Changing company? If the new org differs, the existing primary contact
-  // may belong to the old org — clear it unless a contact was chosen.
+  const owner_id = ownerFromForm(formData);
+  // Primary contact: picked from the Combobox OR typed-new → created and
+  // attached to this deal's org + owner. Same waterfall as resolveCompany.
+  const primary_contact_id = await resolveContact(db, formData, "primary_contact_id", "new_primary_contact_name", {
+    organisation_id,
+    owner_id,
+  });
   const { error } = await db
     .from("deals")
     .update({
@@ -769,8 +803,8 @@ export async function updateDeal(formData: FormData) {
       tcv: formData.get("tcv") ? Number(formData.get("tcv")) : null,
       arr: formData.get("arr") ? Number(formData.get("arr")) : null,
       organisation_id,
-      primary_contact_id: str(formData.get("primary_contact_id")),
-      owner_id: ownerFromForm(formData),
+      primary_contact_id,
+      owner_id,
       custom_fields,
     })
     .eq("id", id);
@@ -818,10 +852,17 @@ export async function deleteDeal(formData: FormData) {
 
 export async function addDealContact(formData: FormData) {
   const deal_id = String(formData.get("deal_id"));
-  const contact_id = str(formData.get("contact_id"));
   const role = str(formData.get("role"));
-  if (!deal_id || !contact_id) return;
+  if (!deal_id) return;
   const db = serviceClient();
+  // Look up the deal's org + owner so a typed-new contact lands on the right
+  // company without the operator having to repeat themselves.
+  const { data: d } = await db.from("deals").select("organisation_id, owner_id").eq("id", deal_id).maybeSingle();
+  const contact_id = await resolveContact(db, formData, "contact_id", "new_contact_name", {
+    organisation_id: (d?.organisation_id as string | null) ?? null,
+    owner_id: (d?.owner_id as string | null) ?? null,
+  });
+  if (!contact_id) return;
   const { error } = await db
     .from("deal_contacts")
     .upsert({ deal_id, contact_id, role }, { onConflict: "deal_id,contact_id" });
