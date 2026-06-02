@@ -77,19 +77,9 @@ export default async function LinkedInPage() {
   // means `errs.contact && errs.contact.message` correctly types as
   // SafeError instead of getting reduced to never.
   type SafeError = { code?: string; message?: string };
-  const errs: { contact: SafeError | null; touch: SafeError | null; owned: SafeError | null; orgs: SafeError | null } = {
-    contact: null, touch: null, owned: null, orgs: null,
+  const errs: { contact: SafeError | null; touch: SafeError | null; orgs: SafeError | null } = {
+    contact: null, touch: null, orgs: null,
   };
-
-  // Owned contact ids (used to scope today's touches in events).
-  let ownedContactIds: string[] = [];
-  if (me) {
-    try {
-      const { data: owned, error } = await db.from("contacts").select("id").eq("owner_id", me).limit(50000);
-      if (error) errs.owned = error as SafeError;
-      ownedContactIds = (owned ?? []).map((r) => r.id as string);
-    } catch (e) { errs.owned = { message: (e as Error).message }; }
-  }
 
   // Per-user scoping for the main queue.
   let contactQ = db
@@ -99,13 +89,22 @@ export default async function LinkedInPage() {
     .limit(4000);
   if (me) contactQ = contactQ.eq("owner_id", me);
 
-  // Today's LinkedIn touch events for THIS operator.
-  let touchesQ = db
-    .from("events")
-    .select("contact_id, payload")
-    .eq("type", "linkedin_note")
-    .gte("ts", dayStart);
-  if (me) touchesQ = touchesQ.in("contact_id", ownedContactIds.length ? ownedContactIds : ["__none__"]);
+  // Today's LinkedIn touch events for THIS operator. Use an embedded
+  // INNER JOIN to filter by owner — previously we pre-fetched ownedContactIds
+  // and then .in()-d them, but the IN-list URL hits Supabase's ~8KB limit
+  // past a few hundred contacts and returns 400 Bad Request.
+  let touchesQ = me
+    ? db
+        .from("events")
+        .select("contact_id, payload, contacts!inner(owner_id)")
+        .eq("type", "linkedin_note")
+        .gte("ts", dayStart)
+        .eq("contacts.owner_id", me)
+    : db
+        .from("events")
+        .select("contact_id, payload")
+        .eq("type", "linkedin_note")
+        .gte("ts", dayStart);
 
   // Run all three in parallel, but treat each as best-effort. Supabase's
   // PostgrestBuilder.then() returns the response object even on PG errors
@@ -211,13 +210,12 @@ export default async function LinkedInPage() {
           column / permissions issue / etc never crashes the page. Snapshot
           to const so TS narrows inside the JSX nodes. */}
       {(() => {
-        const ce = errs.contact; const te = errs.touch; const oe = errs.owned; const ge = errs.orgs;
-        if (!ce && !te && !oe && !ge) return null;
+        const ce = errs.contact; const te = errs.touch; const ge = errs.orgs;
+        if (!ce && !te && !ge) return null;
         return (
         <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {ce && <div><strong>Queue load failed:</strong> {ce.message}</div>}
           {te && <div><strong>Today&apos;s touches load failed:</strong> {te.message}</div>}
-          {oe && <div><strong>Owned-contacts load failed:</strong> {oe.message}</div>}
           {ge && <div><strong>Companies load failed:</strong> {ge.message}</div>}
           {ce?.code === "42703" && (() => {
             // Parse the missing column out of the Postgres message

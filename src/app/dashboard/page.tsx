@@ -37,16 +37,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const since30 = daysAgo(30);
 
   // For event-type counts (reply / click / bounce), the events table has no
-  // owner_id column — we narrow via the contacts that belong to this owner.
-  // Pre-fetch their ids once, then .in("contact_id", ids) on each query.
-  // Null/empty when no filter or no contacts owned.
-  let ownedContactIds: string[] | null = null;
-  if (ownerId) {
-    const { data: owned } = await db.from("contacts").select("id").eq("owner_id", ownerId).limit(50000);
-    ownedContactIds = (owned ?? []).map((r) => r.id as string);
-  }
-  const scopeEvents = <T extends { in: (col: string, values: string[]) => T }>(q: T): T =>
-    ownedContactIds ? q.in("contact_id", ownedContactIds.length ? ownedContactIds : ["__none__"]) : q;
+  // owner_id column. We INNER-JOIN through contacts.owner_id instead of
+  // pre-fetching ids + .in()-ing them — the IN-list URL hits Supabase's
+  // ~8KB limit past a few hundred contacts and 400s.
+  const eventOwnerJoin = (col: "*" | "count" = "*") =>
+    ownerId
+      ? `${col === "count" ? "" : "*, "}contacts!inner(owner_id)`.replace(/^,\s/, "")
+      : "*";
 
   // Build each query and optionally narrow by owner. PostgrestFilterBuilder's
   // chained types don't survive being passed through a generic wrapper, so we
@@ -57,9 +54,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const approvedQ   = db.from("sends").select("*", { count: "exact", head: true }).eq("status", "approved");
   const newCt7Q     = db.from("contacts").select("*", { count: "exact", head: true }).gte("created_at", since7);
   const prospectQ   = db.from("contacts").select("*", { count: "exact", head: true }).eq("label", "Prospect");
-  const replyQ      = db.from("events").select("*", { count: "exact", head: true }).eq("type", "reply").gte("ts", since7);
-  const clickQ      = db.from("events").select("*", { count: "exact", head: true }).eq("type", "click").gte("ts", since7);
-  const bounceQ     = db.from("events").select("*", { count: "exact", head: true }).eq("type", "bounce").gte("ts", since30);
+
+  // Event-count queries with optional owner-filter via JOIN.
+  const eventCountSelect = ownerId ? "contacts!inner(owner_id)" : "*";
+  const replyQ  = ownerId
+    ? db.from("events").select(eventCountSelect, { count: "exact", head: true }).eq("type", "reply").gte("ts", since7).eq("contacts.owner_id", ownerId)
+    : db.from("events").select("*", { count: "exact", head: true }).eq("type", "reply").gte("ts", since7);
+  const clickQ  = ownerId
+    ? db.from("events").select(eventCountSelect, { count: "exact", head: true }).eq("type", "click").gte("ts", since7).eq("contacts.owner_id", ownerId)
+    : db.from("events").select("*", { count: "exact", head: true }).eq("type", "click").gte("ts", since7);
+  const bounceQ = ownerId
+    ? db.from("events").select(eventCountSelect, { count: "exact", head: true }).eq("type", "bounce").gte("ts", since30).eq("contacts.owner_id", ownerId)
+    : db.from("events").select("*", { count: "exact", head: true }).eq("type", "bounce").gte("ts", since30);
+  void eventOwnerJoin; // helper retained for future symmetry
 
   const [
     { data: deals },
@@ -77,9 +84,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     ownerId ? sent7Q.eq("owner_id", ownerId)    : sent7Q,
     ownerId ? queuedQ.eq("owner_id", ownerId)   : queuedQ,
     ownerId ? approvedQ.eq("owner_id", ownerId) : approvedQ,
-    scopeEvents(replyQ),
-    scopeEvents(clickQ),
-    scopeEvents(bounceQ),
+    replyQ,
+    clickQ,
+    bounceQ,
     ownerId ? newCt7Q.eq("owner_id", ownerId)   : newCt7Q,
     ownerId ? prospectQ.eq("owner_id", ownerId) : prospectQ,
     db.from("events").select("ts, payload").eq("type", "crm_change").gte("ts", since7).limit(500),
