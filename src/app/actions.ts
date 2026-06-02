@@ -388,11 +388,10 @@ export async function unmarkNotOnLinkedIn(formData: FormData) {
   revalidatePath(`/contacts/${id}`);
 }
 
-export async function markLinkedInDone(formData: FormData) {
-  const id = String(formData.get("contact_id"));
-  if (!id) return;
-  const db = serviceClient();
-  const hook = str(formData.get("hook"));
+/** Shared persistence for the per-row LinkedIn form: contact edits + inline
+ *  sector assignment. Returns the resolved organisation_id so each caller
+ *  can stamp it onto the activity event. */
+async function persistLinkedInEdits(db: DB, formData: FormData, id: string): Promise<{ organisation_id: string | null }> {
   const organisation_id = await resolveCompany(db, formData);
   const { error } = await db
     .from("contacts")
@@ -403,7 +402,6 @@ export async function markLinkedInDone(formData: FormData) {
       mobile: str(formData.get("mobile")),
       organisation_id,
       linkedin_url: str(formData.get("linkedin_url")),
-      linkedin_connected: true,
     })
     .eq("id", id);
   if (error) throw error;
@@ -411,16 +409,78 @@ export async function markLinkedInDone(formData: FormData) {
   if (sector && organisation_id) {
     await db.from("organisations").update({ sector }).eq("id", organisation_id);
   }
+  return { organisation_id };
+}
+
+/** Sent a connection request via LinkedIn. Counts toward the 15/day cap.
+ *  The hook gets logged as the request's opening message so the voice loop
+ *  can learn from what worked. */
+export async function markLinkedInRequestSent(formData: FormData) {
+  const id = String(formData.get("contact_id"));
+  if (!id) return;
+  const db = serviceClient();
+  const { organisation_id } = await persistLinkedInEdits(db, formData, id);
+  const hook = str(formData.get("hook"));
+  await db.from("contacts").update({ linkedin_request_sent_at: new Date().toISOString() }).eq("id", id);
   await db.from("events").insert({
     contact_id: id,
     organisation_id,
     type: "linkedin_note",
     source: "surface",
-    payload: { hook: hook ?? "" },
+    payload: { hook: hook ?? "", kind: "request" },
   });
-  await logEvent(db, { contact_id: id, organisation_id, message: `LinkedIn connection sent${hook ? `: "${hook.slice(0, 80)}"` : ""}` });
-  await flash("success", "Marked connected");
+  await logEvent(db, { contact_id: id, organisation_id, message: `LinkedIn connection request sent${hook ? `: "${hook.slice(0, 80)}"` : ""}` });
+  await flash("success", "Connection request sent");
   revalidatePath("/linkedin");
+}
+
+/** "Already connected on LinkedIn" — moves the contact to the re-engage
+ *  queue and DOES NOT count toward the 15/day connection-request cap. */
+export async function markLinkedInAlreadyConnected(formData: FormData) {
+  const id = String(formData.get("contact_id"));
+  if (!id) return;
+  const db = serviceClient();
+  const { organisation_id } = await persistLinkedInEdits(db, formData, id);
+  await db.from("contacts").update({ linkedin_connected: true }).eq("id", id);
+  await db.from("events").insert({
+    contact_id: id,
+    organisation_id,
+    type: "linkedin_note",
+    source: "surface",
+    payload: { kind: "connected" },
+  });
+  await logEvent(db, { contact_id: id, organisation_id, message: "Marked: already 1st-degree on LinkedIn" });
+  await flash("success", "Marked as already connected — moved to re-engage queue");
+  revalidatePath("/linkedin");
+}
+
+/** Re-engagement nudge: a follow-up message to an existing 1st-degree.
+ *  Doesn't count toward the request cap (no new request), counts toward
+ *  the 30/day touches target. */
+export async function markLinkedInHookSent(formData: FormData) {
+  const id = String(formData.get("contact_id"));
+  if (!id) return;
+  const db = serviceClient();
+  const hook = str(formData.get("hook"));
+  const { data: c } = await db.from("contacts").select("organisation_id").eq("id", id).maybeSingle();
+  const organisation_id = (c?.organisation_id as string | null) ?? null;
+  await db.from("events").insert({
+    contact_id: id,
+    organisation_id,
+    type: "linkedin_note",
+    source: "surface",
+    payload: { hook: hook ?? "", kind: "hook" },
+  });
+  await logEvent(db, { contact_id: id, organisation_id, message: `LinkedIn re-engagement${hook ? `: "${hook.slice(0, 80)}"` : ""}` });
+  await flash("success", "Hook logged");
+  revalidatePath("/linkedin");
+}
+
+/** @deprecated kept for stale bookmarks. Routes to markLinkedInRequestSent
+ *  so behaviour stays the same as the old single button (counts toward 15). */
+export async function markLinkedInDone(formData: FormData) {
+  await markLinkedInRequestSent(formData);
+  return;
 }
 
 // ── Custom field defs (Companies / Contacts / Deals) ───────────────
