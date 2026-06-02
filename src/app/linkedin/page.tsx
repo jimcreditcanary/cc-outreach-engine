@@ -161,12 +161,27 @@ export default async function LinkedInPage() {
       {contactErr && (
         <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           <strong>Queue load failed:</strong> {contactErr.message}
-          {contactErr.code === "42703" && (
-            <p className="mt-1 text-xs">
-              Looks like migration 024 hasn&apos;t been run. Paste this in Supabase SQL Editor:
-              <code className="ml-1 rounded bg-red-100 px-1">alter table public.contacts add column if not exists linkedin_request_sent_at timestamptz;</code>
-            </p>
-          )}
+          {contactErr.code === "42703" && (() => {
+            // Parse the missing column out of the Postgres message
+            // ("column contacts.X does not exist") so the hint actually
+            // points at the right migration.
+            const colMatch = /column\s+\S*?\.?(\w+)\s+does not exist/i.exec(contactErr.message ?? "");
+            const col = colMatch?.[1];
+            const MIG_FOR_COLUMN: Record<string, string> = {
+              not_on_linkedin: "023 (alter table public.contacts add column not_on_linkedin boolean not null default false)",
+              linkedin_request_sent_at: "024 (alter table public.contacts add column linkedin_request_sent_at timestamptz)",
+              linkedin_last_touched_at: "025 (alter table public.contacts add column linkedin_last_touched_at timestamptz)",
+              owner_id: "018 (alter table public.contacts add column owner_id uuid references auth.users(id))",
+              needs_research: "021 (alter table public.contacts add column needs_research boolean not null default false)",
+            };
+            const hint = col && MIG_FOR_COLUMN[col];
+            return (
+              <p className="mt-1 text-xs">
+                Missing column: <code className="rounded bg-red-100 px-1">{col ?? "(unknown)"}</code>.
+                {hint && <> Run migration {hint} in Supabase SQL Editor.</>}
+              </p>
+            );
+          })()}
         </div>
       )}
 
