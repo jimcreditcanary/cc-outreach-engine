@@ -67,8 +67,26 @@ export default async function LinkedInPage() {
   const dayStart = linkedinDayStartUtc(new Date());
   const me = await currentUserId();
 
-  // Per-user scoping: each operator works their own queue + counts only
-  // their own touches.
+  // Every DB call wrapped in try/catch so a single missing column or
+  // permissions issue degrades to a readable error banner instead of
+  // a 500 page. Each failure captures both the error and an empty result
+  // so the rest of the render can keep working.
+  type SafeError = { code?: string; message?: string };
+  let contactErr: SafeError | null = null;
+  let touchEventsErr: SafeError | null = null;
+  let ownedErr: SafeError | null = null;
+
+  // Owned contact ids (used to scope today's touches in events).
+  let ownedContactIds: string[] = [];
+  if (me) {
+    try {
+      const { data: owned, error } = await db.from("contacts").select("id").eq("owner_id", me).limit(50000);
+      if (error) ownedErr = error as SafeError;
+      ownedContactIds = (owned ?? []).map((r) => r.id as string);
+    } catch (e) { ownedErr = { message: (e as Error).message }; }
+  }
+
+  // Per-user scoping for the main queue.
   let contactQ = db
     .from("contacts")
     .select("id, full_name, job_title, email, mobile, linkedin_url, label, linkedin_connected, linkedin_request_sent_at, linkedin_last_touched_at, organisation:organisations(id, name, sector, is_partner)")
@@ -76,13 +94,7 @@ export default async function LinkedInPage() {
     .limit(4000);
   if (me) contactQ = contactQ.eq("owner_id", me);
 
-  // Today's LinkedIn touch events for THIS operator. Single round-trip,
-  // we split into request-vs-other locally.
-  let ownedContactIds: string[] = [];
-  if (me) {
-    const { data: owned } = await db.from("contacts").select("id").eq("owner_id", me).limit(50000);
-    ownedContactIds = (owned ?? []).map((r) => r.id as string);
-  }
+  // Today's LinkedIn touch events for THIS operator.
   let touchesQ = db
     .from("events")
     .select("contact_id, payload")
@@ -90,16 +102,18 @@ export default async function LinkedInPage() {
     .gte("ts", dayStart);
   if (me) touchesQ = touchesQ.in("contact_id", ownedContactIds.length ? ownedContactIds : ["__none__"]);
 
-  const [contactRes, { data: orgs }, { data: touchEvents }] = await Promise.all([
-    contactQ,
-    db.from("organisations").select("id, name").order("name").limit(1000),
-    touchesQ,
+  const [contactRes, orgsRes, touchRes] = await Promise.all([
+    contactQ.then(r => r).catch((e: Error) => ({ data: null, error: { message: e.message } as SafeError })),
+    db.from("organisations").select("id, name").order("name").limit(1000)
+      .then(r => r).catch((e: Error) => ({ data: null, error: { message: e.message } as SafeError })),
+    touchesQ.then(r => r).catch((e: Error) => ({ data: null, error: { message: e.message } as SafeError })),
   ]);
-  // Surface DB errors instead of silently returning an empty list — the most
-  // common reason for "0 contacts" is migration 024 (linkedin_request_sent_at)
-  // not having been run yet, which makes the SELECT 400.
   const data = contactRes.data;
-  const contactErr = contactRes.error as { code?: string; message?: string } | null;
+  contactErr = (contactRes.error as SafeError | null) ?? null;
+  const orgs = orgsRes.data ?? [];
+  const orgsErr = (orgsRes.error as SafeError | null) ?? null;
+  const touchEvents = touchRes.data;
+  touchEventsErr = (touchRes.error as SafeError | null) ?? null;
 
   const touches = (touchEvents ?? []) as { contact_id: string; payload: { kind?: string } | null }[];
   const requestsToday = touches.filter((t) => t.payload?.kind === "request").length;
@@ -109,9 +123,15 @@ export default async function LinkedInPage() {
 
   // ICP buyer contacts only (sector set, not partner). We still show
   // contacts with no sector — they're the ones you can now fix inline.
-  const icp = ((data ?? []) as unknown as Row[]).filter(
-    (r) => r.organisation && !r.organisation.is_partner,
-  );
+  // Guard against malformed organisation joins (sometimes returns an array).
+  const icp = ((data ?? []) as unknown as Row[]).filter((r) => {
+    const org = r.organisation as unknown;
+    if (!org) return false;
+    // Supabase can return embedded relations as either an object or a
+    // single-element array depending on the relation cardinality. Handle both.
+    const obj = Array.isArray(org) ? org[0] : (org as Row["organisation"]);
+    return !!obj && !obj.is_partner;
+  });
   icp.sort((a, b) => (b.label === "Prospect" ? 1 : 0) - (a.label === "Prospect" ? 1 : 0));
 
   // 30-day cooldown — any contact touched in the last N days drops out of
@@ -158,10 +178,15 @@ export default async function LinkedInPage() {
         </div>
       </header>
 
-      {contactErr && (
+      {/* Roll every captured error into a single banner block so a missing
+          column / permissions issue / etc never crashes the page. */}
+      {(contactErr || touchEventsErr || ownedErr || orgsErr) && (
         <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          <strong>Queue load failed:</strong> {contactErr.message}
-          {contactErr.code === "42703" && (() => {
+          {contactErr && <div><strong>Queue load failed:</strong> {contactErr.message}</div>}
+          {touchEventsErr && <div><strong>Today&apos;s touches load failed:</strong> {touchEventsErr.message}</div>}
+          {ownedErr && <div><strong>Owned-contacts load failed:</strong> {ownedErr.message}</div>}
+          {orgsErr && <div><strong>Companies load failed:</strong> {orgsErr.message}</div>}
+          {contactErr?.code === "42703" && (() => {
             // Parse the missing column out of the Postgres message
             // ("column contacts.X does not exist") so the hint actually
             // points at the right migration.
