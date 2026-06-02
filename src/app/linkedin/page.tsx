@@ -71,19 +71,24 @@ export default async function LinkedInPage() {
   // permissions issue degrades to a readable error banner instead of
   // a 500 page. Each failure captures both the error and an empty result
   // so the rest of the render can keep working.
+  //
+  // Errors live on an object (not bare `let`s) — TS's control-flow
+  // analysis won't narrow object properties through async closures, which
+  // means `errs.contact && errs.contact.message` correctly types as
+  // SafeError instead of getting reduced to never.
   type SafeError = { code?: string; message?: string };
-  let contactErr: SafeError | null = null;
-  let touchEventsErr: SafeError | null = null;
-  let ownedErr: SafeError | null = null;
+  const errs: { contact: SafeError | null; touch: SafeError | null; owned: SafeError | null; orgs: SafeError | null } = {
+    contact: null, touch: null, owned: null, orgs: null,
+  };
 
   // Owned contact ids (used to scope today's touches in events).
   let ownedContactIds: string[] = [];
   if (me) {
     try {
       const { data: owned, error } = await db.from("contacts").select("id").eq("owner_id", me).limit(50000);
-      if (error) ownedErr = error as SafeError;
+      if (error) errs.owned = error as SafeError;
       ownedContactIds = (owned ?? []).map((r) => r.id as string);
-    } catch (e) { ownedErr = { message: (e as Error).message }; }
+    } catch (e) { errs.owned = { message: (e as Error).message }; }
   }
 
   // Per-user scoping for the main queue.
@@ -102,18 +107,42 @@ export default async function LinkedInPage() {
     .gte("ts", dayStart);
   if (me) touchesQ = touchesQ.in("contact_id", ownedContactIds.length ? ownedContactIds : ["__none__"]);
 
-  const [contactRes, orgsRes, touchRes] = await Promise.all([
-    contactQ.then(r => r).catch((e: Error) => ({ data: null, error: { message: e.message } as SafeError })),
-    db.from("organisations").select("id, name").order("name").limit(1000)
-      .then(r => r).catch((e: Error) => ({ data: null, error: { message: e.message } as SafeError })),
-    touchesQ.then(r => r).catch((e: Error) => ({ data: null, error: { message: e.message } as SafeError })),
+  // Run all three in parallel, but treat each as best-effort. Supabase's
+  // PostgrestBuilder.then() returns the response object even on PG errors
+  // (the error lives in `.error`), so a try/catch only fires on hard fetch
+  // failures — both paths feed the same null-data + SafeError pattern.
+  const fetchState: {
+    data: unknown[] | null;
+    orgs: { id: string; name: string | null }[];
+    touchEvents: { contact_id: string; payload: { kind?: string } | null }[] | null;
+  } = { data: null, orgs: [], touchEvents: null };
+
+  await Promise.all([
+    (async () => {
+      try {
+        const res = await contactQ;
+        fetchState.data = res.data as unknown[] | null;
+        errs.contact = (res.error as SafeError | null) ?? null;
+      } catch (e) { errs.contact = { message: (e as Error).message }; }
+    })(),
+    (async () => {
+      try {
+        const res = await db.from("organisations").select("id, name").order("name").limit(1000);
+        fetchState.orgs = (res.data ?? []) as { id: string; name: string | null }[];
+        errs.orgs = (res.error as SafeError | null) ?? null;
+      } catch (e) { errs.orgs = { message: (e as Error).message }; }
+    })(),
+    (async () => {
+      try {
+        const res = await touchesQ;
+        fetchState.touchEvents = (res.data ?? []) as { contact_id: string; payload: { kind?: string } | null }[];
+        errs.touch = (res.error as SafeError | null) ?? null;
+      } catch (e) { errs.touch = { message: (e as Error).message }; }
+    })(),
   ]);
-  const data = contactRes.data;
-  contactErr = (contactRes.error as SafeError | null) ?? null;
-  const orgs = orgsRes.data ?? [];
-  const orgsErr = (orgsRes.error as SafeError | null) ?? null;
-  const touchEvents = touchRes.data;
-  touchEventsErr = (touchRes.error as SafeError | null) ?? null;
+  const data = fetchState.data;
+  const orgs = fetchState.orgs;
+  const touchEvents = fetchState.touchEvents;
 
   const touches = (touchEvents ?? []) as { contact_id: string; payload: { kind?: string } | null }[];
   const requestsToday = touches.filter((t) => t.payload?.kind === "request").length;
@@ -179,18 +208,22 @@ export default async function LinkedInPage() {
       </header>
 
       {/* Roll every captured error into a single banner block so a missing
-          column / permissions issue / etc never crashes the page. */}
-      {(contactErr || touchEventsErr || ownedErr || orgsErr) && (
+          column / permissions issue / etc never crashes the page. Snapshot
+          to const so TS narrows inside the JSX nodes. */}
+      {(() => {
+        const ce = errs.contact; const te = errs.touch; const oe = errs.owned; const ge = errs.orgs;
+        if (!ce && !te && !oe && !ge) return null;
+        return (
         <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          {contactErr && <div><strong>Queue load failed:</strong> {contactErr.message}</div>}
-          {touchEventsErr && <div><strong>Today&apos;s touches load failed:</strong> {touchEventsErr.message}</div>}
-          {ownedErr && <div><strong>Owned-contacts load failed:</strong> {ownedErr.message}</div>}
-          {orgsErr && <div><strong>Companies load failed:</strong> {orgsErr.message}</div>}
-          {contactErr?.code === "42703" && (() => {
+          {ce && <div><strong>Queue load failed:</strong> {ce.message}</div>}
+          {te && <div><strong>Today&apos;s touches load failed:</strong> {te.message}</div>}
+          {oe && <div><strong>Owned-contacts load failed:</strong> {oe.message}</div>}
+          {ge && <div><strong>Companies load failed:</strong> {ge.message}</div>}
+          {ce?.code === "42703" && (() => {
             // Parse the missing column out of the Postgres message
             // ("column contacts.X does not exist") so the hint actually
             // points at the right migration.
-            const colMatch = /column\s+\S*?\.?(\w+)\s+does not exist/i.exec(contactErr.message ?? "");
+            const colMatch = /column\s+\S*?\.?(\w+)\s+does not exist/i.exec(ce.message ?? "");
             const col = colMatch?.[1];
             const MIG_FOR_COLUMN: Record<string, string> = {
               not_on_linkedin: "023 (alter table public.contacts add column not_on_linkedin boolean not null default false)",
@@ -208,7 +241,8 @@ export default async function LinkedInPage() {
             );
           })()}
         </div>
-      )}
+        );
+      })()}
 
       {/* SEND CONNECTION REQUESTS */}
       <section className="mb-8">
