@@ -41,6 +41,11 @@ function linkedinDayStartUtc(now: Date): string {
   return candidate.toISOString();
 }
 
+// Days a contact stays out of the queue after any LinkedIn touch (request,
+// already-connected, or re-engage hook). Stops the queue from re-suggesting
+// people you spoke to yesterday.
+const COOLDOWN_DAYS = 30;
+
 interface Row {
   id: string;
   full_name: string | null;
@@ -51,6 +56,7 @@ interface Row {
   label: string | null;
   linkedin_connected: boolean;
   linkedin_request_sent_at: string | null;
+  linkedin_last_touched_at: string | null;
   organisation: { id: string; name: string | null; sector: string | null; is_partner: boolean } | null;
 }
 
@@ -65,7 +71,7 @@ export default async function LinkedInPage() {
   // their own touches.
   let contactQ = db
     .from("contacts")
-    .select("id, full_name, job_title, email, mobile, linkedin_url, label, linkedin_connected, linkedin_request_sent_at, organisation:organisations(id, name, sector, is_partner)")
+    .select("id, full_name, job_title, email, mobile, linkedin_url, label, linkedin_connected, linkedin_request_sent_at, linkedin_last_touched_at, organisation:organisations(id, name, sector, is_partner)")
     .eq("not_on_linkedin", false)
     .limit(4000);
   if (me) contactQ = contactQ.eq("owner_id", me);
@@ -108,14 +114,20 @@ export default async function LinkedInPage() {
   );
   icp.sort((a, b) => (b.label === "Prospect" ? 1 : 0) - (a.label === "Prospect" ? 1 : 0));
 
+  // 30-day cooldown — any contact touched in the last N days drops out of
+  // every queue (research, send, re-engage) until the cooldown lapses.
+  const cooldownCutoff = Date.now() - COOLDOWN_DAYS * 86_400_000;
+  const cooled = (r: Row) =>
+    !r.linkedin_last_touched_at || new Date(r.linkedin_last_touched_at).getTime() < cooldownCutoff;
+
   // Three buckets:
   //   sendable  — not connected, no request sent yet, has a URL → primary work
   //   awaiting  — request sent, not yet a connection → waiting on their accept
-  //   reEngage  — already 1st-degree → drop a fresh hook
-  const sendable  = icp.filter((r) => !r.linkedin_connected && !r.linkedin_request_sent_at && r.linkedin_url);
+  //   reEngage  — already 1st-degree → drop a fresh hook (with cooldown)
+  const sendable  = icp.filter((r) => !r.linkedin_connected && !r.linkedin_request_sent_at && r.linkedin_url && cooled(r));
   const awaiting  = icp.filter((r) => !r.linkedin_connected && r.linkedin_request_sent_at && r.linkedin_url);
-  const reEngage  = icp.filter((r) =>  r.linkedin_connected && r.linkedin_url);
-  const needsResearch = icp.filter((r) => !r.linkedin_url && !r.linkedin_connected && !r.linkedin_request_sent_at).slice(0, 30);
+  const reEngage  = icp.filter((r) =>  r.linkedin_connected && r.linkedin_url && cooled(r));
+  const needsResearch = icp.filter((r) => !r.linkedin_url && !r.linkedin_connected && !r.linkedin_request_sent_at && cooled(r)).slice(0, 30);
 
   const touchProgress = Math.min(100, Math.round((touchedToday / DAILY_TARGET_TOUCHES) * 100));
   const reqProgress   = Math.min(100, Math.round((requestsToday / DAILY_CAP_REQUESTS) * 100));
@@ -126,6 +138,7 @@ export default async function LinkedInPage() {
         <h1 className="text-xl font-semibold">LinkedIn — today</h1>
         <p className="mt-1 text-sm text-neutral-500">
           Edit inline, open the profile, send the connection or drop a hook. Both counters reset at 8am UK.
+          Contacts touched in the last {COOLDOWN_DAYS} days stay out of the queue.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <CounterCard

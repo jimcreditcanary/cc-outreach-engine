@@ -421,7 +421,8 @@ export async function markLinkedInRequestSent(formData: FormData) {
   const db = serviceClient();
   const { organisation_id } = await persistLinkedInEdits(db, formData, id);
   const hook = str(formData.get("hook"));
-  await db.from("contacts").update({ linkedin_request_sent_at: new Date().toISOString() }).eq("id", id);
+  const now = new Date().toISOString();
+  await db.from("contacts").update({ linkedin_request_sent_at: now, linkedin_last_touched_at: now }).eq("id", id);
   await db.from("events").insert({
     contact_id: id,
     organisation_id,
@@ -441,7 +442,7 @@ export async function markLinkedInAlreadyConnected(formData: FormData) {
   if (!id) return;
   const db = serviceClient();
   const { organisation_id } = await persistLinkedInEdits(db, formData, id);
-  await db.from("contacts").update({ linkedin_connected: true }).eq("id", id);
+  await db.from("contacts").update({ linkedin_connected: true, linkedin_last_touched_at: new Date().toISOString() }).eq("id", id);
   await db.from("events").insert({
     contact_id: id,
     organisation_id,
@@ -464,6 +465,7 @@ export async function markLinkedInHookSent(formData: FormData) {
   const hook = str(formData.get("hook"));
   const { data: c } = await db.from("contacts").select("organisation_id").eq("id", id).maybeSingle();
   const organisation_id = (c?.organisation_id as string | null) ?? null;
+  await db.from("contacts").update({ linkedin_last_touched_at: new Date().toISOString() }).eq("id", id);
   await db.from("events").insert({
     contact_id: id,
     organisation_id,
