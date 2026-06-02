@@ -84,11 +84,16 @@ export default async function LinkedInPage() {
     .gte("ts", dayStart);
   if (me) touchesQ = touchesQ.in("contact_id", ownedContactIds.length ? ownedContactIds : ["__none__"]);
 
-  const [{ data }, { data: orgs }, { data: touchEvents }] = await Promise.all([
+  const [contactRes, { data: orgs }, { data: touchEvents }] = await Promise.all([
     contactQ,
     db.from("organisations").select("id, name").order("name").limit(1000),
     touchesQ,
   ]);
+  // Surface DB errors instead of silently returning an empty list — the most
+  // common reason for "0 contacts" is migration 024 (linkedin_request_sent_at)
+  // not having been run yet, which makes the SELECT 400.
+  const data = contactRes.data;
+  const contactErr = contactRes.error as { code?: string; message?: string } | null;
 
   const touches = (touchEvents ?? []) as { contact_id: string; payload: { kind?: string } | null }[];
   const requestsToday = touches.filter((t) => t.payload?.kind === "request").length;
@@ -120,25 +125,37 @@ export default async function LinkedInPage() {
       <header className="mb-4 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">LinkedIn — today</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          Edit inline, open the profile, send the connection or drop a hook. Daily limits below.
+          Edit inline, open the profile, send the connection or drop a hook. Both counters reset at 8am UK.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <CounterCard
-            label="Connection requests"
+            label="Today's connection requests"
             value={`${requestsToday}/${DAILY_CAP_REQUESTS}`}
-            sub={requestsCapHit ? "Cap hit — back at 8am tomorrow" : `${requestsRemaining} left in cap`}
+            sub={requestsCapHit ? "Daily cap hit — resets 8am" : `${requestsRemaining} left in today's 15-request cap`}
             pct={reqProgress}
             color={requestsCapHit ? "emerald" : "amber"}
           />
           <CounterCard
-            label="Research touches"
+            label="Today's research touches"
             value={`${touchedToday}/${DAILY_TARGET_TOUCHES}`}
-            sub={touchedToday >= DAILY_TARGET_TOUCHES ? "Daily target hit ✓" : `${DAILY_TARGET_TOUCHES - touchedToday} to target`}
+            sub={touchedToday >= DAILY_TARGET_TOUCHES ? "Daily target hit ✓ — resets 8am" : `${DAILY_TARGET_TOUCHES - touchedToday} to today's 30-touch target`}
             pct={touchProgress}
             color={touchedToday >= DAILY_TARGET_TOUCHES ? "emerald" : "blue"}
           />
         </div>
       </header>
+
+      {contactErr && (
+        <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <strong>Queue load failed:</strong> {contactErr.message}
+          {contactErr.code === "42703" && (
+            <p className="mt-1 text-xs">
+              Looks like migration 024 hasn&apos;t been run. Paste this in Supabase SQL Editor:
+              <code className="ml-1 rounded bg-red-100 px-1">alter table public.contacts add column if not exists linkedin_request_sent_at timestamptz;</code>
+            </p>
+          )}
+        </div>
+      )}
 
       {/* SEND CONNECTION REQUESTS */}
       <section className="mb-8">
