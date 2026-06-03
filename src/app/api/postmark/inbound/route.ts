@@ -41,13 +41,23 @@ export async function POST(req: Request) {
   // Mark the contact's most recent sent message as replied.
   const { data: lastSend } = await db
     .from("sends")
-    .select("id")
+    .select("id, sequence_id")
     .eq("contact_id", contact.id)
     .eq("status", "sent")
     .order("ts", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (lastSend) await db.from("sends").update({ replied: true }).eq("id", lastSend.id);
+
+  // If the reply is to a sequence email, pause the sequence for this
+  // contact (status='replied') so the engine stops queuing more steps.
+  // Operator handles the live conversation from /queue.
+  if (lastSend?.sequence_id) {
+    await db.from("sequence_contacts")
+      .update({ status: "replied" })
+      .eq("sequence_id", lastSend.sequence_id)
+      .eq("contact_id", contact.id);
+  }
 
   await db.from("events").insert({
     contact_id: contact.id,

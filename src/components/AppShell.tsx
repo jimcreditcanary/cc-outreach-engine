@@ -85,6 +85,7 @@ const NAV: NavEntry[] = [
   {
     key: "outreach", label: "Outreach", Icon: Send,
     children: [
+      { href: "/sequences",  label: "Sequences",  Icon: Send },
       { href: "/newsletter", label: "Newsletter", Icon: Mail },
       { href: "/queue",      label: "Queue",      Icon: Inbox },
     ],

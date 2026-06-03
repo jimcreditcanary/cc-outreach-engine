@@ -1,0 +1,149 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { serviceClient } from "@/lib/db/client";
+import { currentUserId } from "@/lib/auth/owner";
+import { advanceAllSequences } from "@/lib/sequences/engine";
+import { flash } from "@/lib/flash";
+
+const str = (v: FormDataEntryValue | null): string | null => {
+  const s = String(v ?? "").trim();
+  return s === "" ? null : s;
+};
+
+export async function createSequenceAction(formData: FormData) {
+  const name = str(formData.get("name"));
+  if (!name) return;
+  const owner_id = (await currentUserId()) ?? null;
+  const { data, error } = await serviceClient()
+    .from("sequences")
+    .insert({ name, owner_id })
+    .select("id")
+    .single();
+  if (error) throw error;
+  await flash("success", `Sequence created: ${name}`);
+  revalidatePath("/sequences");
+  redirect(`/sequences/${data.id}`);
+}
+
+export async function setSequenceStatusAction(formData: FormData) {
+  const id = String(formData.get("id"));
+  const status = str(formData.get("status")) ?? "live";
+  if (!["live", "paused", "complete"].includes(status)) return;
+  await serviceClient().from("sequences").update({ status }).eq("id", id);
+  await flash("success", `Sequence → ${status}`);
+  revalidatePath(`/sequences/${id}`);
+  revalidatePath("/sequences");
+}
+
+export async function deleteSequenceAction(formData: FormData) {
+  const id = String(formData.get("id"));
+  await serviceClient().from("sequences").delete().eq("id", id);
+  await flash("success", "Sequence deleted");
+  revalidatePath("/sequences");
+  redirect("/sequences");
+}
+
+/** Add one or many contacts to a sequence. Each new sequence_contact starts
+ *  at step 0 with started_at = now, so the cron's next tick decides what
+ *  to do for them (typically creates the Day-1 LinkedIn actions). */
+export async function addContactsToSequenceAction(formData: FormData) {
+  const sequence_id = String(formData.get("sequence_id"));
+  const contactIds = formData.getAll("contact_id").map(String).filter(Boolean);
+  if (!sequence_id || contactIds.length === 0) return;
+  const added_by = await currentUserId();
+  const rows = contactIds.map((contact_id) => ({
+    sequence_id,
+    contact_id,
+    current_step: 0,
+    started_at: new Date().toISOString(),
+    status: "active",
+    added_by,
+  }));
+  // Upsert so re-adding a contact is a no-op rather than an error.
+  const { error } = await serviceClient()
+    .from("sequence_contacts")
+    .upsert(rows, { onConflict: "sequence_id,contact_id", ignoreDuplicates: true });
+  if (error) throw error;
+  await flash("success", `Added ${contactIds.length} contact${contactIds.length === 1 ? "" : "s"}`);
+  revalidatePath(`/sequences/${sequence_id}`);
+}
+
+export async function removeContactFromSequenceAction(formData: FormData) {
+  const sequence_id = String(formData.get("sequence_id"));
+  const contact_id = String(formData.get("contact_id"));
+  if (!sequence_id || !contact_id) return;
+  const db = serviceClient();
+  await db.from("sequence_contacts").delete().eq("sequence_id", sequence_id).eq("contact_id", contact_id);
+  // Also clear any pending actions for this contact in this sequence.
+  await db.from("sequence_actions").delete()
+    .eq("sequence_id", sequence_id).eq("contact_id", contact_id).eq("status", "pending");
+  await flash("success", "Contact removed from sequence");
+  revalidatePath(`/sequences/${sequence_id}`);
+}
+
+/** Mark a single action done. Advances current_step on the parent
+ *  sequence_contact; the cron's next tick handles the next step. */
+export async function markActionDoneAction(formData: FormData) {
+  const id = String(formData.get("id"));
+  if (!id) return;
+  const db = serviceClient();
+  const me = await currentUserId();
+  const { data: action } = await db
+    .from("sequence_actions")
+    .select("sequence_id, contact_id, step_index")
+    .eq("id", id)
+    .maybeSingle();
+  if (!action) return;
+  await db.from("sequence_actions").update({
+    status: "done",
+    completed_at: new Date().toISOString(),
+    completed_by: me,
+  }).eq("id", id);
+  // Advance the sequence-contact's current_step so the engine picks up
+  // the next one on its next tick.
+  await db.from("sequence_contacts").update({
+    current_step: (action.step_index as number) + 1,
+    last_advanced_at: new Date().toISOString(),
+  }).eq("sequence_id", action.sequence_id).eq("contact_id", action.contact_id);
+  await flash("success", "Action marked done");
+  revalidatePath(`/sequences/${action.sequence_id}`);
+}
+
+/** Skip an action (operator decides this step doesn't apply). Same advance
+ *  semantics as done — the next step still becomes due on its day. */
+export async function skipActionAction(formData: FormData) {
+  const id = String(formData.get("id"));
+  if (!id) return;
+  const db = serviceClient();
+  const me = await currentUserId();
+  const { data: action } = await db
+    .from("sequence_actions")
+    .select("sequence_id, contact_id, step_index")
+    .eq("id", id)
+    .maybeSingle();
+  if (!action) return;
+  await db.from("sequence_actions").update({
+    status: "skipped",
+    completed_at: new Date().toISOString(),
+    completed_by: me,
+  }).eq("id", id);
+  await db.from("sequence_contacts").update({
+    current_step: (action.step_index as number) + 1,
+    last_advanced_at: new Date().toISOString(),
+  }).eq("sequence_id", action.sequence_id).eq("contact_id", action.contact_id);
+  await flash("success", "Action skipped");
+  revalidatePath(`/sequences/${action.sequence_id}`);
+}
+
+/** Manual tick — re-runs the engine on demand. Useful when the operator
+ *  adds contacts mid-day and doesn't want to wait for the next cron tick. */
+export async function tickSequencesAction() {
+  const res = await advanceAllSequences(serviceClient());
+  await flash(
+    "success",
+    `Engine tick — ${res.considered} considered · ${res.actionsCreated} new actions · ${res.draftsQueued} drafts queued · ${res.contactsCompleted} completed${res.errors.length ? ` · ${res.errors.length} errors` : ""}`,
+  );
+  revalidatePath("/sequences");
+}
