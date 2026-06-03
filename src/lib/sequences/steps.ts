@@ -26,30 +26,32 @@ export interface Step {
    *  (currently: email steps auto-generate a queued draft). False for
    *  steps the operator must do manually (view profile, call, like a post). */
   auto: boolean;
-  /** Short label shown in the action list. */
+  /** Full label shown in the action list ("View their LinkedIn profile"). */
   label: string;
+  /** Compact label used in the horizontal cadence-by-day view ("Profile"). */
+  shortLabel: string;
   /** Longer description / coaching note shown when an action is opened. */
   notes?: string;
 }
 
 export const SEQUENCE_STEPS: Step[] = [
-  { day: 1,  kind: "view_linkedin",       auto: false, label: "View their LinkedIn profile",
+  { day: 1,  kind: "view_linkedin",       auto: false, label: "View their LinkedIn profile",         shortLabel: "Profile",
     notes: "Skim recent activity for a hook before sending the connection request." },
-  { day: 1,  kind: "send_connection",     auto: false, label: "Send LinkedIn connection request",
+  { day: 1,  kind: "send_connection",     auto: false, label: "Send LinkedIn connection request",    shortLabel: "Connect",
     notes: "Personal note tied to something on their profile. No pitch." },
-  { day: 1,  kind: "send_email_initial",  auto: true,  label: "Send opener email",
+  { day: 1,  kind: "send_email_initial",  auto: true,  label: "Send opener email",                   shortLabel: "Opener",
     notes: "Short awareness email — angle to be one of: faster credit decisions, lower manual underwriting, better fraud/risk controls, improved acceptance rates, regulatory/compliance efficiency. Not pitching." },
-  { day: 2,  kind: "call",                auto: false, label: "First call attempt",
+  { day: 2,  kind: "call",                auto: false, label: "First call attempt",                  shortLabel: "Call",
     notes: "Quick call. If no answer, leave a 20-second voicemail referencing the email." },
-  { day: 4,  kind: "send_email_followup", auto: true,  label: "Follow-up insight email",
+  { day: 4,  kind: "send_email_followup", auto: true,  label: "Follow-up insight email",             shortLabel: "Follow-up",
     notes: "Value-driven, ≤120 words. Industry trend, FCA pressure, BNPL growth, AI underwriting, cost reduction, CX improvement." },
-  { day: 6,  kind: "linkedin_engage",     auto: false, label: "Engage on a recent LinkedIn post",
+  { day: 6,  kind: "linkedin_engage",     auto: false, label: "Engage on a recent LinkedIn post",    shortLabel: "Engage",
     notes: "Like/comment naturally on something they posted. Goal = familiarity, NO pitch." },
-  { day: 8,  kind: "call",                auto: false, label: "Second call attempt",
+  { day: 8,  kind: "call",                auto: false, label: "Second call attempt",                 shortLabel: "Call 2",
     notes: "Different opener — e.g. \"a lot of lenders are reviewing automation in underwriting workflows…\" or \"we've seen firms reduce manual review time by X…\"." },
-  { day: 10, kind: "send_email_case",     auto: true,  label: "Case-study email",
+  { day: 10, kind: "send_email_case",     auto: true,  label: "Case-study email",                    shortLabel: "Case study",
     notes: "Short client story with metrics + ROI + quick win. e.g. \"reduced decision times by 40%\", \"cut manual referrals by 30%\"." },
-  { day: 13, kind: "send_email_breakup",  auto: true,  label: "Breakup email",
+  { day: 13, kind: "send_email_breakup",  auto: true,  label: "Breakup email",                       shortLabel: "Breakup",
     notes: "Low-pressure close-the-loop. Usually re-engages 1 in 5." },
 ];
 

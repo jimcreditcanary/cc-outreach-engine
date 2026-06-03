@@ -223,19 +223,43 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
         </form>
       </section>
 
-      {/* Sequence cadence reminder */}
+      {/* Compact horizontal cadence — one card per day, arrows showing the
+          flow. Each chip uses the step's STEP_BADGE colour + a tooltip with
+          the full label so you can hover for detail. */}
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">The cadence</h2>
-        <ol className="space-y-1 text-sm text-neutral-700">
-          {SEQUENCE_STEPS.map((s, i) => (
-            <li key={i} className="flex items-center gap-2">
-              <span className="w-12 text-xs font-medium text-neutral-500">Day {s.day}</span>
-              <span className={`rounded px-1.5 py-0.5 text-xs ${STEP_BADGE[s.kind]}`}>{s.kind.replace(/_/g, " ")}</span>
-              <span>{s.label}</span>
-              {s.auto && <span className="text-xs text-emerald-600">· auto-drafts</span>}
-            </li>
-          ))}
-        </ol>
+        <div className="flex flex-wrap items-stretch gap-2">
+          {(() => {
+            const byDay = new Map<number, typeof SEQUENCE_STEPS>();
+            for (const s of SEQUENCE_STEPS) {
+              const arr = byDay.get(s.day) ?? [];
+              arr.push(s);
+              byDay.set(s.day, arr);
+            }
+            const days = Array.from(byDay.keys()).sort((a, b) => a - b);
+            return days.map((day, idx) => (
+              <div key={day} className="flex items-stretch gap-2">
+                <div className="rounded-md border border-neutral-200 bg-white p-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Day {day}</div>
+                  <div className="mt-1 flex flex-col gap-1">
+                    {byDay.get(day)!.map((s, i) => (
+                      <span
+                        key={i}
+                        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${STEP_BADGE[s.kind]}`}
+                        title={`${s.label}${s.auto ? " · AI auto-drafts" : ""}`}
+                      >
+                        {s.shortLabel}
+                        {s.auto && <span className="text-emerald-700/70" aria-label="auto-drafts">✦</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                {idx < days.length - 1 && <span className="self-center text-neutral-300">→</span>}
+              </div>
+            ));
+          })()}
+        </div>
+        <p className="mt-1 text-xs text-neutral-400">✦ = AI auto-drafts the email. Hover any chip for the full step description.</p>
       </section>
 
       {/* Add contacts */}
