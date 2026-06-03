@@ -20,6 +20,7 @@ import {
   Users as UsersIcon,
   Briefcase,
   Mail,
+  Reply,
   Calendar,
   CalendarRange,
   UserCog,
@@ -88,7 +89,7 @@ const NAV: NavEntry[] = [
       { href: "/sequences",  label: "Sequences",  Icon: Send },
       { href: "/newsletter", label: "Newsletter", Icon: Mail },
       { href: "/queue",      label: "Queue",      Icon: Inbox },
-      { href: "/replies",    label: "Replies",    Icon: Inbox },
+      { href: "/replies",    label: "Replies",    Icon: Reply },
     ],
   },
   {
