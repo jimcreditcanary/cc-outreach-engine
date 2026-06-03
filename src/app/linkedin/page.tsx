@@ -62,7 +62,18 @@ interface Row {
 
 const fld = "rounded border border-neutral-300 px-2 py-1 text-sm";
 
-export default async function LinkedInPage() {
+// Show 50 rows per page. Two-tab nav: Send (actionable lists) + Research
+// (needs-URL lookup). The `tab` + `page` URL params are the source of
+// truth so a refresh / shared link keeps you where you were.
+const PAGE = 50;
+
+export default async function LinkedInPage({ searchParams }: {
+  searchParams: Promise<{ tab?: string; page?: string }>;
+}) {
+  const sp = await searchParams;
+  const tab = (sp.tab === "research" ? "research" : "send") as "send" | "research";
+  const page = Math.max(1, parseInt(sp.page ?? "1") || 1);
+
   const db = serviceClient();
   const dayStart = linkedinDayStartUtc(new Date());
   const me = await currentUserId();
@@ -172,10 +183,20 @@ export default async function LinkedInPage() {
   //   sendable  — not connected, no request sent yet, has a URL → primary work
   //   awaiting  — request sent, not yet a connection → waiting on their accept
   //   reEngage  — already 1st-degree → drop a fresh hook (with cooldown)
-  const sendable  = icp.filter((r) => !r.linkedin_connected && !r.linkedin_request_sent_at && r.linkedin_url && cooled(r));
-  const awaiting  = icp.filter((r) => !r.linkedin_connected && r.linkedin_request_sent_at && r.linkedin_url);
-  const reEngage  = icp.filter((r) =>  r.linkedin_connected && r.linkedin_url && cooled(r));
-  const needsResearch = icp.filter((r) => !r.linkedin_url && !r.linkedin_connected && !r.linkedin_request_sent_at && cooled(r)).slice(0, 30);
+  const sendableAll = icp.filter((r) => !r.linkedin_connected && !r.linkedin_request_sent_at && r.linkedin_url && cooled(r));
+  const awaiting    = icp.filter((r) => !r.linkedin_connected && r.linkedin_request_sent_at && r.linkedin_url);
+  const reEngageAll = icp.filter((r) =>  r.linkedin_connected && r.linkedin_url && cooled(r));
+  const needsResearchAll = icp.filter((r) => !r.linkedin_url && !r.linkedin_connected && !r.linkedin_request_sent_at && cooled(r));
+
+  // Paginate the main list for the active tab; the smaller secondary lists
+  // (awaiting + re-engage) stay capped without per-page pagination.
+  const mainList = tab === "send" ? sendableAll : needsResearchAll;
+  const totalPages = Math.max(1, Math.ceil(mainList.length / PAGE));
+  const safePage = Math.min(page, totalPages);
+  const from = (safePage - 1) * PAGE;
+  const sendable = tab === "send" ? sendableAll.slice(from, from + PAGE) : sendableAll;
+  const needsResearch = tab === "research" ? needsResearchAll.slice(from, from + PAGE) : needsResearchAll.slice(0, PAGE);
+  const reEngage = reEngageAll.slice(0, 30);
 
   const touchProgress = Math.min(100, Math.round((touchedToday / DAILY_TARGET_TOUCHES) * 100));
   const reqProgress   = Math.min(100, Math.round((requestsToday / DAILY_CAP_REQUESTS) * 100));
@@ -205,6 +226,13 @@ export default async function LinkedInPage() {
           />
         </div>
       </header>
+
+      {/* Tabs — Send (sendable + awaiting + re-engage) vs Research (no URL yet). */}
+      <div className="mb-4 flex items-center gap-2 text-sm">
+        <TabLink href={`/linkedin?tab=send`} active={tab === "send"} label="Send requests" count={sendableAll.length} />
+        <TabLink href={`/linkedin?tab=research`} active={tab === "research"} label="Research" count={needsResearchAll.length} />
+        <span className="ml-3 text-xs text-neutral-400">Page {safePage} of {totalPages} · showing {mainList.length === 0 ? 0 : from + 1}–{Math.min(from + PAGE, mainList.length)} of {mainList.length}</span>
+      </div>
 
       {/* Roll every captured error into a single banner block so a missing
           column / permissions issue / etc never crashes the page. Snapshot
@@ -242,6 +270,7 @@ export default async function LinkedInPage() {
         );
       })()}
 
+      {tab === "send" && <>
       {/* SEND CONNECTION REQUESTS */}
       <section className="mb-8">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500">
@@ -320,6 +349,8 @@ export default async function LinkedInPage() {
         </section>
       )}
 
+      <Paginator tab="send" page={safePage} totalPages={totalPages} />
+
       {/* AWAITING (request sent, no accept yet) */}
       {awaiting.length > 0 && (
         <section className="mb-8">
@@ -340,9 +371,15 @@ export default async function LinkedInPage() {
           </ul>
         </section>
       )}
+      </>}
 
+      {tab === "research" && <>
       {/* NEEDS RESEARCH (no URL yet) */}
-      {needsResearch.length > 0 && (
+      {needsResearchAll.length === 0 ? (
+        <p className="text-sm text-neutral-400">
+          Nothing needs research — every owned contact either has a LinkedIn URL or is flagged as not-on-LinkedIn.
+        </p>
+      ) : needsResearch.length > 0 && (
         <section>
           <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Needs research ({needsResearch.length})</h2>
           <p className="mb-3 text-xs text-neutral-400">
@@ -369,7 +406,40 @@ export default async function LinkedInPage() {
           </ul>
         </section>
       )}
+      <Paginator tab="research" page={safePage} totalPages={totalPages} />
+      </>}
     </main>
+  );
+}
+
+function TabLink({ href, active, label, count }: { href: string; active: boolean; label: string; count: number }) {
+  return (
+    <Link
+      href={href}
+      className={`rounded-md border px-3 py-1.5 font-medium transition-colors ${
+        active
+          ? "border-amber-300 bg-amber-50 text-amber-900"
+          : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
+      }`}
+    >
+      {label} <span className={`ml-1 rounded px-1.5 text-xs ${active ? "bg-amber-200 text-amber-900" : "bg-neutral-100 text-neutral-500"}`}>{count}</span>
+    </Link>
+  );
+}
+
+function Paginator({ tab, page, totalPages }: { tab: "send" | "research"; page: number; totalPages: number }) {
+  if (totalPages <= 1) return null;
+  const href = (p: number) => `/linkedin?tab=${tab}&page=${p}`;
+  return (
+    <div className="mt-4 flex items-center justify-between text-sm">
+      {page > 1
+        ? <Link href={href(page - 1)} className="text-blue-700 hover:underline">← Prev</Link>
+        : <span className="text-neutral-300">← Prev</span>}
+      <span className="text-neutral-500">Page {page} of {totalPages}</span>
+      {page < totalPages
+        ? <Link href={href(page + 1)} className="text-blue-700 hover:underline">Next →</Link>
+        : <span className="text-neutral-300">Next →</span>}
+    </div>
   );
 }
 
