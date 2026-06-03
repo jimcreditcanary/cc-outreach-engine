@@ -11,6 +11,8 @@ import {
   resendSenderConfirmation,
   PostmarkApiError,
 } from "@/lib/postmark/signatures";
+import { pingToken } from "@/lib/granola/client";
+import { syncGranolaForUser, type SyncResult } from "@/lib/granola/sync";
 
 const str = (v: FormDataEntryValue | null): string | null => {
   const s = String(v ?? "").trim();
@@ -104,6 +106,81 @@ export async function refreshSignatureStatusAction() {
     await flash("error", `Status check failed: ${msg}`);
   }
   revalidatePath("/settings");
+}
+
+/** Save the Granola API token. Empty value is a no-op (preserves any
+ *  existing token) so blank-form-submits don't wipe the connection.
+ *  Use disconnectGranolaAction to explicitly clear. Pings Granola to
+ *  verify before persisting — bad token = flash error, no save. */
+export async function saveGranolaTokenAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const token = str(formData.get("granola_api_token"));
+  if (!token) {
+    await flash("error", "No token entered — paste your Granola token to connect, or hit Disconnect to clear.");
+    revalidatePath("/settings");
+    return;
+  }
+  const ping = await pingToken(token);
+  if (!ping.ok) {
+    await flash("error", `Granola rejected the token: ${ping.error ?? "unknown error"}`);
+    revalidatePath("/settings");
+    return;
+  }
+  await serviceClient().from("user_settings").upsert(
+    { user_id: me.id, granola_api_token: token, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" },
+  );
+  await flash("success", "Granola connected — transcripts will pull every 15 min.");
+  revalidatePath("/settings");
+}
+
+/** Explicitly clear the saved Granola token. Stops the cron from pulling
+ *  for this operator. Existing transcripts + sent follow-ups stay put. */
+export async function disconnectGranolaAction() {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  await serviceClient().from("user_settings").upsert(
+    { user_id: me.id, granola_api_token: null, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" },
+  );
+  await flash("success", "Granola disconnected.");
+  revalidatePath("/settings");
+}
+
+/** Manual sync — useful for testing right after connecting, or when you
+ *  don't want to wait 15 min for the cron. */
+export async function syncGranolaNowAction() {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const db = serviceClient();
+  const { data } = await db.from("user_settings").select("granola_api_token").eq("user_id", me.id).maybeSingle();
+  const token = (data?.granola_api_token as string | null) ?? null;
+  if (!token) {
+    await flash("error", "No Granola token saved yet.");
+    revalidatePath("/settings");
+    return;
+  }
+  const result: SyncResult = {
+    operators_checked: 1,
+    notes_seen: 0,
+    meetings_matched: 0,
+    transcripts_pulled: 0,
+    followups_sent: 0,
+    followups_skipped_low_confidence: 0,
+    errors: [],
+  };
+  try {
+    await syncGranolaForUser(db, me.id, token, result);
+  } catch (e) {
+    result.errors.push((e as Error).message);
+  }
+  await flash(
+    result.errors.length ? "error" : "success",
+    `Granola sync — ${result.notes_seen} notes · ${result.meetings_matched} matched · ${result.transcripts_pulled} new transcripts · ${result.followups_sent} follow-ups sent${result.followups_skipped_low_confidence ? ` · ${result.followups_skipped_low_confidence} skipped (thin transcript)` : ""}${result.errors.length ? ` · ${result.errors.length} error(s): ${result.errors[0]}` : ""}`,
+  );
+  revalidatePath("/settings");
+  revalidatePath("/meetings");
 }
 
 /** Resend Postmark's confirmation email. Use when the original got lost

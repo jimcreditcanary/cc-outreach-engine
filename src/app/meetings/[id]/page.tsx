@@ -17,6 +17,16 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const db = serviceClient();
   const { data: m } = await db.from("meetings").select("*, organisation:organisations(id, name), primary_contact:contacts(id, full_name), deal:deals(id, title)").eq("id", id).maybeSingle();
+  // Separate lookup so the page still loads if migration 031 (granola_*
+  // columns) hasn't run yet — m just won't have granola_followup_send_id
+  // and this query will skip cleanly.
+  type GranolaFollowup = { id: string; subject: string | null; status: string; ts: string };
+  let granolaFollowup: GranolaFollowup | null = null;
+  const followupId = (m && (m as { granola_followup_send_id?: string | null }).granola_followup_send_id) || null;
+  if (followupId) {
+    const { data: f } = await db.from("sends").select("id, subject, status, ts").eq("id", followupId).maybeSingle();
+    granolaFollowup = (f as GranolaFollowup | null);
+  }
   if (!m) notFound();
 
   // Soft per-user fence: a user can still load any meeting by direct URL
@@ -94,11 +104,46 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
             </form>
           </section>
 
+          {/* Granola sync banner — shows when a transcript was pulled
+              automatically and when/where the follow-up email landed. */}
+          {(m.granola_synced_at || granolaFollowup) && (
+            <section className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="rounded bg-blue-200 px-1.5 py-0.5 text-xs font-semibold text-blue-900">Granola</span>
+                {m.granola_synced_at && (
+                  <span className="text-xs text-blue-900">
+                    Transcript pulled {new Date(m.granola_synced_at).toLocaleString("en-GB")}
+                  </span>
+                )}
+                {(() => {
+                  const f = granolaFollowup;
+                  if (!f) return null;
+                  return (
+                    <span className="ml-auto text-xs">
+                      Follow-up email{" "}
+                      <span className={`rounded px-1.5 py-0.5 font-medium ${f.status === "sent" ? "bg-emerald-100 text-emerald-800" : f.status === "failed" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>
+                        {f.status}
+                      </span>
+                      {f.status === "sent" && f.ts && (
+                        <span className="ml-1 text-blue-900">at {new Date(f.ts).toLocaleString("en-GB")}</span>
+                      )}
+                      {" — "}
+                      <span className="italic">{f.subject}</span>
+                    </span>
+                  );
+                })()}
+              </div>
+            </section>
+          )}
+
           {/* Transcript + AI post-meeting summary */}
           <section>
             <div className="mb-2 flex items-center gap-3">
               <h2 className="font-semibold">Transcript → AI summary</h2>
-              <span className="text-xs text-neutral-400">Paste a transcript (or rough notes) and let the AI write the summary.</span>
+              <span className="text-xs text-neutral-400">
+                Granola fills this automatically if you&apos;ve connected it under <a href="/settings" className="text-blue-700 hover:underline">Settings</a>.
+                Otherwise paste a transcript (or rough notes) and let the AI write the summary.
+              </span>
             </div>
             <form action={generatePostSummaryAction} className="space-y-2">
               <input type="hidden" name="id" value={m.id} />
