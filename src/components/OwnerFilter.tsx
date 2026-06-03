@@ -38,7 +38,7 @@ export async function OwnerFilter({
           .filter((o) => o.id !== me)
           .map((o) => (
             <option key={o.id} value={o.id}>
-              {o.email ?? o.id}
+              {o.display_name}
             </option>
           ))}
       </select>

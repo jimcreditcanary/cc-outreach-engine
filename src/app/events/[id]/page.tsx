@@ -63,7 +63,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
   ]);
   const attendees = (attendanceData ?? []) as unknown as AttendeeRow[];
   const attendingIds = new Set((operatorRows ?? []).map((r) => r.user_id as string));
-  const operatorEmailById = new Map(allOperators.map((o) => [o.id, o.email ?? o.id]));
+  const operatorNameById = new Map(allOperators.map((o) => [o.id, o.display_name]));
 
   // Per-operator workload (how many contacts this operator now owns from
   // this event's attendees). Only meaningful once the upload has run.
@@ -114,7 +114,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
             {allOperators.map((o) => (
               <label key={o.id} className="flex items-center gap-2 rounded border border-neutral-200 bg-white px-2 py-1 text-sm">
                 <input type="checkbox" name="user_id" value={o.id} defaultChecked={attendingIds.has(o.id)} />
-                <span>{o.email ?? o.id}</span>
+                <span>{o.display_name}{o.job_title ? <span className="ml-1 text-xs text-neutral-400">· {o.job_title}</span> : null}</span>
               </label>
             ))}
             {allOperators.length === 0 && <span className="text-xs text-neutral-400">No operators yet — add some at /admin/users.</span>}
@@ -162,7 +162,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
               .sort((a, b) => b[1] - a[1])
               .map(([oid, n]) => (
                 <span key={oid} className="rounded border border-neutral-200 bg-white px-1.5 py-0.5">
-                  {oid === "unassigned" ? "unassigned" : (operatorEmailById.get(oid) ?? oid)}: <span className="font-medium text-neutral-700">{n}</span>
+                  {oid === "unassigned" ? "unassigned" : (operatorNameById.get(oid) ?? oid)}: <span className="font-medium text-neutral-700">{n}</span>
                 </span>
               ))}
           </div>
@@ -177,7 +177,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
             <tbody>
               {attendees.map((a) => {
                 const c = a.contact;
-                const ownerEmail = c?.owner_id ? (operatorEmailById.get(c.owner_id) ?? c.owner_id) : null;
+                const ownerName = c?.owner_id ? (operatorNameById.get(c.owner_id) ?? c.owner_id) : null;
                 return (
                   <tr key={a.contact_id} className="border-t border-neutral-100 hover:bg-neutral-100">
                     <td className="py-1.5">
@@ -192,7 +192,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
                     <td className="text-neutral-600">
                       {c?.organisation ? <Link href={`/companies/${c.organisation.id}`} className="text-blue-700 hover:underline">{c.organisation.name}</Link> : "—"}
                     </td>
-                    <td className="text-xs text-neutral-600">{ownerEmail ?? <span className="text-neutral-400">unassigned</span>}</td>
+                    <td className="text-xs text-neutral-600">{ownerName ?? <span className="text-neutral-400">unassigned</span>}</td>
                     <td><span className={`rounded px-1.5 py-0.5 text-xs ${matchBadge[a.matched_via] ?? "bg-neutral-100 text-neutral-700"}`}>{a.matched_via}</span></td>
                     <td className="w-10 text-right">
                       <form action={removeAttendeeAction}>

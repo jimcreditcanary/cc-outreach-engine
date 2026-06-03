@@ -18,7 +18,7 @@ export async function OwnerPicker({ value }: { value: string | null }) {
         <option value="">— unassigned —</option>
         {operators.map((o) => (
           <option key={o.id} value={o.id}>
-            {o.email ?? o.id}{o.id === me ? " (you)" : ""}
+            {o.display_name}{o.job_title ? ` — ${o.job_title}` : ""}{o.id === me ? " (you)" : ""}
           </option>
         ))}
       </select>

@@ -30,7 +30,9 @@ export async function logoutAction() {
   redirect("/login");
 }
 
-/** Create a new operator user (instant access — no email confirmation). */
+/** Create a new operator user (instant access — no email confirmation).
+ *  Optional first/last/job_title are persisted to user_settings so every
+ *  owner picker renders "First Last" instead of the raw email. */
 export async function createUserAction(formData: FormData) {
   // Any logged-in user can invite for now — small trusted team.
   const me = await currentUser();
@@ -38,16 +40,45 @@ export async function createUserAction(formData: FormData) {
 
   const email = str(formData.get("email"));
   const password = str(formData.get("password"));
+  const first_name = str(formData.get("first_name")) || null;
+  const last_name  = str(formData.get("last_name"))  || null;
+  const job_title  = str(formData.get("job_title"))  || null;
   if (!email || !password) return;
 
   const admin = adminClient();
-  const { error } = await admin.auth.admin.createUser({
+  const { data, error } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true, // skip the confirmation email; instant access
   });
   if (error) throw error;
+  // Seed their user_settings row with the profile.
+  if (data.user && (first_name || last_name || job_title)) {
+    await serviceClient().from("user_settings").upsert(
+      { user_id: data.user.id, first_name, last_name, job_title },
+      { onConflict: "user_id" },
+    );
+  }
   await flash("success", `User created: ${email}`);
+  revalidatePath("/admin/users");
+}
+
+/** Patch one operator's profile fields (first/last/job_title). Empty
+ *  values clear the column so the picker falls back to the email. */
+export async function updateUserProfileAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("id"));
+  if (!id) return;
+  const first_name = str(formData.get("first_name")) || null;
+  const last_name  = str(formData.get("last_name"))  || null;
+  const job_title  = str(formData.get("job_title"))  || null;
+  const { error } = await serviceClient().from("user_settings").upsert(
+    { user_id: id, first_name, last_name, job_title, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" },
+  );
+  if (error) throw error;
+  await flash("success", "Profile saved");
   revalidatePath("/admin/users");
 }
 
