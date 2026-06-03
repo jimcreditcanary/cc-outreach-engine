@@ -27,31 +27,44 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
   const db = serviceClient();
   const ownerId = await resolveOwnerFilter(owner);
 
-  let q = db.from("sequences").select("id, name, status, created_at").order("created_at", { ascending: false }).limit(200);
-  if (ownerId) q = q.eq("owner_id", ownerId);
-  const { data } = await q;
-  const seqs = (data ?? []) as Sequence[];
+  // Wrap the load so a missing table (mig 027 not run) shows a readable
+  // banner instead of 500-ing the whole page.
+  type SafeError = { code?: string; message?: string };
+  const errs: { seqs: SafeError | null; counts: SafeError | null } = { seqs: null, counts: null };
+  let seqs: Sequence[] = [];
+  const counts: Record<string, { contacts: number; replied: number; actions: number }> = {};
+
+  try {
+    let q = db.from("sequences").select("id, name, status, created_at").order("created_at", { ascending: false }).limit(200);
+    if (ownerId) q = q.eq("owner_id", ownerId);
+    const res = await q;
+    if (res.error) errs.seqs = res.error as SafeError;
+    seqs = (res.data ?? []) as Sequence[];
+  } catch (e) { errs.seqs = { message: (e as Error).message }; }
 
   // Aggregate per-sequence: contacts, replies, outstanding actions.
-  // Three small lookups keyed by sequence_id so we don't N+1 the list view.
   const ids = seqs.map((s) => s.id);
-  const counts: Record<string, { contacts: number; replied: number; actions: number }> = {};
   for (const id of ids) counts[id] = { contacts: 0, replied: 0, actions: 0 };
   if (ids.length) {
-    const [{ data: cts }, { data: acts }] = await Promise.all([
-      db.from("sequence_contacts").select("sequence_id, status").in("sequence_id", ids),
-      db.from("sequence_actions").select("sequence_id, status").in("sequence_id", ids).eq("status", "pending"),
-    ]);
-    for (const r of cts ?? []) {
-      const c = counts[r.sequence_id as string];
-      if (!c) continue;
-      c.contacts++;
-      if (r.status === "replied") c.replied++;
-    }
-    for (const r of acts ?? []) {
-      const c = counts[r.sequence_id as string];
-      if (c) c.actions++;
-    }
+    try {
+      const [ctsRes, actsRes] = await Promise.all([
+        db.from("sequence_contacts").select("sequence_id, status").in("sequence_id", ids),
+        db.from("sequence_actions").select("sequence_id, status").in("sequence_id", ids).eq("status", "pending"),
+      ]);
+      if (ctsRes.error || actsRes.error) {
+        errs.counts = (ctsRes.error ?? actsRes.error) as SafeError;
+      }
+      for (const r of ctsRes.data ?? []) {
+        const c = counts[r.sequence_id as string];
+        if (!c) continue;
+        c.contacts++;
+        if (r.status === "replied") c.replied++;
+      }
+      for (const r of actsRes.data ?? []) {
+        const c = counts[r.sequence_id as string];
+        if (c) c.actions++;
+      }
+    } catch (e) { errs.counts = { message: (e as Error).message }; }
   }
 
   return (
@@ -73,6 +86,25 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
           </PendingButton>
         </form>
       </header>
+
+      {(() => {
+        const se = errs.seqs; const ce = errs.counts;
+        if (!se && !ce) return null;
+        const missingTable = se?.code === "42P01" || ce?.code === "42P01" ||
+          /relation .* does not exist/i.test(se?.message ?? "") ||
+          /relation .* does not exist/i.test(ce?.message ?? "");
+        return (
+          <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {se && <div><strong>Sequences load failed:</strong> {se.message}</div>}
+            {ce && <div><strong>Counts load failed:</strong> {ce.message}</div>}
+            {missingTable && (
+              <p className="mt-1 text-xs">
+                Migration 027 not run yet. Paste <code className="rounded bg-red-100 px-1">supabase/migrations/027_sequences.sql</code> into the Supabase SQL Editor and refresh.
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       <form action={createSequenceAction} className="mb-6 flex flex-wrap gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
         <input name="name" required placeholder="New sequence name (e.g. Q1 banks)" className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" />
