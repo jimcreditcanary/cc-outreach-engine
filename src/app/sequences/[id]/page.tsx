@@ -215,7 +215,7 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
                           </span>
                           <span className="text-sm">{step?.label ?? a.kind}</span>
                           {isEmailStep(a.kind as StepKind) && a.send_id && (
-                            <Link href={`/queue`} className="text-xs text-blue-600 hover:underline">draft in queue ↗</Link>
+                            <Link href={`/queue`} className="text-xs text-emerald-600 hover:underline">email auto-approved · sends in next window ↗</Link>
                           )}
                           {overdue && <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700">overdue</span>}
                           <span className="ml-auto text-xs text-neutral-400">due {new Date(a.due_at).toLocaleDateString("en-GB")}</span>

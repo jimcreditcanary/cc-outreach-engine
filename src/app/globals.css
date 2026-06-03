@@ -26,4 +26,13 @@ body {
   tbody tr:nth-child(even) {
     background-color: rgb(245 245 245 / 0.6); /* ≈ neutral-100/60 */
   }
+  /* Every <th>/<td> gets right-padding so columns can't butt into each
+   * other (STEPSTARTED, OUTSTANDINGCREATED). Last cell drops it so the
+   * table doesn't grow extra width. */
+  th, td {
+    padding-right: 1rem;
+  }
+  th:last-child, td:last-child {
+    padding-right: 0;
+  }
 }
