@@ -18,8 +18,14 @@ interface OrgEmbed {
 }
 
 /** Run the full draft generator for one contact id. Returns null if the
- *  contact lacks the context to safely draft (no org / no sector). */
-export async function regenerateForContact(db: DB, contactId: string): Promise<DraftResult | null> {
+ *  contact lacks the context to safely draft (no org / no sector).
+ *  Optional `theme` + `step_kind` get threaded into the prompt — used by
+ *  the sequences engine so each step generates in the right voice. */
+export async function regenerateForContact(
+  db: DB,
+  contactId: string,
+  opts: { theme?: string | null; step_kind?: ContactCtx["step_kind"] } = {},
+): Promise<DraftResult | null> {
   const { data: contact } = await db
     .from("contacts")
     .select("id, full_name, email, job_title, label, organisation:organisations(id, name, sector, tier)")
@@ -68,6 +74,8 @@ export async function regenerateForContact(db: DB, contactId: string): Promise<D
     notes: (notes ?? []).map((n) => String(n.content)).filter(Boolean),
     org_summary: (enriched?.company_summary as string | null) ?? null,
     recent_posts: posts.slice(0, 3),
+    theme: opts.theme ?? null,
+    step_kind: opts.step_kind ?? null,
   };
   const signals = matchSignals(recentSignals, org.sector as Sector);
   return generateDraft(ctx, assets, signals);

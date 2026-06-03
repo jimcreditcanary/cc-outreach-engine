@@ -9,12 +9,14 @@ import {
   removeContactFromSequenceAction,
   markActionDoneAction,
   skipActionAction,
+  updateSequenceMetaAction,
 } from "../actions";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { RowIconAction } from "@/components/RowIconAction";
 import { Combobox } from "@/components/Combobox";
 import { SEQUENCE_STEPS, STEP_BADGE, isEmailStep, type StepKind } from "@/lib/sequences/steps";
+import { currentUserId } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 
@@ -47,10 +49,16 @@ interface ActionRow {
 export default async function SequenceDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = serviceClient();
+  const me = await currentUserId();
   const { data: seq } = await db.from("sequences").select("*").eq("id", id).maybeSingle();
   if (!seq) notFound();
 
-  const [{ data: contactsData }, { data: actionsData }, { data: allContacts }] = await Promise.all([
+  // Picker source = the operator's own contacts (rule 1: only your own).
+  // Then we exclude anyone already in any LIVE sequence (rule 2).
+  let pickerQ = db.from("contacts").select("id, full_name, email, organisation:organisations(name)").order("full_name").limit(5000);
+  if (me) pickerQ = pickerQ.eq("owner_id", me);
+
+  const [{ data: contactsData }, { data: actionsData }, { data: allContacts }, { data: lockedRows }, { data: conferencesData }] = await Promise.all([
     db
       .from("sequence_contacts")
       .select(`
@@ -67,10 +75,22 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
       .eq("status", "pending")
       .order("due_at", { ascending: true })
       .limit(2000),
-    db.from("contacts").select("id, full_name, email, organisation:organisations(name)").order("full_name").limit(5000),
+    pickerQ,
+    // Contacts already enrolled in any LIVE sequence (excluding this one)
+    // — we filter them out of the picker so nobody runs through two
+    // sequences at the same time.
+    db
+      .from("sequence_contacts")
+      .select("contact_id, sequence:sequences!inner(id, status)")
+      .eq("sequence.status", "live")
+      .neq("sequence_id", id)
+      .limit(50000),
+    db.from("conferences").select("id, name").order("start_date", { ascending: false, nullsFirst: false }).limit(500),
   ]);
   const contacts = (contactsData ?? []) as unknown as SeqContact[];
   const actions = (actionsData ?? []) as ActionRow[];
+  const conferences = (conferencesData ?? []) as { id: string; name: string }[];
+  const lockedSet = new Set(((lockedRows ?? []) as { contact_id: string }[]).map((r) => r.contact_id));
 
   const totalContacts = contacts.length;
   const replied = contacts.filter((c) => c.status === "replied").length;
@@ -85,11 +105,13 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
     actionsByContact.set(a.contact_id, arr);
   }
 
-  // Build the contact-picker options. Exclude contacts already in the sequence.
+  // Build the contact-picker options. Exclude contacts already in THIS
+  // sequence (rule, obvious) AND anyone already enrolled in another live
+  // sequence (lockedSet).
   const inSequence = new Set(contacts.map((c) => c.contact_id));
   type AllContact = { id: string; full_name: string | null; email: string | null; organisation: { name: string | null } | null | { name: string | null }[] };
   const pickOptions = ((allContacts ?? []) as unknown as AllContact[])
-    .filter((c) => !inSequence.has(c.id))
+    .filter((c) => !inSequence.has(c.id) && !lockedSet.has(c.id))
     .map((c) => {
       const org = Array.isArray(c.organisation) ? c.organisation[0] : c.organisation;
       return {
@@ -164,6 +186,43 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
         </div>
       </header>
 
+      {/* Per-sequence campaign theme + optional conference link.
+          Theme is injected into every AI email draft for this sequence so
+          they all sing the same tune. */}
+      <section className="mb-6 rounded-lg border border-neutral-200 bg-white p-3">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Campaign context</h2>
+        <form action={updateSequenceMetaAction} className="space-y-2">
+          <input type="hidden" name="id" value={seq.id} />
+          <div>
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+              Theme / style for AI emails
+            </label>
+            <textarea
+              name="theme"
+              defaultValue={seq.theme ?? ""}
+              rows={3}
+              placeholder={"e.g. \"Money 2020 Vegas attendees — lead with the cost-of-living theme and reference our recent case study with X.\""}
+              className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+            />
+            <p className="mt-1 text-xs text-neutral-400">Injected into every email draft. Leave blank for the default voice.</p>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+              Linked event (optional)
+            </label>
+            <Combobox
+              name="conference_id"
+              defaultValue={seq.conference_id ?? ""}
+              options={conferences.map((c) => ({ id: c.id, label: c.name }))}
+              placeholder="Tie this sequence to a conference…"
+            />
+          </div>
+          <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">
+            Save context
+          </PendingButton>
+        </form>
+      </section>
+
       {/* Sequence cadence reminder */}
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">The cadence</h2>
@@ -196,7 +255,10 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
             Add to sequence
           </PendingButton>
         </form>
-        <p className="mt-1 text-xs text-neutral-400">Tip: Combobox is single-pick for now — add contacts one at a time. Bulk add is coming.</p>
+        <p className="mt-1 text-xs text-neutral-400">
+          Tip: shows only your assigned contacts who aren&apos;t already in another live sequence.
+          The engine then runs every hour at :15 UTC to advance due steps — or hit <strong>Check for due actions</strong> on /sequences.
+        </p>
       </section>
 
       {/* Outstanding actions, grouped by contact */}

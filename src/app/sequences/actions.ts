@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { serviceClient } from "@/lib/db/client";
 import { currentUserId } from "@/lib/auth/owner";
 import { advanceAllSequences } from "@/lib/sequences/engine";
+import { SEQUENCE_STEPS } from "@/lib/sequences/steps";
 import { flash } from "@/lib/flash";
 
 const str = (v: FormDataEntryValue | null): string | null => {
@@ -97,8 +98,39 @@ export async function removeContactFromSequenceAction(formData: FormData) {
   revalidatePath(`/sequences/${sequence_id}`);
 }
 
+/** Log a sequence-action outcome into the contact's events timeline so
+ *  every completed step shows up alongside emails / meetings / notes on
+ *  the contact page. */
+async function logSequenceEvent(opts: {
+  contact_id: string;
+  sequence_id: string;
+  step_index: number;
+  kind: string;
+  outcome: "done" | "skipped";
+}) {
+  const step = SEQUENCE_STEPS[opts.step_index];
+  const label = step?.label ?? opts.kind;
+  const db = serviceClient();
+  // Pull org from the contact to fill events.organisation_id too.
+  const { data: c } = await db.from("contacts").select("organisation_id").eq("id", opts.contact_id).maybeSingle();
+  await db.from("events").insert({
+    contact_id: opts.contact_id,
+    organisation_id: (c?.organisation_id as string | null) ?? null,
+    type: "crm_change",
+    source: "sequence",
+    payload: {
+      message: `Sequence step ${opts.outcome}: ${label}`,
+      sequence_id: opts.sequence_id,
+      step_index: opts.step_index,
+      step_kind: opts.kind,
+      outcome: opts.outcome,
+    },
+  });
+}
+
 /** Mark a single action done. Advances current_step on the parent
- *  sequence_contact; the cron's next tick handles the next step. */
+ *  sequence_contact; the cron's next tick handles the next step.
+ *  Also logs an event on the contact's timeline. */
 export async function markActionDoneAction(formData: FormData) {
   const id = String(formData.get("id"));
   if (!id) return;
@@ -106,7 +138,7 @@ export async function markActionDoneAction(formData: FormData) {
   const me = await currentUserId();
   const { data: action } = await db
     .from("sequence_actions")
-    .select("sequence_id, contact_id, step_index")
+    .select("sequence_id, contact_id, step_index, kind")
     .eq("id", id)
     .maybeSingle();
   if (!action) return;
@@ -115,18 +147,22 @@ export async function markActionDoneAction(formData: FormData) {
     completed_at: new Date().toISOString(),
     completed_by: me,
   }).eq("id", id);
-  // Advance the sequence-contact's current_step so the engine picks up
-  // the next one on its next tick.
   await db.from("sequence_contacts").update({
     current_step: (action.step_index as number) + 1,
     last_advanced_at: new Date().toISOString(),
   }).eq("sequence_id", action.sequence_id).eq("contact_id", action.contact_id);
+  await logSequenceEvent({
+    contact_id: action.contact_id as string,
+    sequence_id: action.sequence_id as string,
+    step_index: action.step_index as number,
+    kind: action.kind as string,
+    outcome: "done",
+  });
   await flash("success", "Action marked done");
   revalidatePath(`/sequences/${action.sequence_id}`);
+  revalidatePath(`/contacts/${action.contact_id}`);
 }
 
-/** Skip an action (operator decides this step doesn't apply). Same advance
- *  semantics as done — the next step still becomes due on its day. */
 export async function skipActionAction(formData: FormData) {
   const id = String(formData.get("id"));
   if (!id) return;
@@ -134,7 +170,7 @@ export async function skipActionAction(formData: FormData) {
   const me = await currentUserId();
   const { data: action } = await db
     .from("sequence_actions")
-    .select("sequence_id, contact_id, step_index")
+    .select("sequence_id, contact_id, step_index, kind")
     .eq("id", id)
     .maybeSingle();
   if (!action) return;
@@ -147,8 +183,31 @@ export async function skipActionAction(formData: FormData) {
     current_step: (action.step_index as number) + 1,
     last_advanced_at: new Date().toISOString(),
   }).eq("sequence_id", action.sequence_id).eq("contact_id", action.contact_id);
+  await logSequenceEvent({
+    contact_id: action.contact_id as string,
+    sequence_id: action.sequence_id as string,
+    step_index: action.step_index as number,
+    kind: action.kind as string,
+    outcome: "skipped",
+  });
   await flash("success", "Action skipped");
   revalidatePath(`/sequences/${action.sequence_id}`);
+  revalidatePath(`/contacts/${action.contact_id}`);
+}
+
+/** Persist the per-sequence theme + linked conference_id. */
+export async function updateSequenceMetaAction(formData: FormData) {
+  const id = String(formData.get("id"));
+  if (!id) return;
+  const theme = str(formData.get("theme"));
+  const conference_id = str(formData.get("conference_id"));
+  await serviceClient().from("sequences").update({
+    theme,
+    conference_id,
+    updated_at: new Date().toISOString(),
+  }).eq("id", id);
+  await flash("success", "Sequence saved");
+  revalidatePath(`/sequences/${id}`);
 }
 
 /** Manual tick — re-runs the engine on demand. Useful when the operator

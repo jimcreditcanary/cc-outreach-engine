@@ -14,8 +14,17 @@
 // outside the DB so it's safe to re-run.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SEQUENCE_STEPS, dueDateFor, isEmailStep, type Step } from "./steps";
+import { SEQUENCE_STEPS, dueDateFor, isEmailStep } from "./steps";
 import { regenerateForContact } from "../generate/forContact";
+
+/** Map a SEQUENCE_STEPS kind → the step_kind hint the generator understands. */
+function stepHintFor(kind: string): "initial" | "followup" | "case" | "breakup" | null {
+  if (kind === "send_email_initial") return "initial";
+  if (kind === "send_email_followup") return "followup";
+  if (kind === "send_email_case") return "case";
+  if (kind === "send_email_breakup") return "breakup";
+  return null;
+}
 
 export interface AdvanceResult {
   considered: number;
@@ -36,7 +45,7 @@ export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceRe
     .from("sequence_contacts")
     .select(`
       sequence_id, contact_id, current_step, started_at, status,
-      sequence:sequences!inner(id, status, owner_id, auto_send),
+      sequence:sequences!inner(id, status, owner_id, auto_send, theme),
       contact:contacts!inner(id, email, owner_id)
     `)
     .eq("status", "active")
@@ -50,7 +59,7 @@ export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceRe
     current_step: number;
     started_at: string;
     status: string;
-    sequence: { id: string; status: string; owner_id: string | null; auto_send: boolean } | { id: string; status: string; owner_id: string | null; auto_send: boolean }[] | null;
+    sequence: { id: string; status: string; owner_id: string | null; auto_send: boolean; theme: string | null } | { id: string; status: string; owner_id: string | null; auto_send: boolean; theme: string | null }[] | null;
     contact: { id: string; email: string | null; owner_id: string | null } | { id: string; email: string | null; owner_id: string | null }[] | null;
   };
   const list = (rows ?? []) as Row[];
@@ -105,7 +114,10 @@ export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceRe
       let send_id: string | null = null;
       if (isEmailStep(step) && ct.email) {
         try {
-          const draft = await regenerateForContact(db, row.contact_id);
+          const draft = await regenerateForContact(db, row.contact_id, {
+            theme: seq.theme,
+            step_kind: stepHintFor(step.kind),
+          });
           if (draft) {
             // Look up asset_id from URL (mirrors generateDraftForContact).
             const { data: asset } = await db.from("content_assets").select("id").eq("url", draft.asset_url).maybeSingle();

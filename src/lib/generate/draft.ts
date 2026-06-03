@@ -23,6 +23,15 @@ export interface ContactCtx {
   org_summary?: string | null;
   /** Optional last 3 recent posts from the company's blog/news feed. */
   recent_posts?: { title: string; published_at: string | null }[];
+  /** Optional campaign-level theme/style hint (per-sequence text the
+   *  operator wrote — e.g. "Money 2020 attendees — lead with cost-of-
+   *  living"). Injected as a CAMPAIGN CONTEXT block. */
+  theme?: string | null;
+  /** Optional cadence step hint — when set, the prompt nudges the model
+   *  to the right tone/length for THAT step (opener vs follow-up vs
+   *  case-study vs breakup). One of:
+   *    'initial' | 'followup' | 'case' | 'breakup' */
+  step_kind?: "initial" | "followup" | "case" | "breakup" | null;
 }
 
 export interface AssetOption {
@@ -81,9 +90,23 @@ function buildUserPrompt(
     timeZone: "Europe/London",
   });
 
-  return `${correction ? correction + "\n\n" : ""}Today is ${today}. Do not reference any other season, month, quarter, or year.
+  const stepGuide = ctx.step_kind === "followup"
+    ? "STEP: this is the Day-4 FOLLOW-UP email after a Day-1 opener. Stay under 120 words. Lead with a value-driven insight (industry trend, FCA pressure, BNPL growth, AI underwriting, cost reduction, CX). No 'just checking in'."
+    : ctx.step_kind === "case"
+    ? "STEP: this is the Day-10 CASE-STUDY email. Short client story with metrics — e.g. \"reduced decision times by 40%\", \"cut manual referrals by 30%\". Quick win + ROI. Anonymised."
+    : ctx.step_kind === "breakup"
+    ? "STEP: this is the Day-13 BREAKUP email. Low-pressure close-the-loop. Acknowledge that timing/priority/ownership might be off; offer to reconnect later in the year. Short."
+    : ctx.step_kind === "initial"
+    ? "STEP: this is the Day-1 OPENER. Awareness, not pitching. Angle = one of: faster credit decisions, lower manual underwriting, better fraud/risk controls, improved acceptance rates, regulatory/compliance efficiency."
+    : "";
 
-CONTACT
+  const themeBlock = ctx.theme
+    ? `CAMPAIGN CONTEXT (operator-written — fold into the angle if relevant):\n  ${ctx.theme}\n\n`
+    : "";
+
+  return `${correction ? correction + "\n\n" : ""}Today is ${today}. Do not reference any other season, month, quarter, or year.${stepGuide ? `\n\n${stepGuide}` : ""}
+
+${themeBlock}CONTACT
   Name: ${ctx.full_name} (open with "Hi ${ctx.first_name},")
   Job title: ${ctx.job_title ?? "unknown"}
   Organisation: ${ctx.org_name}
