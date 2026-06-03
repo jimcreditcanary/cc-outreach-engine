@@ -80,9 +80,10 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
         <form action={tickSequencesAction}>
           <PendingButton
             className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
-            pendingLabel="Advancing…"
+            pendingLabel="Checking…"
+            title="Normally runs hourly. Click to check now for new due actions + queue any due email drafts."
           >
-            ↻ Tick engine now
+            ↻ Check for due actions
           </PendingButton>
         </form>
       </header>
