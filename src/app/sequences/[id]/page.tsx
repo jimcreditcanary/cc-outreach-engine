@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import {
@@ -58,7 +59,7 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
   let pickerQ = db.from("contacts").select("id, full_name, email, organisation:organisations(name)").order("full_name").limit(5000);
   if (me) pickerQ = pickerQ.eq("owner_id", me);
 
-  const [{ data: contactsData }, { data: actionsData }, { data: allContacts }, { data: lockedRows }, { data: conferencesData }] = await Promise.all([
+  const [{ data: contactsData }, { data: actionsData }, { data: allContacts }, { data: lockedRows }, { data: conferencesData }, { data: sampleData }] = await Promise.all([
     db
       .from("sequence_contacts")
       .select(`
@@ -86,11 +87,39 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
       .neq("sequence_id", id)
       .limit(50000),
     db.from("conferences").select("id, name").order("start_date", { ascending: false, nullsFirst: false }).limit(500),
+    // Most recent draft per step kind in this sequence — surfaced inside
+    // the cadence cards so the operator can SEE the actual AI output rather
+    // than guess from a label.
+    db
+      .from("sequence_actions")
+      .select("kind, created_at, send:sends(subject, body_text, status, contact:contacts(full_name, organisation:organisations(name)))")
+      .eq("sequence_id", id)
+      .not("send_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(200),
   ]);
   const contacts = (contactsData ?? []) as unknown as SeqContact[];
   const actions = (actionsData ?? []) as ActionRow[];
   const conferences = (conferencesData ?? []) as { id: string; name: string }[];
   const lockedSet = new Set(((lockedRows ?? []) as { contact_id: string }[]).map((r) => r.contact_id));
+
+  // Build the "latest sample per step-kind" map for the cadence preview.
+  type SampleSend = {
+    subject: string | null;
+    body_text: string | null;
+    status: string | null;
+    contact: { full_name: string | null; organisation: { name: string | null } | { name: string | null }[] | null } | { full_name: string | null; organisation: { name: string | null } | { name: string | null }[] | null }[] | null;
+  };
+  type SampleRow = { kind: string; send: SampleSend | SampleSend[] | null };
+  const sampleByKind = new Map<string, { subject: string | null; body_text: string | null; status: string | null; recipient: string | null }>();
+  for (const row of (sampleData ?? []) as SampleRow[]) {
+    const s = Array.isArray(row.send) ? row.send[0] : row.send;
+    if (!s || sampleByKind.has(row.kind)) continue;
+    const ct = Array.isArray(s.contact) ? s.contact[0] : s.contact;
+    const org = ct ? (Array.isArray(ct.organisation) ? ct.organisation[0] : ct.organisation) : null;
+    const recipient = ct?.full_name ? `${ct.full_name}${org?.name ? ` (${org.name})` : ""}` : null;
+    sampleByKind.set(row.kind, { subject: s.subject, body_text: s.body_text, status: s.status, recipient });
+  }
 
   const totalContacts = contacts.length;
   const replied = contacts.filter((c) => c.status === "replied").length;
@@ -223,43 +252,86 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
         </form>
       </section>
 
-      {/* Compact horizontal cadence — one card per day, arrows showing the
-          flow. Each chip uses the step's STEP_BADGE colour + a tooltip with
-          the full label so you can hover for detail. */}
+      {/* Full-width horizontal cadence — one expandable card per day,
+          evenly distributed across the row. Click a card to see the actual
+          proposed draft (for email steps, sampled from the most recent
+          generation in this sequence) or the coaching note (for manual). */}
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">The cadence</h2>
-        <div className="flex flex-wrap items-stretch gap-2">
-          {(() => {
-            const byDay = new Map<number, typeof SEQUENCE_STEPS>();
-            for (const s of SEQUENCE_STEPS) {
-              const arr = byDay.get(s.day) ?? [];
-              arr.push(s);
-              byDay.set(s.day, arr);
-            }
-            const days = Array.from(byDay.keys()).sort((a, b) => a - b);
-            return days.map((day, idx) => (
-              <div key={day} className="flex items-stretch gap-2">
-                <div className="rounded-md border border-neutral-200 bg-white p-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Day {day}</div>
-                  <div className="mt-1 flex flex-col gap-1">
-                    {byDay.get(day)!.map((s, i) => (
-                      <span
-                        key={i}
-                        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${STEP_BADGE[s.kind]}`}
-                        title={`${s.label}${s.auto ? " · AI auto-drafts" : ""}`}
-                      >
-                        {s.shortLabel}
-                        {s.auto && <span className="text-emerald-700/70" aria-label="auto-drafts">✦</span>}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                {idx < days.length - 1 && <span className="self-center text-neutral-300">→</span>}
-              </div>
-            ));
-          })()}
-        </div>
-        <p className="mt-1 text-xs text-neutral-400">✦ = AI auto-drafts the email. Hover any chip for the full step description.</p>
+        {(() => {
+          const byDay = new Map<number, typeof SEQUENCE_STEPS>();
+          for (const s of SEQUENCE_STEPS) {
+            const arr = byDay.get(s.day) ?? [];
+            arr.push(s);
+            byDay.set(s.day, arr);
+          }
+          const days = Array.from(byDay.keys()).sort((a, b) => a - b);
+          return (
+            <div className="flex w-full items-stretch gap-1">
+              {days.map((day, idx) => (
+                <Fragment key={day}>
+                  <details className="group flex-1 min-w-0 rounded-md border border-neutral-200 bg-white open:bg-neutral-50 open:shadow-sm">
+                    <summary className="cursor-pointer list-none p-2">
+                      <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                        <span>Day {day}</span>
+                        <span className="text-neutral-300 group-open:hidden">▸</span>
+                        <span className="hidden text-neutral-300 group-open:inline">▾</span>
+                      </div>
+                      <div className="mt-1 flex flex-col gap-1">
+                        {byDay.get(day)!.map((s, i) => (
+                          <span
+                            key={i}
+                            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${STEP_BADGE[s.kind]}`}
+                          >
+                            {s.shortLabel}
+                            {s.auto && <span className="text-emerald-700/70" aria-label="auto-drafts">✦</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </summary>
+                    <div className="space-y-3 border-t border-neutral-100 p-2 text-xs">
+                      {byDay.get(day)!.map((s, i) => {
+                        const sample = sampleByKind.get(s.kind);
+                        return (
+                          <div key={i}>
+                            <div className="font-semibold text-neutral-800">{s.label}</div>
+                            {s.notes && <div className="mt-0.5 text-neutral-500">{s.notes}</div>}
+                            {isEmailStep(s) && (
+                              sample ? (
+                                <div className="mt-1.5 rounded border border-neutral-200 bg-white p-2">
+                                  <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-neutral-400">
+                                    <span>Proposed draft</span>
+                                    {sample.status && (
+                                      <span className={`rounded px-1 py-0.5 ${sample.status === "sent" ? "bg-emerald-100 text-emerald-800" : sample.status === "approved" ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"}`}>
+                                        {sample.status}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {sample.recipient && <div className="mt-0.5 text-[10px] text-neutral-400">for {sample.recipient}</div>}
+                                  <div className="mt-1 font-medium text-neutral-800">{sample.subject ?? "(no subject)"}</div>
+                                  <div className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap text-neutral-600">
+                                    {sample.body_text ?? "(no body)"}
+                                  </div>
+                                  <Link href="/queue" className="mt-2 inline-block text-blue-700 hover:underline">See all drafts in /queue ↗</Link>
+                                </div>
+                              ) : (
+                                <div className="mt-1.5 rounded border border-dashed border-neutral-200 bg-white p-2 text-neutral-400 italic">
+                                  No sample yet — add a contact and the engine will draft a personalised version here.
+                                </div>
+                              )
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </details>
+                  {idx < days.length - 1 && <span className="self-center px-0.5 text-neutral-300">→</span>}
+                </Fragment>
+              ))}
+            </div>
+          );
+        })()}
+        <p className="mt-1 text-xs text-neutral-400">✦ = AI auto-drafts the email. Click any day to see the proposed draft / coaching note.</p>
       </section>
 
       {/* Add contacts */}
