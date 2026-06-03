@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import {
   setSequenceStatusAction,
+  setSequenceAutoSendAction,
   deleteSequenceAction,
   addContactsToSequenceAction,
   removeContactFromSequenceAction,
@@ -112,8 +113,21 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
           <h1 className="text-xl font-semibold">{seq.name}</h1>
           <p className="mt-1 text-sm text-neutral-500">
             <span className={`mr-2 rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[seq.status] ?? "bg-neutral-100"}`}>{seq.status}</span>
+            <span className={`mr-2 rounded px-1.5 py-0.5 text-xs ${seq.auto_send ? "bg-blue-100 text-blue-800" : "bg-neutral-200 text-neutral-700"}`}>
+              {seq.auto_send ? "auto-send" : "review first"}
+            </span>
             {totalContacts} contact{totalContacts === 1 ? "" : "s"} · {replied} replied · {pendingActions} outstanding action{pendingActions === 1 ? "" : "s"} · {completed} completed
           </p>
+          <form action={setSequenceAutoSendAction} className="mt-2 flex items-center gap-1.5 text-xs text-neutral-600">
+            <input type="hidden" name="id" value={seq.id} />
+            <label className="flex items-center gap-1.5" title="On = AI-drafted emails ship in the next send window. Off = land in /queue for approval first.">
+              <input type="checkbox" name="auto_send" defaultChecked={seq.auto_send} />
+              Auto-send emails (saves on toggle)
+            </label>
+            <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-100" pendingLabel="…">
+              Save
+            </PendingButton>
+          </form>
         </div>
         <div className="flex gap-2">
           {seq.status !== "live" && (
@@ -215,7 +229,9 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
                           </span>
                           <span className="text-sm">{step?.label ?? a.kind}</span>
                           {isEmailStep(a.kind as StepKind) && a.send_id && (
-                            <Link href={`/queue`} className="text-xs text-emerald-600 hover:underline">email auto-approved · sends in next window ↗</Link>
+                            <Link href={`/queue`} className={`text-xs hover:underline ${seq.auto_send ? "text-emerald-600" : "text-amber-600"}`}>
+                              {seq.auto_send ? "auto-send queued · ships next window ↗" : "draft in queue · review + approve ↗"}
+                            </Link>
                           )}
                           {overdue && <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700">overdue</span>}
                           <span className="ml-auto text-xs text-neutral-400">due {new Date(a.due_at).toLocaleDateString("en-GB")}</span>

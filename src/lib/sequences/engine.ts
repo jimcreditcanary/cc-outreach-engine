@@ -36,7 +36,7 @@ export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceRe
     .from("sequence_contacts")
     .select(`
       sequence_id, contact_id, current_step, started_at, status,
-      sequence:sequences!inner(id, status, owner_id),
+      sequence:sequences!inner(id, status, owner_id, auto_send),
       contact:contacts!inner(id, email, owner_id)
     `)
     .eq("status", "active")
@@ -50,7 +50,7 @@ export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceRe
     current_step: number;
     started_at: string;
     status: string;
-    sequence: { id: string; status: string; owner_id: string | null } | { id: string; status: string; owner_id: string | null }[] | null;
+    sequence: { id: string; status: string; owner_id: string | null; auto_send: boolean } | { id: string; status: string; owner_id: string | null; auto_send: boolean }[] | null;
     contact: { id: string; email: string | null; owner_id: string | null } | { id: string; email: string | null; owner_id: string | null }[] | null;
   };
   const list = (rows ?? []) as Row[];
@@ -99,6 +99,9 @@ export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceRe
 
       // Create the action row. For email steps, also queue an AI draft.
       const owner_id = seq.owner_id;
+      // auto_send=true → land as 'approved' (cron ships in next window).
+      // auto_send=false → land as 'queued' (operator reviews in /queue).
+      const sendStatus: "approved" | "queued" = seq.auto_send ? "approved" : "queued";
       let send_id: string | null = null;
       if (isEmailStep(step) && ct.email) {
         try {
@@ -106,10 +109,6 @@ export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceRe
           if (draft) {
             // Look up asset_id from URL (mirrors generateDraftForContact).
             const { data: asset } = await db.from("content_assets").select("id").eq("url", draft.asset_url).maybeSingle();
-            // Sequences are the auto-send path — drop straight to 'approved'
-            // so the send cron picks them up inside the next send window
-            // (8am-5pm UK working days). Manual /queue review is still
-            // possible by filtering "Recent activity" for approved-status.
             const { data: inserted } = await db.from("sends").insert({
               contact_id: row.contact_id,
               angle: draft.angle,
@@ -118,7 +117,7 @@ export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceRe
               body_html: draft.body_html,
               body_text: draft.body_text,
               original_body_text: draft.body_text,
-              status: "approved",
+              status: sendStatus,
               owner_id,
               sequence_id: row.sequence_id,
             }).select("id").single();

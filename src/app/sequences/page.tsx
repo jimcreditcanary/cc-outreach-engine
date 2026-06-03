@@ -107,8 +107,12 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
         );
       })()}
 
-      <form action={createSequenceAction} className="mb-6 flex flex-wrap gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+      <form action={createSequenceAction} className="mb-6 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
         <input name="name" required placeholder="New sequence name (e.g. Q1 banks)" className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" />
+        <label className="flex items-center gap-1.5 text-xs text-neutral-600" title="Auto-send drops AI-drafted emails straight into the send cron. Off = land in /queue for manual approval first.">
+          <input type="checkbox" name="auto_send" defaultChecked />
+          Auto-send emails
+        </label>
         <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Creating…">
           + New sequence
         </PendingButton>
