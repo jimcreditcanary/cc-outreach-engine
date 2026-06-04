@@ -214,9 +214,15 @@ export async function updateSequenceMetaAction(formData: FormData) {
  *  adds contacts mid-day and doesn't want to wait for the next cron tick. */
 export async function tickSequencesAction() {
   const res = await advanceAllSequences(serviceClient());
+  // Surface skipped-draft reasons up-front — silent skips ("contact has
+  // no company/sector") were the #1 "why is /queue empty?" puzzle.
+  const skipNote = res.draftsSkipped > 0 ? ` · ${res.draftsSkipped} SKIPPED` : "";
+  const firstErr = res.errors.length > 0 ? ` — first: ${res.errors[0]}` : "";
+  const level: "success" | "error" =
+    res.draftsSkipped > 0 || res.errors.length > 0 ? "error" : "success";
   await flash(
-    "success",
-    `Engine tick — ${res.considered} considered · ${res.actionsCreated} new actions · ${res.draftsQueued} drafts queued · ${res.contactsCompleted} completed${res.errors.length ? ` · ${res.errors.length} errors` : ""}`,
+    level,
+    `Engine tick — ${res.considered} considered · ${res.actionsCreated} new actions · ${res.draftsQueued} drafts queued${skipNote} · ${res.contactsCompleted} completed${firstErr}`,
   );
   revalidatePath("/sequences");
 }

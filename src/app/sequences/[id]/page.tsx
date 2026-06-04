@@ -391,6 +391,14 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
                               {seq.auto_send ? "auto-send queued · ships next window ↗" : "draft in queue · review + approve ↗"}
                             </Link>
                           )}
+                          {isEmailStep(a.kind as StepKind) && !a.send_id && (
+                            <span
+                              className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700"
+                              title="The AI couldn't draft this — most likely the contact has no email, no linked company, or the company has no sector set. Fix on the contact page, then hit 'Check for due actions' on /sequences."
+                            >
+                              draft not generated — fix contact
+                            </span>
+                          )}
                           {overdue && <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700">overdue</span>}
                           <span className="ml-auto text-xs text-neutral-400">due {new Date(a.due_at).toLocaleDateString("en-GB")}</span>
                           <form action={markActionDoneAction}>

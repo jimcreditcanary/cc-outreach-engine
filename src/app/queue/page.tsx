@@ -56,6 +56,19 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const drafts = (data ?? []) as unknown as Draft[];
   const recent = (recentData ?? []) as unknown as Array<{ id: string; subject: string | null; status: string; ts: string; contact: { id: string; full_name: string | null; email: string | null } | null }>;
 
+  // Cross-owner peek: if my filter is empty, count drafts that exist
+  // under other owners so we can tell the operator they're hiding behind
+  // a filter, not actually missing. Skipped when filter is already "all".
+  let elsewhereCount = 0;
+  if (ownerId && drafts.length === 0) {
+    const { count } = await serviceClient()
+      .from("sends")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "queued")
+      .neq("owner_id", ownerId);
+    elsewhereCount = count ?? 0;
+  }
+
   return (
     <main className="px-8 py-6">
       <header className="mb-6 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
@@ -65,9 +78,21 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
       </header>
 
       {drafts.length === 0 ? (
-        <p className="text-neutral-500">
-          Nothing to review. Generate drafts with <code className="rounded bg-neutral-200 px-1">npm run generate</code>.
-        </p>
+        <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
+          <p>Nothing in your queue to review.</p>
+          <p className="mt-2 text-xs text-neutral-500">
+            Drafts arrive here automatically — either from{" "}
+            <a href="/sequences" className="text-blue-700 hover:underline">an active sequence</a>{" "}
+            (review-mode steps) or the daily cron at 06:30 UTC. Hit{" "}
+            <strong>Check for due actions</strong> on /sequences if you just added contacts and don&apos;t want to wait.
+          </p>
+          {elsewhereCount > 0 && (
+            <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+              ⚠ {elsewhereCount} draft{elsewhereCount === 1 ? "" : "s"} waiting under another operator&apos;s filter. Switch{" "}
+              <strong>Owner → All users</strong> at the top of this page to see them.
+            </p>
+          )}
+        </div>
       ) : (
         <>
           {/* Bulk-approve outbox — checkboxes inside each draft card POST to

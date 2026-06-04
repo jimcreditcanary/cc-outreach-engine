@@ -30,6 +30,10 @@ export interface AdvanceResult {
   considered: number;
   actionsCreated: number;
   draftsQueued: number;
+  /** Email steps where regenerateForContact returned null (contact has no
+   *  org / no sector / no email) — action row still created so the
+   *  operator can see WHY nothing's in /queue, but no send was queued. */
+  draftsSkipped: number;
   contactsCompleted: number;
   errors: string[];
 }
@@ -38,7 +42,7 @@ export interface AdvanceResult {
  *  live sequences. Idempotent — re-running won't duplicate actions (unique
  *  (sequence_id, contact_id, step_index) on sequence_actions). */
 export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceResult> {
-  const result: AdvanceResult = { considered: 0, actionsCreated: 0, draftsQueued: 0, contactsCompleted: 0, errors: [] };
+  const result: AdvanceResult = { considered: 0, actionsCreated: 0, draftsQueued: 0, draftsSkipped: 0, contactsCompleted: 0, errors: [] };
 
   // Only act on contacts whose parent sequence is live (not paused).
   const { data: rows, error } = await db
@@ -112,32 +116,58 @@ export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceRe
       // auto_send=false → land as 'queued' (operator reviews in /queue).
       const sendStatus: "approved" | "queued" = seq.auto_send ? "approved" : "queued";
       let send_id: string | null = null;
-      if (isEmailStep(step) && ct.email) {
-        try {
-          const draft = await regenerateForContact(db, row.contact_id, {
-            theme: seq.theme,
-            step_kind: stepHintFor(step.kind),
-          });
-          if (draft) {
-            // Look up asset_id from URL (mirrors generateDraftForContact).
-            const { data: asset } = await db.from("content_assets").select("id").eq("url", draft.asset_url).maybeSingle();
-            const { data: inserted } = await db.from("sends").insert({
-              contact_id: row.contact_id,
-              angle: draft.angle,
-              asset_id: asset?.id ?? null,
-              subject: draft.subject,
-              body_html: draft.body_html,
-              body_text: draft.body_text,
-              original_body_text: draft.body_text,
-              status: sendStatus,
-              owner_id,
-              sequence_id: row.sequence_id,
-            }).select("id").single();
-            send_id = (inserted?.id as string | null) ?? null;
-            result.draftsQueued++;
+      if (isEmailStep(step)) {
+        if (!ct.email) {
+          // No email on file — sequence engine can't draft. Action row
+          // still gets created (below) so the operator can see WHY
+          // nothing's in /queue and fix it from the contact record.
+          result.draftsSkipped++;
+          result.errors.push(`draft skipped for ${row.contact_id} step ${row.current_step}: contact has no email`);
+        } else {
+          try {
+            const draft = await regenerateForContact(db, row.contact_id, {
+              theme: seq.theme,
+              step_kind: stepHintFor(step.kind),
+            });
+            if (draft) {
+              // Look up asset_id from URL (mirrors generateDraftForContact).
+              const { data: asset } = await db.from("content_assets").select("id").eq("url", draft.asset_url).maybeSingle();
+              const { data: inserted } = await db.from("sends").insert({
+                contact_id: row.contact_id,
+                angle: draft.angle,
+                asset_id: asset?.id ?? null,
+                subject: draft.subject,
+                body_html: draft.body_html,
+                body_text: draft.body_text,
+                original_body_text: draft.body_text,
+                status: sendStatus,
+                owner_id,
+                sequence_id: row.sequence_id,
+              }).select("id").single();
+              send_id = (inserted?.id as string | null) ?? null;
+              result.draftsQueued++;
+            } else {
+              // regenerateForContact returned null — figure out WHY so the
+              // operator gets actionable feedback instead of a silent miss.
+              const { data: diag } = await db
+                .from("contacts")
+                .select("organisation:organisations(id, sector)")
+                .eq("id", row.contact_id)
+                .maybeSingle();
+              const org = diag?.organisation as { id: string | null; sector: string | null } | { id: string | null; sector: string | null }[] | null;
+              const orgRow = Array.isArray(org) ? org[0] : org;
+              const reason = !orgRow?.id
+                ? "contact has no company linked"
+                : !orgRow.sector
+                ? "company has no sector set"
+                : "AI generator returned null (check logs)";
+              result.draftsSkipped++;
+              result.errors.push(`draft skipped for ${row.contact_id} step ${row.current_step}: ${reason}`);
+            }
+          } catch (e) {
+            result.draftsSkipped++;
+            result.errors.push(`draft for ${row.contact_id} step ${row.current_step}: ${(e as Error).message}`);
           }
-        } catch (e) {
-          result.errors.push(`draft for ${row.contact_id} step ${row.current_step}: ${(e as Error).message}`);
         }
       }
 
