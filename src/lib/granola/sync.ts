@@ -43,6 +43,7 @@ const MATCH_WINDOW_MS = 15 * 60 * 1000;
 
 interface MeetingRow {
   id: string;
+  ms_event_id: string | null;
   subject: string | null;
   start_at: string;
   attendees: Array<{ email?: string | null }> | null;
@@ -89,16 +90,20 @@ export async function syncGranolaForUser(
     ? new Date(earliestNote - MATCH_WINDOW_MS).toISOString()
     : new Date(Date.now() - 14 * 86_400_000).toISOString();
 
+  // sales_relevant=true → only meetings flagged as sales conversations
+  // get a transcript pulled + follow-up sent. Internal stand-ups,
+  // recruiting calls, etc. stay untouched even if Granola recorded them.
   const { data: meetingsData, error: mErr } = await db
     .from("meetings")
     .select(`
-      id, subject, start_at, attendees, transcript, granola_note_id,
+      id, ms_event_id, subject, start_at, attendees, transcript, granola_note_id,
       granola_followup_send_id, brief, owner_id, organisation_id, deal_id,
       organisation:organisations(name),
       primary_contact:contacts(id, full_name, email),
       deal:deals(title, stage)
     `)
     .eq("owner_id", userId)
+    .eq("sales_relevant", true)
     .gte("start_at", windowStart)
     .lte("start_at", new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
     .limit(500);
@@ -109,33 +114,51 @@ export async function syncGranolaForUser(
   const meetings = (meetingsData ?? []) as unknown as MeetingRow[];
   if (meetings.length === 0) return;
 
+  // Index meetings by ms_event_id for O(1) primary-key match. Falls
+  // back to start-time/email scan when Granola doesn't surface the
+  // calendar event id on a particular note.
+  const byMsId = new Map<string, MeetingRow>();
+  for (const m of meetings) {
+    if (m.ms_event_id) byMsId.set(m.ms_event_id, m);
+  }
+
   for (const note of notes) {
-    if (!note.started_at) continue;
-    const noteTs = new Date(note.started_at).getTime();
-    if (!isFinite(noteTs)) continue;
-
-    // First pass: match by start-time window + attendee email overlap.
-    // Fallback: start-time window only (when attendees not surfaced).
-    const candidates = meetings.filter(
-      (m) => Math.abs(new Date(m.start_at).getTime() - noteTs) <= MATCH_WINDOW_MS,
-    );
-    if (candidates.length === 0) continue;
-
     let matched: MeetingRow | undefined;
-    if (note.attendee_emails.length > 0) {
-      const noteEmails = new Set(note.attendee_emails);
-      matched = candidates.find((m) => {
-        const ours = (m.attendees ?? []).map((a) => (a?.email ?? "").trim().toLowerCase()).filter(Boolean);
-        return ours.some((e) => noteEmails.has(e));
-      });
+
+    // PRIMARY: exact match on the source calendar event id. This is the
+    // gold-standard link — Granola scraped it from the same Outlook
+    // event we sync'd into meetings.ms_event_id, so there's no ambiguity.
+    if (note.calendar_event_id) {
+      matched = byMsId.get(note.calendar_event_id);
     }
+
+    // FALLBACK: start-time window + attendee email overlap. Used when
+    // Granola didn't capture the calendar event id (e.g. ad-hoc meeting
+    // recorded standalone, or older note from before calendar was linked).
     if (!matched) {
-      // Closest start-time wins when no email overlap.
-      matched = candidates.sort(
-        (a, b) =>
-          Math.abs(new Date(a.start_at).getTime() - noteTs) -
-          Math.abs(new Date(b.start_at).getTime() - noteTs),
-      )[0];
+      if (!note.started_at) continue;
+      const noteTs = new Date(note.started_at).getTime();
+      if (!isFinite(noteTs)) continue;
+      const candidates = meetings.filter(
+        (m) => Math.abs(new Date(m.start_at).getTime() - noteTs) <= MATCH_WINDOW_MS,
+      );
+      if (candidates.length === 0) continue;
+
+      if (note.attendee_emails.length > 0) {
+        const noteEmails = new Set(note.attendee_emails);
+        matched = candidates.find((m) => {
+          const ours = (m.attendees ?? []).map((a) => (a?.email ?? "").trim().toLowerCase()).filter(Boolean);
+          return ours.some((e) => noteEmails.has(e));
+        });
+      }
+      if (!matched) {
+        // Closest start-time wins when no email overlap.
+        matched = candidates.sort(
+          (a, b) =>
+            Math.abs(new Date(a.start_at).getTime() - noteTs) -
+            Math.abs(new Date(b.start_at).getTime() - noteTs),
+        )[0];
+      }
     }
     if (!matched) continue;
     result.meetings_matched++;

@@ -16,6 +16,11 @@ export interface GranolaNote {
   title: string | null;
   /** When the meeting actually started (not when the note was created). */
   started_at: string | null;
+  /** The calendar event id Granola scraped from the source calendar
+   *  (Microsoft Graph event id or iCalUId, Google event id). When present
+   *  this is the PRIMARY match key against meetings.ms_event_id — exact,
+   *  not fuzzy. Start_time + attendee matching is the fallback. */
+  calendar_event_id: string | null;
   /** Email addresses of attendees as Granola records them. Used to match
    *  back to our meetings.attendees / primary_contact. */
   attendee_emails: string[];
@@ -36,6 +41,14 @@ interface GranolaListResponse {
     meeting_start_time?: string | null;
     created_at?: string | null;
     start_time?: string | null;
+    /** Source-calendar event identifier. Granola surfaces this under a
+     *  handful of names depending on which integration captured it —
+     *  Microsoft Graph events use `external_event_id` / `calendar_event_id`,
+     *  iCal-style uses `ical_uid`. We probe all of them in normaliseNote. */
+    external_event_id?: string | null;
+    calendar_event_id?: string | null;
+    ical_uid?: string | null;
+    source_event_id?: string | null;
     attendees?: Array<{ email?: string | null }> | null;
     people?: Array<{ email?: string | null }> | null;
   }>;
@@ -47,6 +60,10 @@ interface GranolaDocResponse {
   meeting_start_time?: string | null;
   created_at?: string | null;
   start_time?: string | null;
+  external_event_id?: string | null;
+  calendar_event_id?: string | null;
+  ical_uid?: string | null;
+  source_event_id?: string | null;
   attendees?: Array<{ email?: string | null }> | null;
   people?: Array<{ email?: string | null }> | null;
   transcript?: string | null;
@@ -62,10 +79,20 @@ function normaliseNote(d: GranolaDocResponse): GranolaNote {
   const emails = [...(d.attendees ?? []), ...(d.people ?? [])]
     .map((a) => (a?.email ?? "").trim().toLowerCase())
     .filter(Boolean);
+  // Probe every field name Granola is known to use for the source-calendar
+  // event id. First non-null wins; downstream we'll match it against our
+  // meetings.ms_event_id for an exact link.
+  const cal =
+    d.external_event_id ??
+    d.calendar_event_id ??
+    d.ical_uid ??
+    d.source_event_id ??
+    null;
   return {
     id: d.id,
     title: d.title ?? null,
     started_at: started,
+    calendar_event_id: cal,
     attendee_emails: Array.from(new Set(emails)),
     transcript: d.transcript ?? null,
     granola_summary: d.notes_markdown ?? d.summary ?? null,

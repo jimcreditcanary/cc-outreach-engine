@@ -104,6 +104,15 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
             </form>
           </section>
 
+          {/* Granola is OFF for non-sales meetings. Surface that here so
+              Jim doesn't wait for a transcript that will never come. */}
+          {!m.sales_relevant && (
+            <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-500">
+              <strong>Non-sales meeting</strong> — Granola sync is off and no follow-up will be sent. Hit
+              &quot;Mark sales-relevant&quot; on the right to flip it on.
+            </section>
+          )}
+
           {/* Granola sync banner — shows when a transcript was pulled
               automatically and when/where the follow-up email landed. */}
           {(m.granola_synced_at || granolaFollowup) && (
