@@ -4,7 +4,8 @@
 
 import { z } from "zod";
 import { generateStructured } from "../ai/claude";
-import { buildSystemPrompt, SIGNATURE_TEXT, SIGNATURE_HTML, SCHEDULER_LINK, unsubFooterText, unsubFooterHtml } from "./config";
+import { buildSystemPrompt, SCHEDULER_LINK, unsubFooterText, unsubFooterHtml } from "./config";
+import { signatureHtml, signatureText, type Sender } from "./sender";
 import { checkAnonymisation } from "./anonymisation";
 import type { MatchedSignal } from "../signals/triggers";
 
@@ -61,6 +62,7 @@ function buildUserPrompt(
   ctx: ContactCtx,
   assets: AssetOption[],
   signals: MatchedSignal[],
+  sender: Sender,
   correction?: string,
 ): string {
   const notes =
@@ -106,6 +108,11 @@ function buildUserPrompt(
 
   return `${correction ? correction + "\n\n" : ""}Today is ${today}. Do not reference any other season, month, quarter, or year.${stepGuide ? `\n\n${stepGuide}` : ""}
 
+SENDER (you are drafting AS this person — write in their voice, sign off
+"${sender.first_name}"):
+  ${sender.full_name}${sender.job_title ? `, ${sender.job_title}` : ""}, ${sender.company}
+  Reply-to email: ${sender.reply_to_email}
+
 ${themeBlock}CONTACT
   Name: ${ctx.full_name} (open with "Hi ${ctx.first_name},")
   Job title: ${ctx.job_title ?? "unknown"}
@@ -139,11 +146,11 @@ Write the email now.`;
  */
 const hasLink = (s: string) => /https?:\/\/\S+/.test(s);
 
-function assemble(out: z.infer<typeof DraftSchema>, email: string): DraftResult {
+function assemble(out: z.infer<typeof DraftSchema>, email: string, sender: Sender): DraftResult {
   return {
     subject: out.subject,
-    body_text: `${out.body_text.trim()}\n\n${SIGNATURE_TEXT}${unsubFooterText(email)}`,
-    body_html: renderHtml(out.body_text, email),
+    body_text: `${out.body_text.trim()}\n\n${signatureText(sender)}${unsubFooterText(email)}`,
+    body_html: renderHtml(out.body_text, email, sender),
     angle: out.angle,
     asset_url: out.asset_url,
   };
@@ -153,6 +160,7 @@ export async function generateDraft(
   ctx: ContactCtx,
   assets: AssetOption[],
   signals: MatchedSignal[] = [],
+  sender: Sender,
 ): Promise<DraftResult | null> {
   const system = buildSystemPrompt();
   let correction: string | undefined;
@@ -161,7 +169,7 @@ export async function generateDraft(
   for (let attempt = 0; attempt < 2; attempt++) {
     const out = await generateStructured({
       system,
-      user: buildUserPrompt(ctx, assets, signals, correction),
+      user: buildUserPrompt(ctx, assets, signals, sender, correction),
       schema: DraftSchema,
       effort: "medium",
       maxTokens: 2000,
@@ -170,7 +178,7 @@ export async function generateDraft(
     const anonClean = checkAnonymisation(`${out.subject}\n${out.body_text}`).clean;
     const linked = hasLink(out.body_text);
 
-    if (anonClean && linked) return assemble(out, ctx.email);
+    if (anonClean && linked) return assemble(out, ctx.email, sender);
 
     if (anonClean) lastClean = out; // usable except for the missing link
     correction = !anonClean
@@ -182,13 +190,13 @@ export async function generateDraft(
   // scheduler CTA ourselves rather than discard a good draft.
   if (lastClean) {
     const body = `${lastClean.body_text.trim()}\n\nIf it's useful, grab a time here: ${SCHEDULER_LINK}`;
-    return assemble({ ...lastClean, body_text: body, asset_url: SCHEDULER_LINK }, ctx.email);
+    return assemble({ ...lastClean, body_text: body, asset_url: SCHEDULER_LINK }, ctx.email, sender);
   }
   return null; // failed the anonymisation gate twice
 }
 
 /** Native-looking HTML: system font, plain paragraphs, simple signature. */
-function renderHtml(bodyText: string, email: string): string {
+function renderHtml(bodyText: string, email: string, sender: Sender): string {
   const paragraphs = bodyText
     .trim()
     .split(/\n\s*\n/)
@@ -196,7 +204,7 @@ function renderHtml(bodyText: string, email: string): string {
     .join("\n");
   return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">
 ${paragraphs}
-${SIGNATURE_HTML}
+${signatureHtml(sender)}
 ${unsubFooterHtml(email)}
 </div>`;
 }

@@ -6,6 +6,7 @@
 import type { serviceClient } from "../db/client";
 import { generateDraft, type AssetOption, type ContactCtx, type DraftResult } from "./draft";
 import { matchSignals, type SignalInput } from "../signals/triggers";
+import { resolveSender } from "./sender";
 import type { Sector } from "../import/mappers";
 
 type DB = ReturnType<typeof serviceClient>;
@@ -20,15 +21,18 @@ interface OrgEmbed {
 /** Run the full draft generator for one contact id. Returns null if the
  *  contact lacks the context to safely draft (no org / no sector).
  *  Optional `theme` + `step_kind` get threaded into the prompt — used by
- *  the sequences engine so each step generates in the right voice. */
+ *  the sequences engine so each step generates in the right voice.
+ *  Optional `ownerOverride` lets callers (the sequence engine, typically)
+ *  pin the sender to the sequence's owner instead of the contact's owner
+ *  — important when an operator runs a sequence over a shared list. */
 export async function regenerateForContact(
   db: DB,
   contactId: string,
-  opts: { theme?: string | null; step_kind?: ContactCtx["step_kind"] } = {},
+  opts: { theme?: string | null; step_kind?: ContactCtx["step_kind"]; ownerOverride?: string | null } = {},
 ): Promise<DraftResult | null> {
   const { data: contact } = await db
     .from("contacts")
-    .select("id, full_name, email, job_title, label, organisation:organisations(id, name, sector, tier)")
+    .select("id, full_name, email, job_title, label, owner_id, organisation:organisations(id, name, sector, tier)")
     .eq("id", contactId)
     .maybeSingle();
   if (!contact) return null;
@@ -78,5 +82,16 @@ export async function regenerateForContact(
     step_kind: opts.step_kind ?? null,
   };
   const signals = matchSignals(recentSignals, org.sector as Sector);
-  return generateDraft(ctx, assets, signals);
+
+  // Resolve the SENDER — overrides win (sequence engine passes the
+  // sequence's owner); otherwise use the contact's owner; otherwise
+  // workspace default. This is what threads the operator's name +
+  // signoff + reply-to-email through into the prompt and signature.
+  const ownerId =
+    opts.ownerOverride !== undefined
+      ? opts.ownerOverride
+      : ((contact.owner_id as string | null) ?? null);
+  const sender = await resolveSender(db, ownerId);
+
+  return generateDraft(ctx, assets, signals, sender);
 }

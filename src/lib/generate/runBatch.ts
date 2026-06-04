@@ -4,6 +4,7 @@
 
 import { serviceClient } from "../db/client";
 import { generateDraft, type AssetOption, type ContactCtx } from "./draft";
+import { resolveSender } from "./sender";
 import { isDue, applyPerCompanyCap, DEFAULT_COOLDOWN_DAYS } from "../cadence/cadence";
 import { matchSignals, type SignalInput } from "../signals/triggers";
 import type { Sector } from "../import/mappers";
@@ -112,7 +113,11 @@ export async function runGenerateBatch(db: DB, limit: number): Promise<GenerateB
     };
 
     const signals = matchSignals(recentSignals, org.sector as Sector);
-    const draft = await generateDraft(ctx, assets, signals);
+    // Resolve the contact's owner → sender so the body signs off as
+    // them, not as the workspace default. Falls back to default for
+    // contacts with no owner_id.
+    const sender = await resolveSender(db, (c.owner_id as string | null) ?? null);
+    const draft = await generateDraft(ctx, assets, signals, sender);
     if (!draft) {
       flagged++;
       continue;

@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { serviceClient } from "@/lib/db/client";
 import { textToHtml } from "@/lib/generate/render";
-import { SIGNATURE_TEXT, SIGNATURE_HTML, unsubFooterText, unsubFooterHtml } from "@/lib/generate/config";
+import { unsubFooterText, unsubFooterHtml } from "@/lib/generate/config";
+import { resolveSender, signatureText, signatureHtml } from "@/lib/generate/sender";
 import { sendBroadcast } from "@/lib/send/postmark";
 import { currentUserId } from "@/lib/auth/owner";
 import { flash } from "@/lib/flash";
@@ -81,8 +82,12 @@ export async function sendNewsletter(formData: FormData) {
   ]);
   const suppressed = new Set((supp ?? []).map((s) => String(s.email).toLowerCase()));
 
-  // Newsletter goes out as the operator who hit Send (their FROM / Reply-To).
+  // Newsletter goes out as the operator who hit Send (their FROM /
+  // Reply-To + their signature block in the body).
   const newsletterOwner = await currentUserId();
+  const sender = await resolveSender(db, newsletterOwner);
+  const sigText = signatureText(sender);
+  const sigHtml = signatureHtml(sender);
 
   let sent = 0;
   for (const c of subs ?? []) {
@@ -90,10 +95,10 @@ export async function sendNewsletter(formData: FormData) {
     if (suppressed.has(email)) continue;
 
     // Per-recipient unsub footer — the only thing that varies per send.
-    const textFinal = `${body_text.trim()}\n\n${SIGNATURE_TEXT}${unsubFooterText(c.email!)}`;
+    const textFinal = `${body_text.trim()}\n\n${sigText}${unsubFooterText(c.email!)}`;
     const htmlFinal = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">
 ${body_html}
-${SIGNATURE_HTML}
+${sigHtml}
 ${unsubFooterHtml(c.email!)}
 </div>`;
 

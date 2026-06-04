@@ -1,25 +1,14 @@
 // Generation config: the large, stable system prompt (targeting map +
-// voice spec + hard rules) that's cached and reused across every draft,
-// plus the standard CTA + signature.
+// voice spec + hard rules) that's cached and reused across every draft.
+// Sender-specific bits (signature, name) live in lib/generate/sender.ts
+// and get threaded through generateDraft() per call so multi-operator
+// sends carry the right name in the body — see bug fix in the commit
+// that introduced sender.ts.
 
 import { readFileSync } from "node:fs";
 
 export const SCHEDULER_LINK =
   "https://creditcanary.pipedrive.com/scheduler/Mlm4k3h0/meeting-with-james-fell";
-
-/** Plain-text signature appended to every body_text. Deliberately plain —
- * a real person's sign-off, no template chrome, no marketing strap. */
-export const SIGNATURE_TEXT = `Jim
-
-Jim Fell
-Credit Canary
-jim@creditcanary.co.uk`;
-
-/** Native-looking HTML signature (no template chrome, system font). */
-export const SIGNATURE_HTML = `<p>Jim</p>
-<p style="color:#666">Jim Fell<br>
-Credit Canary<br>
-<a href="mailto:jim@creditcanary.co.uk">jim@creditcanary.co.uk</a></p>`;
 
 /** Production URL for the unsubscribe page (overridable for previews). */
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://cc-outreach-engine.vercel.app";
@@ -51,11 +40,13 @@ export function buildSystemPrompt(): string {
   const voiceSpec = readFileSync("creditcanary-voice-spec.md", "utf8");
   const targetingMap = readFileSync("creditcanary-targeting-map.md", "utf8");
 
-  _system = `You are drafting outreach emails AS Jim Fell, CEO of Credit Canary,
-to warm contacts in his CRM. Credit Canary is a UK credit-decisioning +
-payments platform for lenders.
+  _system = `You are drafting outreach emails on behalf of an operator at
+Credit Canary (a UK credit-decisioning + payments platform for lenders)
+to a warm contact in their CRM. The user message will tell you WHICH
+operator is sending — write in the first person AS them, signing off
+with their first name.
 
-Write in Jim's exact voice, following this VOICE SPEC:
+Write in the Credit Canary voice, following this VOICE SPEC:
 
 ${voiceSpec}
 

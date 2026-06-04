@@ -5,7 +5,9 @@ import { updateNewsletter, deleteNewsletter, sendNewsletter } from "../actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 import { textToHtml } from "@/lib/generate/render";
-import { SIGNATURE_HTML, unsubFooterHtml } from "@/lib/generate/config";
+import { unsubFooterHtml } from "@/lib/generate/config";
+import { resolveSender, signatureHtml } from "@/lib/generate/sender";
+import { currentUserId } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 // Send loops over every subscriber — give it runway.
@@ -93,11 +95,12 @@ export default async function NewsletterIssue({
   }
   const pct = (n: number) => (totals.sent ? `${Math.round((n / totals.sent) * 100)}%` : "—");
 
-  // Live preview HTML (uses current saved body_text; for live preview as
-  // they type, they'd Save first — keeps things simple + accurate).
+  // Live preview HTML — signature reflects the signed-in operator so
+  // they see exactly what'll go out.
+  const previewSender = await resolveSender(db, await currentUserId());
   const previewHtml = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222">
 ${textToHtml(issue.body_text ?? "")}
-${SIGNATURE_HTML}
+${signatureHtml(previewSender)}
 ${unsubFooterHtml("recipient@example.com")}
 </div>`;
 

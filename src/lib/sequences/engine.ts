@@ -128,6 +128,11 @@ export async function advanceAllSequences(db: SupabaseClient): Promise<AdvanceRe
             const draft = await regenerateForContact(db, row.contact_id, {
               theme: seq.theme,
               step_kind: stepHintFor(step.kind),
+              // Pin the sender to the SEQUENCE's owner — sequences run on
+              // behalf of the operator who built them, regardless of who
+              // owns the contact. Without this, drafts would sign off as
+              // the contact's owner and the From/body would mismatch.
+              ownerOverride: seq.owner_id,
             });
             if (draft) {
               // Look up asset_id from URL (mirrors generateDraftForContact).
