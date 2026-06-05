@@ -6,23 +6,22 @@
 //      granola_note_id.
 //   2. Runs generatePostMeetingSummary (fills post_summary + re-seeds
 //      MEDDICC if there's a linked deal).
-//   3. Generates an outbound follow-up email via generateFollowup.
-//   4. Ships it via sendBroadcast using the meeting owner's sender
-//      identity, logs an event on the contact timeline, links the
-//      sends row id back onto meetings.granola_followup_send_id.
+//   3. Generates an outbound follow-up email via generateFollowup and
+//      inserts it as a QUEUED draft in /queue for operator review.
+//      It does NOT auto-send — first-touch-after-meeting emails go
+//      through Jim's eyes before they ship.
+//   4. Pins the queued send id onto meetings.granola_followup_send_id
+//      so re-runs don't re-draft.
 //
 // Idempotent on re-runs:
 //   - Transcript only written when meetings.transcript is empty.
-//   - Follow-up only sent when granola_followup_send_id is null.
-//   - Caller decides whether to skip on already-synced (e.g. matching
-//     granola_note_id) or force re-process.
+//   - Draft only created when granola_followup_send_id is null.
 //
 // Returns a result struct the caller can log + flash.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generatePostMeetingSummary } from "../meetings/postSummary";
 import { generateFollowup } from "./followup";
-import { sendBroadcast } from "../send/postmark";
 import { displayName } from "../auth/owner";
 
 export interface ApplyResult {
@@ -163,7 +162,10 @@ export async function applyTranscriptToMeeting(
     return result;
   }
 
-  // Insert the sends row → ship → mark sent + link.
+  // Insert as 'queued' so it lands in /queue for review instead of
+  // shipping straight away. Operator approves manually — important for
+  // first-touch-after-meeting emails where tone matters and the AI
+  // doesn't always nail the relationship context.
   const { data: inserted, error: insErr } = await db
     .from("sends")
     .insert({
@@ -172,8 +174,9 @@ export async function applyTranscriptToMeeting(
       body_html: draft.body_html,
       body_text: draft.body_text,
       original_body_text: draft.body_text,
-      status: "approved",
+      status: "queued",
       owner_id: meeting.owner_id,
+      angle: `Granola follow-up: ${payload.source}`,
     })
     .select("id")
     .single();
@@ -182,38 +185,11 @@ export async function applyTranscriptToMeeting(
     return result;
   }
 
-  try {
-    const sendRes = await sendBroadcast({
-      to: contact.email,
-      subject: draft.subject,
-      htmlBody: draft.body_html,
-      textBody: draft.body_text,
-      tag: payload.source,
-      ownerId: meeting.owner_id,
-      trackOpens: false,
-    });
-    await db
-      .from("sends")
-      .update({ status: "sent", ts: new Date().toISOString(), postmark_message_id: sendRes.messageId })
-      .eq("id", inserted.id);
-    await db.from("meetings").update({ granola_followup_send_id: inserted.id }).eq("id", meeting.id);
-    await db.from("events").insert({
-      contact_id: contact.id,
-      organisation_id: meeting.organisation_id,
-      type: "outbound_email",
-      source: payload.source,
-      payload: {
-        subject: draft.subject,
-        meeting_id: meeting.id,
-        send_id: inserted.id,
-        rationale: draft.rationale,
-      },
-    });
-    result.followup_sent = true;
-  } catch (e) {
-    await db.from("sends").update({ status: "failed" }).eq("id", inserted.id);
-    result.errors.push(`send: ${(e as Error).message}`);
-  }
+  // Pin the draft to the meeting so we don't re-draft on the next cron
+  // tick. The status flips to 'sent' downstream when the operator
+  // approves + the send cron picks it up.
+  await db.from("meetings").update({ granola_followup_send_id: inserted.id }).eq("id", meeting.id);
+  result.followup_sent = true; // semantically: a draft was successfully created (not literally sent)
 
   return result;
 }

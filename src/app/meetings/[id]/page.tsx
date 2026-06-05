@@ -179,12 +179,21 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
                 {(() => {
                   const f = granolaFollowup;
                   if (!f) return null;
+                  const chipClass =
+                    f.status === "sent" ? "bg-emerald-100 text-emerald-800"
+                    : f.status === "queued" ? "bg-blue-100 text-blue-800"
+                    : f.status === "approved" ? "bg-amber-100 text-amber-800"
+                    : f.status === "failed" ? "bg-red-100 text-red-700"
+                    : "bg-neutral-200 text-neutral-700";
                   return (
                     <span className="ml-auto text-xs">
-                      Follow-up email{" "}
-                      <span className={`rounded px-1.5 py-0.5 font-medium ${f.status === "sent" ? "bg-emerald-100 text-emerald-800" : f.status === "failed" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>
+                      Follow-up draft{" "}
+                      <span className={`rounded px-1.5 py-0.5 font-medium ${chipClass}`}>
                         {f.status}
                       </span>
+                      {f.status === "queued" && (
+                        <Link href={`/queue?owner=all`} className="ml-1 text-blue-700 hover:underline">review in /queue ↗</Link>
+                      )}
                       {f.status === "sent" && f.ts && (
                         <span className="ml-1 text-blue-900">at {new Date(f.ts).toLocaleString("en-GB")}</span>
                       )}
