@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
-import { syncCalendar } from "@/lib/meetings/sync";
+import { syncCalendar, backfillMeetingLinks } from "@/lib/meetings/sync";
 import { generateMeetingBrief } from "@/lib/meetings/brief";
 import { generatePostMeetingSummary } from "@/lib/meetings/postSummary";
 import { flash } from "@/lib/flash";
@@ -22,6 +22,22 @@ export async function syncCalendarAction() {
     redirect("/api/auth/microsoft/start");
   }
   await flash("success", `Calendar synced — ${res.upserted ?? 0} event${res.upserted === 1 ? "" : "s"} (${res.linked_to_contact ?? 0} linked to contacts)`);
+  revalidatePath("/meetings");
+}
+
+/** Re-link existing meetings whose org / primary contact / deal is null.
+ *  Doesn't touch meetings that already have an operator-set link.
+ *  Use after importing contacts or adding deals to retro-link past
+ *  meetings without re-running the full calendar sync. */
+export async function backfillMeetingLinksAction() {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const res = await backfillMeetingLinks(serviceClient());
+  const level: "success" | "error" = res.errors.length > 0 ? "error" : "success";
+  await flash(
+    level,
+    `Re-linked ${res.updated}/${res.scanned} meeting${res.scanned === 1 ? "" : "s"}${res.errors.length ? ` · ${res.errors.length} error(s): ${res.errors[0]}` : ""}`,
+  );
   revalidatePath("/meetings");
 }
 

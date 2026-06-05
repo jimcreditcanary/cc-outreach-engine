@@ -2,7 +2,7 @@ import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { currentUser } from "@/lib/auth/server";
 import { isConnected } from "@/lib/microsoft/oauth";
-import { syncCalendarAction, setSalesRelevantAction, disconnectMicrosoftAction } from "./actions";
+import { syncCalendarAction, setSalesRelevantAction, disconnectMicrosoftAction, backfillMeetingLinksAction } from "./actions";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { OwnerFilter } from "@/components/OwnerFilter";
@@ -71,6 +71,15 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
               <form action={syncCalendarAction}>
                 <PendingButton className="rounded bg-neutral-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800" pendingLabel="Syncing…">
                   ↻ Sync now
+                </PendingButton>
+              </form>
+              <form action={backfillMeetingLinksAction}>
+                <PendingButton
+                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                  pendingLabel="Re-linking…"
+                  title="Re-run the company / contact / deal inference over meetings that still aren't linked. Doesn't touch manually-picked links."
+                >
+                  ⛓ Re-link
                 </PendingButton>
               </form>
               <form action={disconnectMicrosoftAction}>
