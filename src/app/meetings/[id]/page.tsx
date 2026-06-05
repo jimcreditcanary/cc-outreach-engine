@@ -78,6 +78,22 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
   ]);
 
   const attendees = (m.attendees ?? []) as { name: string | null; email: string | null; response: string | null; contact_id: string | null }[];
+
+  // Look up the real name on each in-CRM attendee — the calendar invite
+  // often only carries the email for external invitees, so the attendees
+  // JSONB has name=null + email="berker@…" and the row reads as just
+  // "berker@…". The linked Contact almost always has a proper full_name.
+  const linkedIds = attendees.map((a) => a.contact_id).filter((x): x is string => !!x);
+  const linkedById = new Map<string, { full_name: string | null }>();
+  if (linkedIds.length > 0) {
+    const { data: linked } = await db
+      .from("contacts")
+      .select("id, full_name")
+      .in("id", linkedIds);
+    for (const c of (linked ?? []) as { id: string; full_name: string | null }[]) {
+      linkedById.set(c.id, { full_name: c.full_name });
+    }
+  }
   const start = new Date(m.start_at);
   const end = m.end_at ? new Date(m.end_at) : null;
 
@@ -281,7 +297,15 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
                 const email = (a.email ?? "").toLowerCase();
                 const isTeam = !!email && teamEmails.has(email);
                 const isInCrm = !!a.contact_id;
-                const initial = (a.name ?? a.email ?? "?").trim().charAt(0).toUpperCase();
+                // Name resolution order:
+                //   1. Contact's full_name (when linked to CRM) — the most
+                //      reliable source. Calendar invites often drop the
+                //      display name for external attendees.
+                //   2. Attendee.name from the calendar invite.
+                //   3. Fall back to the email — last resort.
+                const linkedName = a.contact_id ? linkedById.get(a.contact_id)?.full_name : null;
+                const displayName = (linkedName?.trim() || a.name?.trim()) ?? null;
+                const initial = (displayName ?? a.email ?? "?").trim().charAt(0).toUpperCase();
                 return (
                   <li key={i} className="py-1.5">
                     <div className="flex items-center gap-2 text-sm">
@@ -300,12 +324,12 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
                       <div className="min-w-0 flex-1 truncate">
                         {isInCrm ? (
                           <Link href={`/contacts/${a.contact_id}`} className="font-medium text-blue-700 hover:underline">
-                            {a.name ?? a.email}
+                            {displayName ?? a.email}
                           </Link>
                         ) : (
-                          <span className="font-medium text-neutral-800">{a.name ?? a.email}</span>
+                          <span className="font-medium text-neutral-800">{displayName ?? a.email}</span>
                         )}
-                        {a.email && a.name && (
+                        {a.email && displayName && (
                           <span className="ml-1 text-xs text-neutral-400">· {a.email}</span>
                         )}
                       </div>
