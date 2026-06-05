@@ -1,6 +1,10 @@
-// Probe the Granola API directly with progressively-less-restricted
-// params, dumping the raw response. Used to verify whether zero notes
-// means "Granola has none" or "my client's request shape is wrong".
+// Probe the Granola API directly. Used to verify whether a freshly-
+// issued API key from Granola's "Edit API Key Access" dialog actually
+// unlocks the public endpoints.
+//
+// Token resolution order:
+//   1. env GRANOLA_API_TOKEN (recommended — paste into .env.local once)
+//   2. user_settings.granola_api_token for Jim's user_id (legacy)
 //
 //   npx tsx scripts/probe-granola.ts
 
@@ -46,22 +50,62 @@ async function probe(label: string, token: string, path: string, body: unknown, 
 }
 
 (async () => {
-  // Jim is the meeting owner
-  const owner = "ccc221c6-57ec-45b3-b22e-09015454ffab";
-  const { data } = await db.from("user_settings").select("granola_api_token").eq("user_id", owner).maybeSingle();
-  const token = data?.granola_api_token as string;
-  if (!token) { console.error("no token"); process.exit(1); }
-  console.log(`Token ending ${token.slice(-4)}`);
+  let token: string | undefined = process.env.GRANOLA_API_TOKEN;
+  let source = "env GRANOLA_API_TOKEN";
+  if (!token) {
+    // Legacy fallback — user_settings.granola_api_token for Jim's id.
+    const owner = "ccc221c6-57ec-45b3-b22e-09015454ffab";
+    const { data } = await db.from("user_settings").select("granola_api_token").eq("user_id", owner).maybeSingle();
+    token = (data?.granola_api_token as string | undefined) ?? undefined;
+    source = "user_settings (Jim)";
+  }
+  if (!token) {
+    console.error("no token — set GRANOLA_API_TOKEN in .env.local");
+    process.exit(1);
+  }
+  console.log(`Token ending ${token.slice(-4)}  (source: ${source})`);
 
-  // Try the endpoint with progressively more Granola-app-like headers
-  const ua = "Granola/5.354.0 Electron/33.4.11";
-  await probe("baseline",            token, "/v2/get-documents", { limit: 5 });
-  await probe("UA only",             token, "/v2/get-documents", { limit: 5 }, { "user-agent": ua });
-  await probe("UA + X-Client-Type",  token, "/v2/get-documents", { limit: 5 }, { "user-agent": ua, "x-client-type": "electron" });
-  await probe("UA + Client headers", token, "/v2/get-documents", { limit: 5 }, {
-    "user-agent": ua,
-    "x-client-type": "electron",
-    "x-client-platform": "darwin",
-    "x-client-version": "5.354.0",
-  });
+  // Search for the right endpoint. A fresh proper API key still gets
+  // "Unsupported client" on /v2/get-documents — that path is the
+  // Electron app's internal endpoint. The dashboard-issued key likely
+  // targets a separate path or even a separate host.
+
+  // Different paths on the same host
+  await probe("v1 get-documents",    token, "/v1/get-documents", {});
+  await probe("v2 notes",            token, "/v2/notes", {});
+  await probe("v1 notes",            token, "/v1/notes", {});
+  await probe("api v1 notes",        token, "/api/v1/notes", {});
+
+  // REST-style GET variants (some API offerings use GET for list)
+  console.log("\n── REST GET /v1/notes");
+  try {
+    const r = await fetch(`${BASE}/v1/notes`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" }, signal: AbortSignal.timeout(15000) });
+    console.log(`   status: ${r.status}  body: ${(await r.text()).slice(0, 300)}`);
+  } catch (e) { console.log(`   threw: ${(e as Error).message}`); }
+  console.log("\n── REST GET /v1/documents");
+  try {
+    const r = await fetch(`${BASE}/v1/documents`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" }, signal: AbortSignal.timeout(15000) });
+    console.log(`   status: ${r.status}  body: ${(await r.text()).slice(0, 300)}`);
+  } catch (e) { console.log(`   threw: ${(e as Error).message}`); }
+
+  // Different hostnames the key might target
+  for (const host of ["https://api.granola.so", "https://public-api.granola.ai", "https://api.granola.ai/public"]) {
+    console.log(`\n── host=${host}  GET /v1/notes`);
+    try {
+      const r = await fetch(`${host}/v1/notes`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" }, signal: AbortSignal.timeout(15000) });
+      console.log(`   status: ${r.status}  body: ${(await r.text()).slice(0, 300)}`);
+    } catch (e) { console.log(`   threw: ${(e as Error).message}`); }
+  }
+
+  // Different auth header conventions
+  console.log("\n── X-API-Key header (instead of Bearer)");
+  try {
+    const r = await fetch(`${BASE}/v2/get-documents`, {
+      method: "POST",
+      headers: { "x-api-key": token, "content-type": "application/json", "accept": "application/json" },
+      body: JSON.stringify({ limit: 5 }),
+      signal: AbortSignal.timeout(15000),
+    });
+    console.log(`   status: ${r.status}  body: ${(await r.text()).slice(0, 300)}`);
+  } catch (e) { console.log(`   threw: ${(e as Error).message}`); }
 })();

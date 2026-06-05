@@ -11,10 +11,8 @@ import {
   resendSenderConfirmation,
   PostmarkApiError,
 } from "@/lib/postmark/signatures";
-// (Granola API client + sync engine removed — Granola's public API rejects
-//  non-app clients with "Unsupported client". Integration now runs via
-//  Postmark inbound email forwards at /api/postmark/granola. No per-user
-//  config is required beyond setting up the forward in the Granola app.)
+import { pingToken } from "@/lib/granola/client";
+import { syncGranolaForUser, type SyncResult } from "@/lib/granola/sync";
 
 const str = (v: FormDataEntryValue | null): string | null => {
   const s = String(v ?? "").trim();
@@ -108,6 +106,74 @@ export async function refreshSignatureStatusAction() {
     await flash("error", `Status check failed: ${msg}`);
   }
   revalidatePath("/settings");
+}
+
+/** Save the operator's Granola API key. Pings the API to validate
+ *  before persisting — bad key flashes an error, no save. Empty value
+ *  is a no-op (use disconnectGranolaAction to explicitly clear). */
+export async function saveGranolaTokenAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const token = str(formData.get("granola_api_token"));
+  if (!token) {
+    await flash("error", "Paste your Granola key to connect, or hit Disconnect to clear.");
+    revalidatePath("/settings");
+    return;
+  }
+  const ping = await pingToken(token);
+  if (!ping.ok) {
+    await flash("error", `Granola rejected the key: ${ping.error ?? "unknown error"}`);
+    revalidatePath("/settings");
+    return;
+  }
+  await serviceClient().from("user_settings").upsert(
+    { user_id: me.id, granola_api_token: token, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" },
+  );
+  await flash("success", "Granola connected — sync runs every 15 min.");
+  revalidatePath("/settings");
+}
+
+/** Explicitly clear the saved key. Existing transcripts + sent follow-ups stay. */
+export async function disconnectGranolaAction() {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  await serviceClient().from("user_settings").upsert(
+    { user_id: me.id, granola_api_token: null, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" },
+  );
+  await flash("success", "Granola disconnected.");
+  revalidatePath("/settings");
+}
+
+/** Manual sync — useful for testing right after connecting. */
+export async function syncGranolaNowAction() {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const db = serviceClient();
+  const { data } = await db.from("user_settings").select("granola_api_token").eq("user_id", me.id).maybeSingle();
+  const token = (data?.granola_api_token as string | null) ?? null;
+  if (!token) {
+    await flash("error", "No Granola key saved yet.");
+    revalidatePath("/settings");
+    return;
+  }
+  const result: SyncResult = {
+    operators_checked: 1, notes_seen: 0, meetings_matched: 0,
+    transcripts_pulled: 0, followups_sent: 0,
+    followups_skipped_low_confidence: 0, errors: [],
+  };
+  try {
+    await syncGranolaForUser(db, me.id, token, result);
+  } catch (e) {
+    result.errors.push((e as Error).message);
+  }
+  await flash(
+    result.errors.length ? "error" : "success",
+    `Granola — ${result.notes_seen} notes · ${result.meetings_matched} matched · ${result.transcripts_pulled} new transcripts · ${result.followups_sent} follow-ups sent${result.followups_skipped_low_confidence ? ` · ${result.followups_skipped_low_confidence} thin` : ""}${result.errors.length ? ` · ${result.errors.length} error(s): ${result.errors[0]}` : ""}`,
+  );
+  revalidatePath("/settings");
+  revalidatePath("/meetings");
 }
 
 /** Resend Postmark's confirmation email. Use when the original got lost

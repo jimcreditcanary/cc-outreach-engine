@@ -1,31 +1,25 @@
-// Granola sync engine. Once per cron tick, for every operator who has a
-// granola_api_token:
+// Granola sync engine. Once per cron tick, for every operator whose
+// user_settings.granola_api_token is set:
 //
-//   1. listNotes() against Granola
-//   2. For each note, try to match it to a meetings row owned by the
-//      operator (start_at within ±15 min + at least one attendee email
-//      in common — falls back to start_at-only when attendees missing).
-//   3. If matched + transcript still empty on our side + Granola has one:
-//      a) pull the full note WITH transcript
-//      b) write transcript + granola_note_id + granola_synced_at
-//      c) run generatePostMeetingSummary (existing — fills post_summary)
-//      d) call generateFollowup → insert as sends row (status='sent' if
-//         POSTMARK_SERVER_TOKEN present, else 'approved' = dry-run path)
-//         and actually ship via sendBroadcast.
-//      e) log the send id back onto meetings.granola_followup_send_id.
-//   4. Skip cleanly if already synced, transcript empty (try next tick),
-//      or no contact email to send to.
+//   1. listNotes() — shallow list (id, title, created_at)
+//   2. Narrow to notes whose created_at falls anywhere near the operator's
+//      sales-relevant meetings in the last 7 days (so we don't fetch
+//      detail for ancient unrelated notes).
+//   3. For each candidate: GET /v1/notes/{id} → full record with
+//      calendar_event_id + attendees + transcript + summary_text.
+//   4. Match against meetings:
+//        primary: note.calendar_event_id === meetings.ms_event_id (exact)
+//        fallback: time window ±15 min + attendee email overlap
+//   5. Hand off to applyTranscriptToMeeting which writes the transcript,
+//      runs the post-meeting summary, drafts + sends the follow-up email.
 //
-// Idempotent: granola_note_id has a unique index so a duplicate run can't
-// double-create transcripts; the followup-send check uses
-// granola_followup_send_id null-check so a re-run won't double-send.
+// Idempotent: re-running won't re-pull (skip when meetings.granola_note_id
+// already matches the note) and won't re-send (apply* checks
+// granola_followup_send_id null before drafting).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listNotes, getNoteWithTranscript, type GranolaNote } from "./client";
-import { generateFollowup } from "./followup";
-import { generatePostMeetingSummary } from "../meetings/postSummary";
-import { sendBroadcast } from "../send/postmark";
-import { displayName } from "../auth/owner";
+import { applyTranscriptToMeeting } from "./applyTranscript";
 
 export interface SyncResult {
   operators_checked: number;
@@ -37,9 +31,10 @@ export interface SyncResult {
   errors: string[];
 }
 
-/** Tolerance for matching Granola's meeting start time to our meetings
- *  table — calendar systems disagree by a few minutes sometimes. */
 const MATCH_WINDOW_MS = 15 * 60 * 1000;
+/** How far back/forward to consider a note's created_at "plausibly tied"
+ *  to one of our meetings. Loose so we don't miss anything. */
+const PLAUSIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 interface MeetingRow {
   id: string;
@@ -58,8 +53,6 @@ interface MeetingRow {
   primary_contact: { id: string; full_name: string | null; email: string | null } | { id: string; full_name: string | null; email: string | null }[] | null;
   deal: { title: string | null; stage: string | null } | { title: string | null; stage: string | null }[] | null;
 }
-const pick = <T>(v: T | T[] | null): T | null => v ? (Array.isArray(v) ? (v[0] ?? null) : v) : null;
-const firstName = (full: string | null | undefined): string => (full ?? "there").trim().split(/\s+/)[0] || "there";
 
 export async function syncGranolaForUser(
   db: SupabaseClient,
@@ -67,32 +60,11 @@ export async function syncGranolaForUser(
   apiToken: string,
   result: SyncResult,
 ): Promise<void> {
-  // Pull notes from Granola first — cheap and tells us which meetings to
-  // even bother looking up.
-  let notes: GranolaNote[] = [];
-  try {
-    // Window: last 7 days. Granola will return processing-still-pending
-    // ones too; we re-poll them next tick when transcript fills.
-    const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-    notes = await listNotes(apiToken, { sinceISO: since });
-  } catch (e) {
-    result.errors.push(`listNotes(${userId}): ${(e as Error).message}`);
-    return;
-  }
-  result.notes_seen += notes.length;
-  if (notes.length === 0) return;
-
-  // Pull this operator's recent meetings ONCE so we can match in memory.
-  const earliestNote = notes
-    .map((n) => (n.started_at ? new Date(n.started_at).getTime() : Infinity))
-    .reduce((a, b) => Math.min(a, b), Infinity);
-  const windowStart = isFinite(earliestNote)
-    ? new Date(earliestNote - MATCH_WINDOW_MS).toISOString()
-    : new Date(Date.now() - 14 * 86_400_000).toISOString();
-
-  // sales_relevant=true → only meetings flagged as sales conversations
-  // get a transcript pulled + follow-up sent. Internal stand-ups,
-  // recruiting calls, etc. stay untouched even if Granola recorded them.
+  // ── 1. Load operator's recent sales-relevant meetings ─────────────
+  // Window covers last 7 days back and 1 day forward (Granola notes for
+  // about-to-happen meetings are rare but possible).
+  const windowStart = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const windowEnd = new Date(Date.now() + 1 * 86_400_000).toISOString();
   const { data: meetingsData, error: mErr } = await db
     .from("meetings")
     .select(`
@@ -105,7 +77,7 @@ export async function syncGranolaForUser(
     .eq("owner_id", userId)
     .eq("sales_relevant", true)
     .gte("start_at", windowStart)
-    .lte("start_at", new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
+    .lte("start_at", windowEnd)
     .limit(500);
   if (mErr) {
     result.errors.push(`meetings(${userId}): ${mErr.message}`);
@@ -114,209 +86,114 @@ export async function syncGranolaForUser(
   const meetings = (meetingsData ?? []) as unknown as MeetingRow[];
   if (meetings.length === 0) return;
 
-  // Index meetings by ms_event_id for O(1) primary-key match. Falls
-  // back to start-time/email scan when Granola doesn't surface the
-  // calendar event id on a particular note.
+  // ── 2. List Granola notes (shallow) ───────────────────────────────
+  let stubs: GranolaNote[] = [];
+  try {
+    stubs = await listNotes(apiToken, { limit: 100 });
+  } catch (e) {
+    result.errors.push(`listNotes(${userId}): ${(e as Error).message}`);
+    return;
+  }
+  result.notes_seen += stubs.length;
+  if (stubs.length === 0) return;
+
+  // ── 3. Narrow to notes plausibly tied to any of our meetings ──────
+  // Cheap pre-filter on the shallow `started_at` (which is the note's
+  // created_at in the list endpoint) so we don't burn detail-API calls
+  // on every note in the workspace.
+  const meetingTimestamps = meetings.map((m) => new Date(m.start_at).getTime());
+  const earliestMeeting = Math.min(...meetingTimestamps);
+  const latestMeeting = Math.max(...meetingTimestamps);
+  const candidates = stubs.filter((n) => {
+    if (!n.started_at) return true; // can't pre-filter — fetch detail anyway
+    const ts = new Date(n.started_at).getTime();
+    return ts >= earliestMeeting - PLAUSIBILITY_WINDOW_MS && ts <= latestMeeting + PLAUSIBILITY_WINDOW_MS;
+  });
+
+  // Index meetings by ms_event_id for O(1) primary-key match.
   const byMsId = new Map<string, MeetingRow>();
   for (const m of meetings) {
     if (m.ms_event_id) byMsId.set(m.ms_event_id, m);
   }
+  // Also index by granola_note_id we've already synced — short-circuit re-runs.
+  const alreadySyncedNoteIds = new Set<string>();
+  for (const m of meetings) {
+    if (m.granola_note_id && m.granola_followup_send_id) alreadySyncedNoteIds.add(m.granola_note_id);
+  }
 
-  for (const note of notes) {
-    let matched: MeetingRow | undefined;
+  // ── 4. For each candidate, fetch detail + match + apply ───────────
+  for (const stub of candidates) {
+    // Already fully processed in a previous tick → skip without burning
+    // a detail API call.
+    if (alreadySyncedNoteIds.has(stub.id)) continue;
 
-    // PRIMARY: exact match on the source calendar event id. This is the
-    // gold-standard link — Granola scraped it from the same Outlook
-    // event we sync'd into meetings.ms_event_id, so there's no ambiguity.
-    if (note.calendar_event_id) {
-      matched = byMsId.get(note.calendar_event_id);
+    // Fetch the full note (calendar_event_id, attendees, transcript).
+    let full: GranolaNote;
+    try {
+      full = await getNoteWithTranscript(apiToken, stub.id);
+    } catch (e) {
+      result.errors.push(`getNote(${stub.id}): ${(e as Error).message}`);
+      continue;
     }
 
-    // FALLBACK: start-time window + attendee email overlap. Used when
-    // Granola didn't capture the calendar event id (e.g. ad-hoc meeting
-    // recorded standalone, or older note from before calendar was linked).
-    if (!matched) {
-      if (!note.started_at) continue;
-      const noteTs = new Date(note.started_at).getTime();
-      if (!isFinite(noteTs)) continue;
-      const candidates = meetings.filter(
-        (m) => Math.abs(new Date(m.start_at).getTime() - noteTs) <= MATCH_WINDOW_MS,
-      );
-      if (candidates.length === 0) continue;
+    // ── MATCH ──
+    let matched: MeetingRow | undefined;
 
-      if (note.attendee_emails.length > 0) {
-        const noteEmails = new Set(note.attendee_emails);
-        matched = candidates.find((m) => {
-          const ours = (m.attendees ?? []).map((a) => (a?.email ?? "").trim().toLowerCase()).filter(Boolean);
-          return ours.some((e) => noteEmails.has(e));
-        });
-      }
-      if (!matched) {
-        // Closest start-time wins when no email overlap.
-        matched = candidates.sort(
-          (a, b) =>
-            Math.abs(new Date(a.start_at).getTime() - noteTs) -
-            Math.abs(new Date(b.start_at).getTime() - noteTs),
-        )[0];
+    // Primary: exact ms_event_id match.
+    if (full.calendar_event_id) matched = byMsId.get(full.calendar_event_id);
+
+    // Fallback: time window ±15 min + attendee email overlap.
+    if (!matched && full.started_at) {
+      const noteTs = new Date(full.started_at).getTime();
+      if (isFinite(noteTs)) {
+        const inWindow = meetings.filter(
+          (m) => Math.abs(new Date(m.start_at).getTime() - noteTs) <= MATCH_WINDOW_MS,
+        );
+        if (full.attendee_emails.length > 0) {
+          const noteEmails = new Set(full.attendee_emails);
+          matched = inWindow.find((m) => {
+            const ours = (m.attendees ?? [])
+              .map((a) => (a?.email ?? "").trim().toLowerCase())
+              .filter(Boolean);
+            return ours.some((e) => noteEmails.has(e));
+          });
+        }
+        // Last resort: closest start-time.
+        if (!matched && inWindow.length > 0) {
+          matched = inWindow.sort(
+            (a, b) =>
+              Math.abs(new Date(a.start_at).getTime() - noteTs) -
+              Math.abs(new Date(b.start_at).getTime() - noteTs),
+          )[0];
+        }
       }
     }
     if (!matched) continue;
     result.meetings_matched++;
 
-    // Skip if we've already pulled this note's transcript onto this row.
-    const alreadySynced =
-      !!matched.transcript && !!matched.granola_note_id && matched.granola_note_id === note.id;
-    if (alreadySynced && matched.granola_followup_send_id) continue;
+    // ── TRANSCRIPT GUARD ──
+    // Granola fills transcript only after processing finishes. Empty/
+    // short transcript = try again next tick. Use granola_summary as a
+    // fallback ground for the follow-up when transcript is genuinely
+    // unavailable (some notes never get one).
+    const hasUsableContent =
+      (full.transcript?.trim().length ?? 0) >= 200 ||
+      (full.granola_summary?.trim().length ?? 0) >= 100;
+    if (!hasUsableContent) continue;
 
-    // Pull the full transcript (Granola requires a second call for it).
-    let full: GranolaNote;
-    try {
-      full = await getNoteWithTranscript(apiToken, note.id);
-    } catch (e) {
-      result.errors.push(`getNote(${note.id}): ${(e as Error).message}`);
-      continue;
-    }
-    if (!full.transcript || full.transcript.trim().length < 200) {
-      // Still processing on Granola side — try next tick.
-      continue;
-    }
-
-    // Write transcript + meta if we haven't already.
-    if (!alreadySynced) {
-      const { error: updErr } = await db
-        .from("meetings")
-        .update({
-          transcript: full.transcript,
-          granola_note_id: full.id,
-          granola_synced_at: new Date().toISOString(),
-        })
-        .eq("id", matched.id);
-      if (updErr) {
-        result.errors.push(`update transcript(${matched.id}): ${updErr.message}`);
-        continue;
-      }
-      result.transcripts_pulled++;
-
-      // Fire the internal post-meeting summary — fills post_summary +
-      // updates MEDDICC if there's a linked deal. Errors here don't block
-      // the follow-up; we just log them.
-      try {
-        await generatePostMeetingSummary(db, matched.id);
-      } catch (e) {
-        result.errors.push(`postSummary(${matched.id}): ${(e as Error).message}`);
-      }
-    }
-
-    // ---- Outbound follow-up email ----
-    if (matched.granola_followup_send_id) continue; // already sent
-    const contact = pick(matched.primary_contact);
-    if (!contact?.email) continue; // nobody to email
-    const org = pick(matched.organisation);
-    const deal = pick(matched.deal);
-
-    // Re-read the meeting to pick up the just-generated post_summary.
-    const { data: refreshed } = await db
-      .from("meetings")
-      .select("post_summary")
-      .eq("id", matched.id)
-      .maybeSingle();
-    const internalSummary =
-      (refreshed?.post_summary as string | null) ?? full.granola_summary ?? "";
-    if (!internalSummary) continue;
-
-    // Sender identity → from user_settings (display name + signoff line).
-    const { data: settings } = await db
-      .from("user_settings")
-      .select("first_name, last_name, job_title, reply_to_email, from_email")
-      .eq("user_id", userId)
-      .maybeSingle();
-    const senderFirst = (settings?.first_name as string | null) ?? "Jim";
-    const senderName = displayName({
-      id: userId,
-      first_name: (settings?.first_name as string | null) ?? null,
-      last_name: (settings?.last_name as string | null) ?? null,
-      email: null,
+    // ── APPLY ──
+    const applied = await applyTranscriptToMeeting(db, matched, {
+      transcript: full.transcript ?? full.granola_summary ?? "",
+      granolaSummary: full.granola_summary,
+      granolaNoteId: full.id,
+      source: "granola-api",
     });
-    const senderSignoff =
-      `${senderName}${(settings?.job_title as string | null) ? ` — ${settings?.job_title}` : ""}, Credit Canary`;
-
-    let draft;
-    try {
-      draft = await generateFollowup({
-        contact_first_name: firstName(contact.full_name),
-        sender_first_name: senderFirst,
-        sender_signoff: senderSignoff,
-        meeting_subject: matched.subject ?? "our meeting",
-        meeting_started_at: matched.start_at,
-        org_name: org?.name ?? null,
-        deal_title: deal?.title ?? null,
-        deal_stage: deal?.stage ?? null,
-        brief: matched.brief ?? null,
-        internal_summary: internalSummary,
-        transcript_excerpt: full.transcript.slice(0, 6000),
-      });
-    } catch (e) {
-      result.errors.push(`draft followup(${matched.id}): ${(e as Error).message}`);
-      continue;
-    }
-    if (draft.confidence < 0.4) {
+    if (applied.transcript_written) result.transcripts_pulled++;
+    if (applied.followup_sent) result.followups_sent++;
+    if (applied.followup_skipped_reason?.includes("low confidence")) {
       result.followups_skipped_low_confidence++;
-      continue;
     }
-
-    // Ship it. Insert the sends row first so we have an id; then send;
-    // then mark it sent + link from the meeting.
-    const { data: inserted, error: insErr } = await db
-      .from("sends")
-      .insert({
-        contact_id: contact.id,
-        subject: draft.subject,
-        body_html: draft.body_html,
-        body_text: draft.body_text,
-        original_body_text: draft.body_text,
-        status: "approved",
-        owner_id: userId,
-      })
-      .select("id")
-      .single();
-    if (insErr || !inserted) {
-      result.errors.push(`sends insert(${matched.id}): ${insErr?.message ?? "no row"}`);
-      continue;
-    }
-
-    try {
-      const sendRes = await sendBroadcast({
-        to: contact.email,
-        subject: draft.subject,
-        htmlBody: draft.body_html,
-        textBody: draft.body_text,
-        tag: "granola-followup",
-        ownerId: userId,
-        trackOpens: false,
-      });
-      await db
-        .from("sends")
-        .update({ status: "sent", ts: new Date().toISOString(), postmark_message_id: sendRes.messageId })
-        .eq("id", inserted.id);
-      await db.from("meetings").update({ granola_followup_send_id: inserted.id }).eq("id", matched.id);
-      // Timeline event so the contact page shows the touch.
-      await db.from("events").insert({
-        contact_id: contact.id,
-        organisation_id: matched.organisation_id,
-        type: "outbound_email",
-        source: "granola-followup",
-        payload: {
-          subject: draft.subject,
-          meeting_id: matched.id,
-          send_id: inserted.id,
-          rationale: draft.rationale,
-        },
-      });
-      result.followups_sent++;
-    } catch (e) {
-      await db.from("sends").update({ status: "failed" }).eq("id", inserted.id);
-      result.errors.push(`send(${matched.id}): ${(e as Error).message}`);
-    }
+    for (const err of applied.errors) result.errors.push(`${matched.id}: ${err}`);
   }
 }
 

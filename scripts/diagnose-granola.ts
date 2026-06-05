@@ -71,8 +71,7 @@ const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   console.log(`\n──── GRANOLA API`);
   let notes;
   try {
-    const since = new Date(new Date(m.start_at as string).getTime() - 2 * 86_400_000).toISOString();
-    notes = await listNotes(token, { sinceISO: since });
+    notes = await listNotes(token, { limit: 50 });
     console.log(`  ✓ listNotes returned ${notes.length} note(s)`);
   } catch (e) {
     console.log(`  ❌ listNotes threw: ${(e as Error).message}`);
