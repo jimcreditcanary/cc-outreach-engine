@@ -388,18 +388,9 @@ export async function unmarkNotOnLinkedIn(formData: FormData) {
   revalidatePath(`/contacts/${id}`);
 }
 
-/** Curated reasons for the skip dropdown. Stored verbatim in
- *  contacts.skip_reason so reporting can group on them later. "Other"
- *  collects the free-text from the adjacent input. */
-export const SKIP_REASONS = [
-  "Current customer",
-  "Not interested right now",
-  "Not a fit (wrong role / sector)",
-  "Left the company",
-  "Competitor",
-  "Asked to be removed",
-  "Other",
-] as const;
+// SKIP_REASONS const lives in src/lib/contacts/skipReasons.ts — Next.js
+// "use server" files can only export async functions, so consts have to
+// sit in a plain module. Import from there at every call site.
 
 /** Soft-skip a contact from outreach surfaces (LinkedIn research/send
  *  queue + sequence picker). Reversible via unskipContact. */

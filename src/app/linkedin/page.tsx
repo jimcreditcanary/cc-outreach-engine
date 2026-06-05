@@ -7,8 +7,8 @@ import {
   markLinkedInHookSent,
   markNotOnLinkedIn,
   skipContact,
-  SKIP_REASONS,
 } from "../actions";
+import { SKIP_REASONS } from "@/lib/contacts/skipReasons";
 import { currentUserId } from "@/lib/auth/owner";
 import { PendingButton } from "@/components/PendingButton";
 import { Combobox } from "@/components/Combobox";
