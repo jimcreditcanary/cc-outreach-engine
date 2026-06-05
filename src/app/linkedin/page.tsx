@@ -6,6 +6,8 @@ import {
   markLinkedInAlreadyConnected,
   markLinkedInHookSent,
   markNotOnLinkedIn,
+  skipContact,
+  SKIP_REASONS,
 } from "../actions";
 import { currentUserId } from "@/lib/auth/owner";
 import { PendingButton } from "@/components/PendingButton";
@@ -97,6 +99,7 @@ export default async function LinkedInPage({ searchParams }: {
     .from("contacts")
     .select("id, full_name, job_title, email, mobile, linkedin_url, label, linkedin_connected, linkedin_request_sent_at, linkedin_last_touched_at, organisation:organisations(id, name, sector, is_partner)")
     .eq("not_on_linkedin", false)
+    .is("skipped_at", null)
     .limit(4000);
   if (me) contactQ = contactQ.eq("owner_id", me);
 
@@ -502,6 +505,30 @@ function ContactCard({
           {primaryAction}
           {secondaryAction}
         </div>
+      </form>
+
+      {/* Skip with reason — separate form so it doesn't submit the edits.
+          Stored on contacts.skip_reason + skipped_at; removes the contact
+          from the LinkedIn queue + sequence picker until manually unskipped
+          from the contact page. */}
+      <form action={skipContact} className="mt-2 flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-2 text-xs">
+        <input type="hidden" name="contact_id" value={r.id} />
+        <span className="uppercase tracking-wide text-neutral-400">Skip:</span>
+        <select name="skip_reason" defaultValue={SKIP_REASONS[0]} className={`${fld} w-52 !text-xs`}>
+          {SKIP_REASONS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <input
+          name="skip_note"
+          placeholder="extra context (only used if 'Other')"
+          className={`${fld} flex-1 min-w-[8rem] !text-xs`}
+        />
+        <PendingButton
+          className="rounded border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100"
+          pendingLabel="Skipping…"
+          title="Soft-suppress from LinkedIn + sequences. Reversible from the contact page."
+        >
+          Skip + reason
+        </PendingButton>
       </form>
     </li>
   );

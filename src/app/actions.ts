@@ -388,6 +388,51 @@ export async function unmarkNotOnLinkedIn(formData: FormData) {
   revalidatePath(`/contacts/${id}`);
 }
 
+/** Curated reasons for the skip dropdown. Stored verbatim in
+ *  contacts.skip_reason so reporting can group on them later. "Other"
+ *  collects the free-text from the adjacent input. */
+export const SKIP_REASONS = [
+  "Current customer",
+  "Not interested right now",
+  "Not a fit (wrong role / sector)",
+  "Left the company",
+  "Competitor",
+  "Asked to be removed",
+  "Other",
+] as const;
+
+/** Soft-skip a contact from outreach surfaces (LinkedIn research/send
+ *  queue + sequence picker). Reversible via unskipContact. */
+export async function skipContact(formData: FormData) {
+  const id = String(formData.get("contact_id"));
+  if (!id) return;
+  const reasonRaw = String(formData.get("skip_reason") ?? "").trim();
+  const note = String(formData.get("skip_note") ?? "").trim();
+  const reason = reasonRaw === "Other" && note ? `Other: ${note}` : (reasonRaw || "Skipped");
+  const db = serviceClient();
+  const { error } = await db
+    .from("contacts")
+    .update({ skip_reason: reason, skipped_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+  await logEvent(db, { contact_id: id, message: `Skipped: ${reason}` });
+  await flash("success", `Skipped — ${reason}`);
+  revalidatePath("/linkedin");
+  revalidatePath(`/contacts/${id}`);
+}
+
+/** Reverse skipContact. */
+export async function unskipContact(formData: FormData) {
+  const id = String(formData.get("contact_id"));
+  if (!id) return;
+  const db = serviceClient();
+  await db.from("contacts").update({ skip_reason: null, skipped_at: null }).eq("id", id);
+  await logEvent(db, { contact_id: id, message: "Unskipped — back in outreach" });
+  await flash("success", "Unskipped — back in the queue");
+  revalidatePath("/linkedin");
+  revalidatePath(`/contacts/${id}`);
+}
+
 /** Shared persistence for the per-row LinkedIn form: contact edits + inline
  *  sector assignment. Returns the resolved organisation_id so each caller
  *  can stamp it onto the activity event. */

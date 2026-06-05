@@ -56,7 +56,10 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
 
   // Picker source = the operator's own contacts (rule 1: only your own).
   // Then we exclude anyone already in any LIVE sequence (rule 2).
-  let pickerQ = db.from("contacts").select("id, full_name, email, organisation:organisations(name)").order("full_name").limit(5000);
+  // Skipped contacts (contacts.skipped_at IS NOT NULL) are hidden from
+  // the picker — operator already said "no" once, don't surface them again.
+  // Reversible from the contact page.
+  let pickerQ = db.from("contacts").select("id, full_name, email, organisation:organisations(name)").is("skipped_at", null).order("full_name").limit(5000);
   if (me) pickerQ = pickerQ.eq("owner_id", me);
 
   const [{ data: contactsData }, { data: actionsData }, { data: allContacts }, { data: lockedRows }, { data: conferencesData }, { data: sampleData }] = await Promise.all([

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact, unmarkNotOnLinkedIn } from "../../actions";
+import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact, unmarkNotOnLinkedIn, unskipContact } from "../../actions";
 import { setNewsletterSubscription } from "../../newsletter/actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
@@ -98,6 +98,18 @@ export default async function ContactDetail({
           <span className="text-neutral-600">Flagged as not on LinkedIn — hidden from research queue.</span>
           <PendingButton className="ml-auto rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100" pendingLabel="…">
             Un-flag (return to queue)
+          </PendingButton>
+        </form>
+      )}
+
+      {c.skipped_at && (
+        <form action={unskipContact} className="mb-4 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+          <input type="hidden" name="contact_id" value={c.id} />
+          <span className="text-amber-900">
+            <strong>Skipped</strong> ({c.skip_reason ?? "no reason given"}) on {new Date(c.skipped_at).toLocaleDateString("en-GB")} — hidden from LinkedIn + sequences.
+          </span>
+          <PendingButton className="ml-auto rounded border border-amber-300 px-2 py-1 text-xs hover:bg-amber-100" pendingLabel="…">
+            Unskip (return to queue)
           </PendingButton>
         </form>
       )}
