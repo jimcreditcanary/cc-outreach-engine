@@ -71,7 +71,7 @@ const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   console.log(`\n──── GRANOLA API`);
   let notes;
   try {
-    notes = await listNotes(token, { limit: 50 });
+    notes = (await listNotes(token, { pageSize: 30 })).notes;
     console.log(`  ✓ listNotes returned ${notes.length} note(s)`);
   } catch (e) {
     console.log(`  ❌ listNotes threw: ${(e as Error).message}`);

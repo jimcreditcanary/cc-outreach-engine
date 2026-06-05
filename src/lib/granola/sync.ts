@@ -86,10 +86,24 @@ export async function syncGranolaForUser(
   const meetings = (meetingsData ?? []) as unknown as MeetingRow[];
   if (meetings.length === 0) return;
 
-  // ── 2. List Granola notes (shallow) ───────────────────────────────
-  let stubs: GranolaNote[] = [];
+  // ── 2. List Granola notes (server-side date filter + pagination) ──
+  // Filter to notes UPDATED in our meeting window so we re-pull when a
+  // transcript that was processing earlier completes. Granola caps
+  // page_size at 30 so we walk the cursor until hasMore=false or until
+  // we've collected enough.
+  const stubs: GranolaNote[] = [];
+  let cursor: string | undefined;
   try {
-    stubs = await listNotes(apiToken, { limit: 100 });
+    do {
+      const page = await listNotes(apiToken, {
+        updatedAfter: windowStart,
+        pageSize: 30,
+        cursor,
+      });
+      stubs.push(...page.notes);
+      cursor = page.hasMore && page.cursor ? page.cursor : undefined;
+      if (stubs.length > 300) break; // hard safety cap per cron tick
+    } while (cursor);
   } catch (e) {
     result.errors.push(`listNotes(${userId}): ${(e as Error).message}`);
     return;
