@@ -43,8 +43,13 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
   const rows = (data ?? []) as unknown as Row[];
 
   const now = Date.now();
+  // Query orders ascending so Upcoming reads soonest-first (Today before
+  // Friday). Recent flips to newest-first — most-recent meeting at the
+  // top is what an operator actually wants when scanning what just happened.
   const upcoming = rows.filter((r) => new Date(r.start_at).getTime() >= now);
-  const past = rows.filter((r) => new Date(r.start_at).getTime() < now);
+  const past = rows
+    .filter((r) => new Date(r.start_at).getTime() < now)
+    .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime());
 
   return (
     <main className="px-8 py-6">
