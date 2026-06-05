@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
-import { dismissAlertAction, undismissAlertAction } from "./actions";
+import { dismissAlertAction, undismissAlertAction, runAlertsNowAction } from "./actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
+import { PendingButton } from "@/components/PendingButton";
 import { decodeHtmlEntities } from "@/lib/text/decode";
 
 export const dynamic = "force-dynamic";
+// runAlertsNowAction can spend 30+ seconds enriching companies.
+export const maxDuration = 120;
 
 interface Alert {
   id: string;
@@ -55,7 +58,18 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
             A reason to reach out.
           </p>
         </div>
-        <OwnerFilter current={owner} pathname="/alerts" extraParams={{ show }} />
+        <div className="flex items-center gap-3">
+          <OwnerFilter current={owner} pathname="/alerts" extraParams={{ show }} />
+          <form action={runAlertsNowAction}>
+            <PendingButton
+              className="rounded border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+              pendingLabel="Refreshing (≤2 min)…"
+              title="Runs press detection + re-enriches up to 25 stale companies right now. Auto-runs every Sunday 22:00 UTC."
+            >
+              ↻ Refresh alerts
+            </PendingButton>
+          </form>
+        </div>
       </header>
 
       <div className="mb-4 flex items-center gap-2 text-xs">
