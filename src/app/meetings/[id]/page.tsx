@@ -70,7 +70,11 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
   const [{ data: orgs }, { data: orgContacts }, { data: orgDeals }] = await Promise.all([
     db.from("organisations").select("id, name").order("name").limit(1000),
     m.organisation_id ? db.from("contacts").select("id, full_name").eq("organisation_id", m.organisation_id).order("full_name") : Promise.resolve({ data: [] }),
-    m.organisation_id ? db.from("deals").select("id, title, status").eq("organisation_id", m.organisation_id).order("status") : Promise.resolve({ data: [] }),
+    // Load ALL deals + their company name as a sublabel. Used to scope
+    // to the meeting's org only, but the dropdown then read as broken
+    // before the operator had saved a company. Showing every deal +
+    // its company makes the picker work in one step from a blank meeting.
+    db.from("deals").select("id, title, status, organisation:organisations(name)").order("status").limit(2000),
   ]);
 
   const attendees = (m.attendees ?? []) as { name: string | null; email: string | null; response: string | null; contact_id: string | null }[];
@@ -252,7 +256,15 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
                 <Combobox
                   name="deal_id"
                   defaultValue={m.deal_id ?? ""}
-                  options={(orgDeals ?? []).map((d) => ({ id: d.id, label: d.title ?? "(untitled)", sublabel: d.status }))}
+                  options={(orgDeals ?? []).map((d) => {
+                    const org = d.organisation as { name: string | null } | { name: string | null }[] | null;
+                    const orgName = (Array.isArray(org) ? org[0]?.name : org?.name) ?? null;
+                    return {
+                      id: d.id,
+                      label: d.title ?? "(untitled)",
+                      sublabel: [orgName, d.status].filter(Boolean).join(" · "),
+                    };
+                  })}
                   placeholder="Type to search deals…"
                 />
               </div>
