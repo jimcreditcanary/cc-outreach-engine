@@ -42,6 +42,25 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
   const orgOptions = ((orgsData ?? []) as { id: string; name: string | null }[])
     .map((o) => ({ id: o.id, label: o.name ?? "(unnamed)" }));
 
+  // Team-member detection — collect every email that belongs to one of our
+  // operators (auth.users + user_settings.reply_to_email + from_email).
+  // Used to render a muted "team" chip for those attendees instead of an
+  // "Add to CRM" button, since they're already operators, not prospects.
+  const teamEmails = new Set<string>();
+  try {
+    const { adminClient } = await import("@/lib/auth/admin");
+    const { data: usersRes } = await adminClient().auth.admin.listUsers({ page: 1, perPage: 100 });
+    for (const u of usersRes?.users ?? []) if (u.email) teamEmails.add(u.email.toLowerCase());
+    const { data: settings } = await db.from("user_settings").select("reply_to_email, from_email");
+    for (const s of (settings ?? []) as { reply_to_email: string | null; from_email: string | null }[]) {
+      if (s.reply_to_email) teamEmails.add(s.reply_to_email.toLowerCase());
+      // from_email looks like "Name <addr>" — strip to bare addr
+      const m = (s.from_email ?? "").match(/<([^>]+)>/);
+      const fromAddr = (m?.[1] ?? s.from_email ?? "").trim().toLowerCase();
+      if (fromAddr.includes("@")) teamEmails.add(fromAddr);
+    }
+  } catch { /* best-effort */ }
+
   // Soft per-user fence: a user can still load any meeting by direct URL
   // (handy when sharing links across the team), but if it's not theirs we
   // flag it so they know they're looking at someone else's calendar.
@@ -245,81 +264,99 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
 
           <section>
             <h2 className="mb-2 font-semibold">Attendees ({attendees.length})</h2>
-            <ul className="space-y-1 text-sm">
-              {attendees.map((a, i) => (
-                <li key={i} className="text-neutral-700">
-                  <div className="flex flex-wrap items-baseline gap-1">
-                    {a.contact_id ? (
-                      <Link href={`/contacts/${a.contact_id}`} className="text-blue-700 hover:underline">{a.name ?? a.email}</Link>
-                    ) : (
-                      <span>{a.name ?? a.email}</span>
-                    )}
-                    {a.email && a.name && <span className="text-xs text-neutral-400"> · {a.email}</span>}
-                    {!a.contact_id && a.email && (
-                      <details className="ml-auto">
-                        <summary className="cursor-pointer rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100">
-                          + Add to CRM
-                        </summary>
-                        {/* Inline popup — pre-filled name + email, picker for
-                            company (existing OR create new with sector).
-                            Existing-email contacts get auto-linked instead
-                            of duplicated. */}
-                        <form action={addAttendeeToCrmAction} className="mt-2 space-y-2 rounded border border-neutral-200 bg-neutral-50 p-3 text-xs">
-                          <input type="hidden" name="meeting_id" value={m.id} />
-                          <input type="hidden" name="email" value={a.email} />
-                          <div>
-                            <label className={lbl}>Full name</label>
-                            <input
-                              name="full_name"
-                              defaultValue={a.name ?? ""}
-                              required
-                              className={field}
-                            />
-                          </div>
-                          <div>
-                            <label className={lbl}>Job title (optional)</label>
-                            <input name="job_title" placeholder="e.g. Head of Risk" className={field} />
-                          </div>
-                          <div>
-                            <label className={lbl}>Email</label>
-                            <input value={a.email} readOnly className={`${field} bg-neutral-100 text-neutral-500`} />
-                          </div>
-                          <div>
-                            <label className={lbl}>Company (existing)</label>
-                            <Combobox
-                              name="organisation_id"
-                              options={orgOptions}
-                              placeholder="Type to search…"
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
+            <ul className="divide-y divide-neutral-100">
+              {attendees.map((a, i) => {
+                const email = (a.email ?? "").toLowerCase();
+                const isTeam = !!email && teamEmails.has(email);
+                const isInCrm = !!a.contact_id;
+                const initial = (a.name ?? a.email ?? "?").trim().charAt(0).toUpperCase();
+                return (
+                  <li key={i} className="py-1.5">
+                    <div className="flex items-center gap-2 text-sm">
+                      {/* Avatar bubble — colour codes the row: emerald for
+                          team, blue for in-CRM, grey for unknown. Quick scan. */}
+                      <span
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-medium ${
+                          isTeam ? "bg-emerald-100 text-emerald-700"
+                          : isInCrm ? "bg-blue-100 text-blue-700"
+                          : "bg-neutral-100 text-neutral-500"
+                        }`}
+                        aria-hidden
+                      >
+                        {initial}
+                      </span>
+                      <div className="min-w-0 flex-1 truncate">
+                        {isInCrm ? (
+                          <Link href={`/contacts/${a.contact_id}`} className="font-medium text-blue-700 hover:underline">
+                            {a.name ?? a.email}
+                          </Link>
+                        ) : (
+                          <span className="font-medium text-neutral-800">{a.name ?? a.email}</span>
+                        )}
+                        {a.email && a.name && (
+                          <span className="ml-1 text-xs text-neutral-400">· {a.email}</span>
+                        )}
+                      </div>
+                      {/* Trailing status: team-chip / opens-contact / add-popup */}
+                      {isTeam ? (
+                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700">team</span>
+                      ) : isInCrm ? (
+                        <span className="text-[11px] text-neutral-400">in CRM</span>
+                      ) : a.email ? (
+                        <details className="relative">
+                          <summary className="cursor-pointer list-none rounded border border-neutral-300 px-2 py-0.5 text-[11px] font-medium text-neutral-700 hover:bg-neutral-100 [&::-webkit-details-marker]:hidden">
+                            + Add to CRM
+                          </summary>
+                          {/* Inline popup — pre-filled name + email, picker
+                              for company (existing OR create with sector).
+                              Existing-email contacts get auto-linked rather
+                              than duplicated. */}
+                          <form action={addAttendeeToCrmAction} className="absolute right-0 z-10 mt-1 w-80 space-y-2 rounded-lg border border-neutral-200 bg-white p-3 text-xs shadow-lg">
+                            <input type="hidden" name="meeting_id" value={m.id} />
+                            <input type="hidden" name="email" value={a.email} />
                             <div>
-                              <label className={lbl}>…or new company</label>
-                              <input name="new_org_name" placeholder="Company name" className={field} />
+                              <label className={lbl}>Full name</label>
+                              <input name="full_name" defaultValue={a.name ?? ""} required className={field} />
                             </div>
                             <div>
-                              <label className={lbl}>Sector (if new)</label>
-                              <select name="sector" defaultValue="" className={field}>
-                                <option value="">—</option>
-                                {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
-                              </select>
+                              <label className={lbl}>Job title (optional)</label>
+                              <input name="job_title" placeholder="e.g. Head of Risk" className={field} />
                             </div>
-                          </div>
-                          <div className="flex justify-end">
-                            <PendingButton
-                              className="rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700"
-                              pendingLabel="Adding…"
-                            >
-                              Add contact
-                            </PendingButton>
-                          </div>
-                        </form>
-                      </details>
-                    )}
-                  </div>
-                  {!a.contact_id && a.email && <span className="text-xs text-neutral-400">(not in CRM)</span>}
-                </li>
-              ))}
+                            <div className="text-[11px] text-neutral-500">
+                              <span className="uppercase tracking-wide text-neutral-400">Email:</span> {a.email}
+                            </div>
+                            <div>
+                              <label className={lbl}>Company (existing)</label>
+                              <Combobox name="organisation_id" options={orgOptions} placeholder="Type to search…" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className={lbl}>…or new company</label>
+                                <input name="new_org_name" placeholder="Company name" className={field} />
+                              </div>
+                              <div>
+                                <label className={lbl}>Sector (if new)</label>
+                                <select name="sector" defaultValue="" className={field}>
+                                  <option value="">—</option>
+                                  {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            <div className="flex justify-end">
+                              <PendingButton
+                                className="rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                                pendingLabel="Adding…"
+                              >
+                                Add contact
+                              </PendingButton>
+                            </div>
+                          </form>
+                        </details>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </section>
 
