@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { currentUser } from "@/lib/auth/server";
-import { generateBriefAction, updateMeetingAction, deleteMeetingAction, setSalesRelevantAction, saveTranscriptAction, generatePostSummaryAction } from "../actions";
+import { generateBriefAction, updateMeetingAction, deleteMeetingAction, setSalesRelevantAction, saveTranscriptAction, generatePostSummaryAction, addAttendeeToCrmAction } from "../actions";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { Combobox } from "@/components/Combobox";
@@ -12,6 +12,9 @@ export const maxDuration = 60;
 
 const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
 const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 mb-1";
+// Inline-duplicated SECTORS — see /companies, /linkedin which do the same.
+// Worth a future cleanup into a central const.
+const SECTORS = ["bank", "broker", "building_society", "credit_union", "direct_lender", "marketplace", "sme_lender", "utility"];
 
 export default async function MeetingDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -28,6 +31,16 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
     granolaFollowup = (f as GranolaFollowup | null);
   }
   if (!m) notFound();
+
+  // Pre-load orgs for the per-attendee "Add to CRM" Combobox. One round trip
+  // even if there are many attendees; bounded at 2000.
+  const { data: orgsData } = await db
+    .from("organisations")
+    .select("id, name")
+    .order("name")
+    .limit(2000);
+  const orgOptions = ((orgsData ?? []) as { id: string; name: string | null }[])
+    .map((o) => ({ id: o.id, label: o.name ?? "(unnamed)" }));
 
   // Soft per-user fence: a user can still load any meeting by direct URL
   // (handy when sharing links across the team), but if it's not theirs we
@@ -235,13 +248,76 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
             <ul className="space-y-1 text-sm">
               {attendees.map((a, i) => (
                 <li key={i} className="text-neutral-700">
-                  {a.contact_id ? (
-                    <Link href={`/contacts/${a.contact_id}`} className="text-blue-700 hover:underline">{a.name ?? a.email}</Link>
-                  ) : (
-                    <span>{a.name ?? a.email}</span>
-                  )}
-                  {a.email && a.name && <span className="text-xs text-neutral-400"> · {a.email}</span>}
-                  {!a.contact_id && a.email && <span className="ml-1 text-xs text-neutral-400">(not in CRM)</span>}
+                  <div className="flex flex-wrap items-baseline gap-1">
+                    {a.contact_id ? (
+                      <Link href={`/contacts/${a.contact_id}`} className="text-blue-700 hover:underline">{a.name ?? a.email}</Link>
+                    ) : (
+                      <span>{a.name ?? a.email}</span>
+                    )}
+                    {a.email && a.name && <span className="text-xs text-neutral-400"> · {a.email}</span>}
+                    {!a.contact_id && a.email && (
+                      <details className="ml-auto">
+                        <summary className="cursor-pointer rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100">
+                          + Add to CRM
+                        </summary>
+                        {/* Inline popup — pre-filled name + email, picker for
+                            company (existing OR create new with sector).
+                            Existing-email contacts get auto-linked instead
+                            of duplicated. */}
+                        <form action={addAttendeeToCrmAction} className="mt-2 space-y-2 rounded border border-neutral-200 bg-neutral-50 p-3 text-xs">
+                          <input type="hidden" name="meeting_id" value={m.id} />
+                          <input type="hidden" name="email" value={a.email} />
+                          <div>
+                            <label className={lbl}>Full name</label>
+                            <input
+                              name="full_name"
+                              defaultValue={a.name ?? ""}
+                              required
+                              className={field}
+                            />
+                          </div>
+                          <div>
+                            <label className={lbl}>Job title (optional)</label>
+                            <input name="job_title" placeholder="e.g. Head of Risk" className={field} />
+                          </div>
+                          <div>
+                            <label className={lbl}>Email</label>
+                            <input value={a.email} readOnly className={`${field} bg-neutral-100 text-neutral-500`} />
+                          </div>
+                          <div>
+                            <label className={lbl}>Company (existing)</label>
+                            <Combobox
+                              name="organisation_id"
+                              options={orgOptions}
+                              placeholder="Type to search…"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className={lbl}>…or new company</label>
+                              <input name="new_org_name" placeholder="Company name" className={field} />
+                            </div>
+                            <div>
+                              <label className={lbl}>Sector (if new)</label>
+                              <select name="sector" defaultValue="" className={field}>
+                                <option value="">—</option>
+                                {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex justify-end">
+                            <PendingButton
+                              className="rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                              pendingLabel="Adding…"
+                            >
+                              Add contact
+                            </PendingButton>
+                          </div>
+                        </form>
+                      </details>
+                    )}
+                  </div>
+                  {!a.contact_id && a.email && <span className="text-xs text-neutral-400">(not in CRM)</span>}
                 </li>
               ))}
             </ul>

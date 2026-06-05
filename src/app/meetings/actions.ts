@@ -116,3 +116,96 @@ export async function disconnectMicrosoftAction() {
   await flash("success", "Outlook disconnected — Connect again to re-sync");
   revalidatePath("/meetings");
 }
+
+/** Convert a not-yet-in-CRM meeting attendee into a real contact, optionally
+ *  linked to an existing or new organisation. Updates meetings.attendees JSONB
+ *  so the attendee back-references the new contact_id (the "(not in CRM)"
+ *  badge disappears on next render). Idempotent: if the email already exists
+ *  in contacts we just bind the existing row instead of creating a duplicate. */
+export async function addAttendeeToCrmAction(formData: FormData) {
+  const meeting_id = str(formData.get("meeting_id"));
+  const email = (str(formData.get("email")) ?? "").toLowerCase();
+  const full_name = str(formData.get("full_name"));
+  const job_title = str(formData.get("job_title"));
+  if (!meeting_id || !email) return;
+
+  const me = await currentUser();
+  const db = serviceClient();
+
+  // Pick org: existing id from Combobox OR create one from name + sector.
+  const organisation_id_in = str(formData.get("organisation_id"));
+  const new_org_name = str(formData.get("new_org_name"));
+  const sector = str(formData.get("sector"));
+  let organisation_id: string | null = organisation_id_in;
+  if (!organisation_id && new_org_name) {
+    const { data: newOrg, error: orgErr } = await db
+      .from("organisations")
+      .insert({ name: new_org_name, sector, owner_id: me?.id ?? null })
+      .select("id")
+      .single();
+    if (orgErr) {
+      await flash("error", `Couldn't create company: ${orgErr.message}`);
+      revalidatePath(`/meetings/${meeting_id}`);
+      return;
+    }
+    organisation_id = newOrg.id;
+  }
+
+  // Reuse an existing contact with this email — never duplicate.
+  const { data: existing } = await db
+    .from("contacts")
+    .select("id, organisation_id, owner_id")
+    .ilike("email", email)
+    .maybeSingle();
+  let contact_id: string;
+  if (existing) {
+    contact_id = existing.id as string;
+    // If we resolved an org and the existing contact has none, link it.
+    if (organisation_id && !existing.organisation_id) {
+      await db.from("contacts").update({ organisation_id }).eq("id", contact_id);
+    }
+  } else {
+    const { data: inserted, error: cErr } = await db
+      .from("contacts")
+      .insert({
+        full_name: full_name ?? email.split("@")[0],
+        email,
+        job_title,
+        organisation_id,
+        owner_id: me?.id ?? null,
+      })
+      .select("id")
+      .single();
+    if (cErr || !inserted) {
+      await flash("error", `Couldn't create contact: ${cErr?.message ?? "unknown"}`);
+      revalidatePath(`/meetings/${meeting_id}`);
+      return;
+    }
+    contact_id = inserted.id as string;
+  }
+
+  // Stamp the meeting.attendees JSONB so this attendee now back-references
+  // the new contact. Re-pull because attendees is jsonb and edits-in-place
+  // are awkward via PostgREST.
+  const { data: mtg } = await db
+    .from("meetings")
+    .select("attendees, primary_contact_id, organisation_id")
+    .eq("id", meeting_id)
+    .maybeSingle();
+  if (mtg) {
+    type AttRow = { name?: string | null; email?: string | null; response?: string | null; contact_id?: string | null };
+    const updated = ((mtg.attendees ?? []) as AttRow[]).map((a) =>
+      (a.email ?? "").toLowerCase() === email ? { ...a, contact_id } : a,
+    );
+    const patch: Record<string, unknown> = { attendees: updated };
+    // If the meeting has no primary contact / org yet, this new contact
+    // is a sensible default — saves a second manual step.
+    if (!mtg.primary_contact_id) patch.primary_contact_id = contact_id;
+    if (!mtg.organisation_id && organisation_id) patch.organisation_id = organisation_id;
+    await db.from("meetings").update(patch).eq("id", meeting_id);
+  }
+
+  await flash("success", existing ? `Linked existing contact: ${full_name ?? email}` : `Added to CRM: ${full_name ?? email}`);
+  revalidatePath(`/meetings/${meeting_id}`);
+  revalidatePath(`/contacts/${contact_id}`);
+}
