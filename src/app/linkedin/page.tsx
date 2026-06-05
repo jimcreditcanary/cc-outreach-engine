@@ -182,17 +182,18 @@ export default async function LinkedInPage({ searchParams }: {
   const cooled = (r: Row) =>
     !r.linkedin_last_touched_at || new Date(r.linkedin_last_touched_at).getTime() < cooldownCutoff;
 
-  // Three buckets:
+  // Two buckets:
   //   sendable  — not connected, no request sent yet, has a URL → primary work
-  //   awaiting  — request sent, not yet a connection → waiting on their accept
   //   reEngage  — already 1st-degree → drop a fresh hook (with cooldown)
+  // (Contacts with linkedin_request_sent_at fall out of "sendable" and
+  // silently disappear from the queue. We used to surface them as
+  // "Awaiting accept" but Jim doesn't track who accepts/doesn't.)
   const sendableAll = icp.filter((r) => !r.linkedin_connected && !r.linkedin_request_sent_at && r.linkedin_url && cooled(r));
-  const awaiting    = icp.filter((r) => !r.linkedin_connected && r.linkedin_request_sent_at && r.linkedin_url);
   const reEngageAll = icp.filter((r) =>  r.linkedin_connected && r.linkedin_url && cooled(r));
   const needsResearchAll = icp.filter((r) => !r.linkedin_url && !r.linkedin_connected && !r.linkedin_request_sent_at && cooled(r));
 
-  // Paginate the main list for the active tab; the smaller secondary lists
-  // (awaiting + re-engage) stay capped without per-page pagination.
+  // Paginate the main list for the active tab; the re-engage section
+  // stays capped without per-page pagination.
   const mainList = tab === "send" ? sendableAll : needsResearchAll;
   const totalPages = Math.max(1, Math.ceil(mainList.length / PAGE));
   const safePage = Math.min(page, totalPages);
@@ -353,27 +354,12 @@ export default async function LinkedInPage({ searchParams }: {
       )}
 
       <Paginator tab="send" page={safePage} totalPages={totalPages} />
-
-      {/* AWAITING (request sent, no accept yet) */}
-      {awaiting.length > 0 && (
-        <section className="mb-8">
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-            Awaiting accept ({awaiting.length})
-          </h2>
-          <p className="mb-3 text-xs text-neutral-400">
-            Connection request sent — waiting on accept. Once they accept, mark them &ldquo;already connected&rdquo; on the contact page to move them into re-engage.
-          </p>
-          <ul className="space-y-1 text-sm text-neutral-600">
-            {awaiting.slice(0, 30).map((r) => (
-              <li key={r.id} className="flex items-center gap-2 rounded border border-neutral-100 px-2 py-1.5">
-                <Link href={`/contacts/${r.id}`} className="font-medium text-blue-700 hover:underline">{r.full_name}</Link>
-                <span className="text-neutral-500">— {r.job_title} — {r.organisation?.name}</span>
-                <span className="ml-auto text-xs text-neutral-400">sent {new Date(r.linkedin_request_sent_at!).toLocaleDateString("en-GB")}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/* "Awaiting accept" section was here — removed. Tracking who
+          accepts a LinkedIn request and who doesn't isn't worth the
+          maintenance overhead. Once you click "Connection request sent"
+          the contact disappears from the send queue and that's enough.
+          The data (linkedin_request_sent_at) is still captured so we
+          can revive this view later if needed. */}
       </>}
 
       {tab === "research" && <>
