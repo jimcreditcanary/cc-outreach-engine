@@ -5,11 +5,7 @@ import {
   saveSenderIdentityAction,
   refreshSignatureStatusAction,
   resendSignatureConfirmationAction,
-  saveGranolaTokenAction,
-  syncGranolaNowAction,
-  disconnectGranolaAction,
 } from "./actions";
-import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
 
 export const dynamic = "force-dynamic";
@@ -22,20 +18,16 @@ export default async function SettingsPage() {
   if (!me) redirect("/login");
   const { data } = await serviceClient()
     .from("user_settings")
-    .select("from_email, reply_to_email, postmark_signature_id, postmark_signature_verified, postmark_signature_error, postmark_signature_checked_at, granola_api_token")
+    .select("from_email, reply_to_email, postmark_signature_id, postmark_signature_verified, postmark_signature_error, postmark_signature_checked_at")
     .eq("user_id", me.id)
     .maybeSingle();
-  const granolaConnected = !!data?.granola_api_token;
-  // Mask the token in the UI — only the last 4 chars are shown, so we
-  // confirm "yes there's something here" without sending it back to the
-  // browser.
-  const granolaMasked = granolaConnected
-    ? `••••${(data!.granola_api_token as string).slice(-4)}`
-    : "";
 
   const envFrom = process.env.POSTMARK_FROM ?? "(POSTMARK_FROM unset)";
   const envReply = process.env.POSTMARK_REPLY_TO ?? "(POSTMARK_REPLY_TO unset)";
   const hasAccountToken = !!process.env.POSTMARK_ACCOUNT_TOKEN;
+  // The Granola "share via email" address operators forward to. Set in
+  // Vercel env. Falls back to a placeholder so the panel still renders.
+  const granolaForwardAddress = process.env.GRANOLA_INBOUND_ADDRESS ?? "(set GRANOLA_INBOUND_ADDRESS env var)";
 
   return (
     <main className="px-8 py-6">
@@ -139,60 +131,29 @@ export default async function SettingsPage() {
         )}
       </section>
 
-      {/* Granola — pull post-meeting transcripts + auto-send follow-ups */}
+      {/* Granola — share-via-email forward instructions */}
       <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-4">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Granola — meeting transcripts</h2>
-        <p className="mb-4 text-xs text-neutral-500">
-          Connect Granola and we&apos;ll automatically pull a transcript onto every meeting in your /meetings tab the moment
-          Granola finishes processing it, then draft + auto-send a warm follow-up email to the primary contact
-          (using your sender identity above). Runs every 15 min in the background.
+        <p className="mb-3 text-xs text-neutral-500">
+          Granola doesn&apos;t have a real public API yet (their endpoints reject non-app clients).
+          We get round it by listening for their built-in <strong>Share via email</strong> output —
+          after each meeting, share the note to the address below and we&apos;ll match it to the
+          meeting, fill the transcript, run the AI summary, and auto-send the follow-up email to
+          your primary contact.
         </p>
-        <form action={saveGranolaTokenAction} className="space-y-2">
-          <div>
-            <label className={lbl}>Granola API token</label>
-            <input
-              name="granola_api_token"
-              type="password"
-              placeholder={granolaConnected ? `connected — token ending ${granolaMasked}; paste a new one to rotate` : "paste your token here…"}
-              autoComplete="off"
-              className={field}
-            />
-            <p className="mt-1 text-xs text-neutral-400">
-              Get one at <code>granola.ai</code> → Settings → Developer / API.
-              Stored server-side only — never sent to the browser.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <PendingButton
-              className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
-              pendingLabel="Verifying with Granola…"
-            >
-              {granolaConnected ? "Replace token" : "Connect"}
-            </PendingButton>
-          </div>
-        </form>
-        {granolaConnected && (
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-800">✓ connected</span>
-            <span className="text-neutral-500">Token ending {granolaMasked}. Sync runs every 15 min.</span>
-            <form action={syncGranolaNowAction} className="ml-2">
-              <PendingButton
-                className="rounded border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
-                pendingLabel="Syncing…"
-              >
-                Sync now
-              </PendingButton>
-            </form>
-            <form action={disconnectGranolaAction}>
-              <ConfirmSubmit
-                className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                message="Disconnect Granola? The cron stops pulling transcripts. Existing transcripts + sent follow-ups stay put."
-              >
-                Disconnect
-              </ConfirmSubmit>
-            </form>
-          </div>
-        )}
+        <div className="mb-3 rounded border border-neutral-200 bg-neutral-50 p-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">Forward Granola notes to</div>
+          <code className="mt-1 block break-all text-sm text-neutral-800">{granolaForwardAddress}</code>
+        </div>
+        <ol className="list-inside list-decimal space-y-1 text-xs text-neutral-600">
+          <li>In Granola, open the note → click the <strong>Share</strong> button → <strong>Send via email</strong>.</li>
+          <li>Paste the address above as the recipient. Tick &quot;Include transcript&quot; if it&apos;s an option.</li>
+          <li>Send from <strong>your own email account</strong> (the one tied to your /settings sender identity — that&apos;s how we know which operator forwarded it).</li>
+        </ol>
+        <p className="mt-3 text-xs text-neutral-400">
+          The meeting must be marked sales-relevant on /meetings and within the last 3 days for the matcher to bind it.
+          Status of the pull + the auto-sent follow-up shows as a blue Granola banner on the meeting detail page.
+        </p>
       </section>
     </main>
   );

@@ -21,10 +21,6 @@
       "schedule": "15 * * * *"
     },
     {
-      "path": "/api/cron/granola",
-      "schedule": "*/15 * * * *"
-    },
-    {
       "path": "/api/cron/alerts",
       "schedule": "0 22 * * 0"
     }
