@@ -34,7 +34,7 @@ export default async function CompanyDetail({
   const { data: org } = await db.from("organisations").select("*").eq("id", id).maybeSingle();
   if (!org) notFound();
 
-  const [{ data: contacts }, { data: deals }, { data: notes }, { data: events }, { data: orgAlerts }, { data: attendedRows }] = await Promise.all([
+  const [{ data: contacts }, { data: deals }, { data: notes }, { data: events }, { data: orgAlerts }, { data: attendedRows }, { data: orgMeetings }] = await Promise.all([
     db.from("contacts").select("id, full_name, job_title, email").eq("organisation_id", id).limit(100),
     db.from("deals").select("id, title, status, value").eq("organisation_id", id),
     db.from("notes").select("id, content, noted_at").eq("organisation_id", id).order("noted_at", { ascending: false }).limit(20),
@@ -48,7 +48,15 @@ export default async function CompanyDetail({
       .select("contact:contacts!inner(id, full_name, organisation_id), conference:conferences(id, name, start_date, location)")
       .eq("contact.organisation_id", id)
       .limit(500),
+    // Outlook meetings linked to this company.
+    db.from("meetings")
+      .select("id, subject, start_at, status, primary_contact:contacts(id, full_name)")
+      .eq("organisation_id", id)
+      .order("start_at", { ascending: false })
+      .limit(50),
   ]);
+  type OrgMeeting = { id: string; subject: string | null; start_at: string; status: string | null; primary_contact: { id: string; full_name: string | null } | { id: string; full_name: string | null }[] | null };
+  const companyMeetings = (orgMeetings ?? []) as unknown as OrgMeeting[];
   const timeline = (events ?? []) as unknown as { type: string; ts: string; payload: { message?: string } | null }[];
   const alerts = (orgAlerts ?? []) as { id: string; kind: string; title: string; link: string | null; summary: string | null; source: string | null; ts: string }[];
   type AttendanceRow = {
@@ -288,6 +296,21 @@ export default async function CompanyDetail({
                   {c.conference.start_date && (
                     <span className="ml-2 text-neutral-400">{new Date(c.conference.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
                   )}
+                </>
+              ),
+            });
+          }
+          for (const m of companyMeetings) {
+            const pc = Array.isArray(m.primary_contact) ? m.primary_contact[0] : m.primary_contact;
+            rows.push({
+              ts: new Date(m.start_at).getTime(),
+              key: `m${m.id}`,
+              render: () => (
+                <>
+                  📅 <Link href={`/meetings/${m.id}`} className="text-blue-700 hover:underline">{m.subject ?? "(no subject)"}</Link>
+                  {pc?.full_name && <span className="ml-1 text-neutral-700">— {pc.full_name}</span>}
+                  {m.status && <span className="ml-2 rounded bg-neutral-100 px-1 py-0.5 text-[10px] text-neutral-600">{m.status}</span>}
+                  <span className="ml-2 text-neutral-400">{new Date(m.start_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                 </>
               ),
             });

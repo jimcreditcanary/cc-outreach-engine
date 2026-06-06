@@ -37,7 +37,7 @@ export default async function ContactDetail({
   if (!c) notFound();
   const org = c.organisation as { id: string; name: string | null } | null;
 
-  const [{ data: events }, { data: sends }, { data: orgs }, { data: notes }, { data: attended }] = await Promise.all([
+  const [{ data: events }, { data: sends }, { data: orgs }, { data: notes }, { data: attended }, { data: primaryMeetings }, { data: attendeeMeetings }] = await Promise.all([
     db.from("events").select("type, ts, payload").eq("contact_id", id).order("ts", { ascending: false }).limit(20),
     db.from("sends").select("subject, status, ts, clicked, replied").eq("contact_id", id).order("ts", { ascending: false }).limit(10),
     db.from("organisations").select("id, name").order("name", { ascending: true }).limit(1000),
@@ -45,8 +45,20 @@ export default async function ContactDetail({
     db.from("conference_attendances")
       .select("matched_via, conference:conferences(id, name, start_date, location)")
       .eq("contact_id", id),
+    // Meetings where this contact is the primary.
+    db.from("meetings").select("id, subject, start_at, status").eq("primary_contact_id", id).order("start_at", { ascending: false }).limit(50),
+    // Meetings where this contact is in the attendees JSONB. PostgREST
+    // `.contains` on a jsonb array does an @> containment match — finds
+    // any element with at least these fields, ignoring extras.
+    db.from("meetings").select("id, subject, start_at, status").contains("attendees", [{ contact_id: id }]).order("start_at", { ascending: false }).limit(50),
   ]);
   const attendances = (attended ?? []) as unknown as { matched_via: string; conference: { id: string; name: string; start_date: string | null; location: string | null } | null }[];
+  // Dedupe meetings by id (a contact who's primary AND in attendees would otherwise show twice).
+  const meetingsById = new Map<string, { id: string; subject: string | null; start_at: string; status: string | null }>();
+  for (const m of [...((primaryMeetings ?? []) as unknown as { id: string; subject: string | null; start_at: string; status: string | null }[]), ...((attendeeMeetings ?? []) as unknown as { id: string; subject: string | null; start_at: string; status: string | null }[])]) {
+    meetingsById.set(m.id, m);
+  }
+  const meetings = Array.from(meetingsById.values());
 
   // Merge: search other contacts to fold into this one.
   let mergeCandidates: { id: string; full_name: string | null; email: string | null }[] = [];
@@ -248,6 +260,19 @@ export default async function ContactDetail({
                   {a.conference!.start_date && (
                     <span className="ml-2 text-neutral-400">{new Date(a.conference!.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
                   )}
+                </>
+              ),
+            });
+          }
+          for (const m of meetings) {
+            rows.push({
+              ts: new Date(m.start_at).getTime(),
+              key: `m${m.id}`,
+              render: () => (
+                <>
+                  📅 <Link href={`/meetings/${m.id}`} className="text-blue-700 hover:underline">{m.subject ?? "(no subject)"}</Link>
+                  {m.status && <span className="ml-2 rounded bg-neutral-100 px-1 py-0.5 text-[10px] text-neutral-600">{m.status}</span>}
+                  <span className="ml-2 text-neutral-400">{new Date(m.start_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                 </>
               ),
             });
