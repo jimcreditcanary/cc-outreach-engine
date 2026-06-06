@@ -5,6 +5,7 @@ import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
+import { SectorBadge } from "@/components/SectorBadge";
 import { decodeHtmlEntities } from "@/lib/text/decode";
 
 export const dynamic = "force-dynamic";
@@ -96,7 +97,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
                     {a.organisation.name}
                   </Link>
                 )}
-                {a.organisation?.sector && <span>· {a.organisation.sector}</span>}
+                <SectorBadge sector={a.organisation?.sector} className="ml-1" />
                 <span className="ml-auto text-neutral-400">{new Date(a.ts).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
               </div>
               {a.link ? (

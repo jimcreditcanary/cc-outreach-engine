@@ -4,6 +4,7 @@ import { PendingButton } from "@/components/PendingButton";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { BulkApproveBar } from "./BulkApproveBar";
+import { SectorBadge } from "@/components/SectorBadge";
 
 export const dynamic = "force-dynamic";
 // Regenerate + Send-now invoke Claude / Postmark — give them runway.
@@ -113,11 +114,9 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                   <span className="font-medium text-neutral-800">{d.contact?.full_name ?? "—"}</span>
                   <span>&lt;{d.contact?.email ?? "?"}&gt;</span>
                   {org?.name && (
-                    <span className="rounded bg-neutral-100 px-1.5 py-0.5">
-                      {org.name}
-                      {org.sector ? ` · ${org.sector}` : ""}
-                    </span>
+                    <span className="rounded bg-neutral-100 px-1.5 py-0.5">{org.name}</span>
                   )}
+                  <SectorBadge sector={org?.sector} />
                 </div>
                 {d.angle && <p className="mb-2 text-xs uppercase tracking-wide text-amber-700">{d.angle}</p>}
                 <form action={updateDraft} className="space-y-2">

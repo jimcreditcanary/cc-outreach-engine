@@ -9,6 +9,7 @@ import {
   skipContact,
 } from "../actions";
 import { SKIP_REASONS } from "@/lib/contacts/skipReasons";
+import { SectorBadge } from "@/components/SectorBadge";
 import { currentUserId } from "@/lib/auth/owner";
 import { PendingButton } from "@/components/PendingButton";
 import { Combobox } from "@/components/Combobox";
@@ -379,7 +380,10 @@ export default async function LinkedInPage({ searchParams }: {
             {needsResearch.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-2 rounded border border-neutral-100 px-2 py-1.5 text-neutral-600 hover:bg-neutral-50">
                 <Link href={`/contacts/${r.id}`} className="font-medium text-blue-700 hover:underline">{r.full_name}</Link>
-                <span className="text-neutral-500">— {r.job_title} — {r.organisation?.name} ({r.organisation?.sector ?? "no sector"})</span>
+                <span className="text-neutral-500">— {r.job_title} — {r.organisation?.name}</span>
+                {r.organisation?.sector
+                  ? <SectorBadge sector={r.organisation.sector} />
+                  : <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">no sector</span>}
                 <form action={markNotOnLinkedIn} className="ml-auto">
                   <input type="hidden" name="contact_id" value={r.id} />
                   <PendingButton

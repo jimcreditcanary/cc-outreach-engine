@@ -3,6 +3,7 @@ import { serviceClient } from "@/lib/db/client";
 import { createOrg, deleteOrg } from "../actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
+import { SectorBadge } from "@/components/SectorBadge";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 
@@ -86,7 +87,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
                 </Link>
                 {o.is_partner && <span className="ml-2 rounded bg-purple-100 px-1.5 text-xs text-purple-700">partner</span>}
               </td>
-              <td className="text-neutral-600">{o.sector ?? "—"}</td>
+              <td className="text-neutral-600">{o.sector ? <SectorBadge sector={o.sector} /> : "—"}</td>
               <td className="text-neutral-600">{o.tier ?? "—"}</td>
               <td className="text-neutral-600">{o.label ?? "—"}</td>
               <td className="w-10 text-right">
