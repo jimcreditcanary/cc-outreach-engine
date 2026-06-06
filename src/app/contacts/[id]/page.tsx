@@ -212,16 +212,56 @@ export default async function ContactDetail({
 
       <section className="mt-8 text-sm">
         <h2 className="mb-2 font-semibold">Timeline</h2>
-        <ul className="space-y-1 text-neutral-600">
-          {(sends ?? []).map((s, i) => (
-            <li key={`s${i}`}>✉️ {s.status} — {s.subject} {s.clicked ? "· clicked" : ""}{s.replied ? "· replied" : ""} <span className="text-neutral-400">{new Date(s.ts).toLocaleDateString("en-GB")}</span></li>
-          ))}
-          {(events ?? []).map((e, i) => {
+        {(() => {
+          // Merge sends + events + conference attendances into a single
+          // chronologically-sorted list. Each entry carries a render fn
+          // so the row type only renders the JSX appropriate for it.
+          type Row = { ts: number; key: string; render: () => React.ReactNode };
+          const rows: Row[] = [];
+          for (const [i, s] of (sends ?? []).entries()) {
+            rows.push({
+              ts: new Date(s.ts).getTime(),
+              key: `s${i}`,
+              render: () => <>✉️ {s.status} — {s.subject} {s.clicked ? "· clicked" : ""}{s.replied ? "· replied" : ""} <span className="text-neutral-400">{new Date(s.ts).toLocaleDateString("en-GB")}</span></>,
+            });
+          }
+          for (const [i, e] of (events ?? []).entries()) {
             const msg = (e.payload as { message?: string } | null)?.message;
-            return <li key={`e${i}`}>• {msg ?? e.type} <span className="text-neutral-400">{new Date(e.ts).toLocaleDateString("en-GB")}</span></li>;
-          })}
-          {(sends?.length ?? 0) === 0 && (events?.length ?? 0) === 0 && <li className="text-neutral-400">No activity yet.</li>}
-        </ul>
+            rows.push({
+              ts: new Date(e.ts).getTime(),
+              key: `e${i}`,
+              render: () => <>• {msg ?? e.type} <span className="text-neutral-400">{new Date(e.ts).toLocaleDateString("en-GB")}</span></>,
+            });
+          }
+          for (const a of attendances) {
+            if (!a.conference) continue;
+            // Use start_date when present; falls back to "now" so undated
+            // conferences still surface (rare but possible).
+            const ts = a.conference.start_date ? new Date(a.conference.start_date).getTime() : Date.now();
+            rows.push({
+              ts,
+              key: `c${a.conference.id}`,
+              render: () => (
+                <>
+                  🎟 Attended <Link href={`/events/${a.conference!.id}`} className="text-blue-700 hover:underline">{a.conference!.name}</Link>
+                  {a.conference!.location && <span className="ml-1 text-neutral-400">· {a.conference!.location}</span>}
+                  {a.conference!.start_date && (
+                    <span className="ml-2 text-neutral-400">{new Date(a.conference!.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                  )}
+                </>
+              ),
+            });
+          }
+          rows.sort((x, y) => y.ts - x.ts);
+          if (rows.length === 0) {
+            return <ul className="space-y-1 text-neutral-600"><li className="text-neutral-400">No activity yet.</li></ul>;
+          }
+          return (
+            <ul className="space-y-1 text-neutral-600">
+              {rows.map((r) => <li key={r.key}>{r.render()}</li>)}
+            </ul>
+          );
+        })()}
       </section>
 
       {/* Merge: fold a duplicate contact into this one. */}

@@ -34,15 +34,42 @@ export default async function CompanyDetail({
   const { data: org } = await db.from("organisations").select("*").eq("id", id).maybeSingle();
   if (!org) notFound();
 
-  const [{ data: contacts }, { data: deals }, { data: notes }, { data: events }, { data: orgAlerts }] = await Promise.all([
+  const [{ data: contacts }, { data: deals }, { data: notes }, { data: events }, { data: orgAlerts }, { data: attendedRows }] = await Promise.all([
     db.from("contacts").select("id, full_name, job_title, email").eq("organisation_id", id).limit(100),
     db.from("deals").select("id, title, status, value").eq("organisation_id", id),
     db.from("notes").select("id, content, noted_at").eq("organisation_id", id).order("noted_at", { ascending: false }).limit(20),
     db.from("events").select("type, ts, payload").eq("organisation_id", id).order("ts", { ascending: false }).limit(30),
     db.from("alerts").select("id, kind, title, link, summary, source, ts").eq("organisation_id", id).is("dismissed_at", null).order("ts", { ascending: false }).limit(10),
+    // Conferences attended by ANY contact under this company. Embedded
+    // INNER JOIN filters server-side; we de-dupe by conference id below
+    // so a 5-attendee conference shows up once on the company timeline,
+    // not five times.
+    db.from("conference_attendances")
+      .select("contact:contacts!inner(id, full_name, organisation_id), conference:conferences(id, name, start_date, location)")
+      .eq("contact.organisation_id", id)
+      .limit(500),
   ]);
   const timeline = (events ?? []) as unknown as { type: string; ts: string; payload: { message?: string } | null }[];
   const alerts = (orgAlerts ?? []) as { id: string; kind: string; title: string; link: string | null; summary: string | null; source: string | null; ts: string }[];
+  type AttendanceRow = {
+    contact: { id: string; full_name: string | null; organisation_id: string | null } | { id: string; full_name: string | null; organisation_id: string | null }[] | null;
+    conference: { id: string; name: string; start_date: string | null; location: string | null } | { id: string; name: string; start_date: string | null; location: string | null }[] | null;
+  };
+  // Group attendees by conference so each event shows once with all the
+  // company's contacts that went.
+  const attendedByConfId = new Map<string, { conference: { id: string; name: string; start_date: string | null; location: string | null }; attendees: { id: string; full_name: string | null }[] }>();
+  for (const row of (attendedRows ?? []) as AttendanceRow[]) {
+    const conf = Array.isArray(row.conference) ? row.conference[0] : row.conference;
+    const ct = Array.isArray(row.contact) ? row.contact[0] : row.contact;
+    if (!conf || !ct) continue;
+    const existing = attendedByConfId.get(conf.id);
+    if (existing) {
+      if (!existing.attendees.some((a) => a.id === ct.id)) existing.attendees.push({ id: ct.id, full_name: ct.full_name });
+    } else {
+      attendedByConfId.set(conf.id, { conference: conf, attendees: [{ id: ct.id, full_name: ct.full_name }] });
+    }
+  }
+  const conferencesAttended = Array.from(attendedByConfId.values());
 
   // Merge: search other companies to fold into this one.
   let mergeCandidates: { id: string; name: string | null }[] = [];
@@ -236,12 +263,45 @@ export default async function CompanyDetail({
 
       <section className="mt-8 text-sm">
         <h2 className="mb-2 font-semibold">Activity</h2>
-        <ul className="space-y-1 text-neutral-600">
-          {timeline.map((e, i) => (
-            <li key={i}>• {e.payload?.message ?? e.type} <span className="text-neutral-400">{new Date(e.ts).toLocaleString("en-GB")}</span></li>
-          ))}
-          {timeline.length === 0 && <li className="text-neutral-400">No activity yet.</li>}
-        </ul>
+        {(() => {
+          type Row = { ts: number; key: string; render: () => React.ReactNode };
+          const rows: Row[] = [];
+          for (const [i, e] of timeline.entries()) {
+            rows.push({
+              ts: new Date(e.ts).getTime(),
+              key: `e${i}`,
+              render: () => <>• {e.payload?.message ?? e.type} <span className="text-neutral-400">{new Date(e.ts).toLocaleString("en-GB")}</span></>,
+            });
+          }
+          for (const c of conferencesAttended) {
+            const ts = c.conference.start_date ? new Date(c.conference.start_date).getTime() : Date.now();
+            const attendeeNames = c.attendees.map((a) => a.full_name ?? "(unnamed)").join(", ");
+            rows.push({
+              ts,
+              key: `c${c.conference.id}`,
+              render: () => (
+                <>
+                  🎟 <Link href={`/events/${c.conference.id}`} className="text-blue-700 hover:underline">{c.conference.name}</Link>
+                  {" — "}
+                  <span className="text-neutral-700">{attendeeNames}</span>
+                  {c.conference.location && <span className="ml-1 text-neutral-400">· {c.conference.location}</span>}
+                  {c.conference.start_date && (
+                    <span className="ml-2 text-neutral-400">{new Date(c.conference.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                  )}
+                </>
+              ),
+            });
+          }
+          rows.sort((x, y) => y.ts - x.ts);
+          if (rows.length === 0) {
+            return <ul className="space-y-1 text-neutral-600"><li className="text-neutral-400">No activity yet.</li></ul>;
+          }
+          return (
+            <ul className="space-y-1 text-neutral-600">
+              {rows.map((r) => <li key={r.key}>{r.render()}</li>)}
+            </ul>
+          );
+        })()}
       </section>
 
       {/* Merge: fold a duplicate company into this one. */}
