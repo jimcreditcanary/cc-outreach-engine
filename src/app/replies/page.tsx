@@ -1,14 +1,15 @@
-// /replies — operator-scoped inbound triage. By default shows the
-// signed-in operator's replies (matched via events.owner_id, set by the
-// inbound webhook from the To address); OwnerFilter flips to "all" or
-// another teammate. Each card expands to show the message body. Unmatched
-// replies get inline pickers to assign to an existing contact (Combobox)
-// or create a new one — same UX as deal/contact creation elsewhere.
+// /replies — strictly scoped to the signed-in operator's inbound replies.
+// We never show another operator's mail here — replies are private
+// correspondence, scoped to the recipient inbox they landed in. The
+// inbound webhook stamps events.owner_id by matching the To address
+// against user_settings.reply_to_email / from_email, and this page
+// always filters to that. Unmatched-sender replies still need triage
+// (assign to an existing contact, or create a new one inline).
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { resolveOwnerFilter } from "@/lib/auth/owner";
-import { OwnerFilter } from "@/components/OwnerFilter";
+import { currentUserId } from "@/lib/auth/owner";
 import { Combobox } from "@/components/Combobox";
 import { PendingButton } from "@/components/PendingButton";
 import {
@@ -41,21 +42,24 @@ interface ReplyEvent {
 interface OrgOpt { id: string; name: string | null }
 interface ContactOpt { id: string; full_name: string | null; email: string | null; organisation: { name: string | null } | { name: string | null }[] | null }
 
-export default async function RepliesPage({ searchParams }: { searchParams: Promise<{ owner?: string; show?: string }> }) {
+export default async function RepliesPage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
   const sp = await searchParams;
-  const ownerId = await resolveOwnerFilter(sp.owner);
+  const me = await currentUserId();
+  if (!me) redirect("/login");
   const showDismissed = sp.show === "dismissed";
   const db = serviceClient();
 
-  // ── Load replies, owner-scoped ────────────────────────────────────
-  let q = db
+  // ── Load replies, hard-scoped to the signed-in operator ──────────
+  // events.owner_id is set by the inbound webhook from the To address
+  // matching user_settings.reply_to_email / from_email. We never show
+  // another operator's replies here — these are private inboxes.
+  const { data, error } = await db
     .from("events")
     .select("id, ts, owner_id, payload, contact:contacts(id, full_name, email, organisation:organisations(id, name))")
     .eq("type", "reply")
+    .eq("owner_id", me)
     .order("ts", { ascending: false })
     .limit(200);
-  if (ownerId) q = q.eq("owner_id", ownerId);
-  const { data, error } = await q;
   const replies = ((data ?? []) as unknown as ReplyEvent[]).filter((r) => {
     const dismissed = !!r.payload?.dismissed_at;
     return showDismissed ? dismissed : !dismissed;
@@ -97,7 +101,6 @@ export default async function RepliesPage({ searchParams }: { searchParams: Prom
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <OwnerFilter current={sp.owner} pathname="/replies" extraParams={{ show: sp.show }} />
           <Link
             href={showDismissed ? "/replies" : "/replies?show=dismissed"}
             className="text-xs text-neutral-500 hover:underline"

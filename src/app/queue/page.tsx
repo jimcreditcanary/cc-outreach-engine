@@ -45,7 +45,9 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
     .order("ts", { ascending: false });
   let q2 = db
     .from("sends")
-    .select("id, subject, status, ts, contact:contacts(id, full_name, email)")
+    // body_text included so the recent activity rows can expand inline
+    // and show what actually went out — no extra round-trip per click.
+    .select("id, subject, status, ts, body_text, contact:contacts(id, full_name, email)")
     .in("status", ["approved", "sent", "suppressed", "failed"])
     .order("ts", { ascending: false })
     .limit(30);
@@ -55,7 +57,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   }
   const [{ data }, { data: recentData }] = await Promise.all([q1, q2]);
   const drafts = (data ?? []) as unknown as Draft[];
-  const recent = (recentData ?? []) as unknown as Array<{ id: string; subject: string | null; status: string; ts: string; contact: { id: string; full_name: string | null; email: string | null } | null }>;
+  const recent = (recentData ?? []) as unknown as Array<{ id: string; subject: string | null; status: string; ts: string; body_text: string | null; contact: { id: string; full_name: string | null; email: string | null } | null }>;
 
   // Cross-owner peek: if my filter is empty, count drafts that exist
   // under other owners so we can tell the operator they're hiding behind
@@ -199,7 +201,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
             <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">approved</span> means it&apos;ll go on the next cron run (or click &ldquo;Send now&rdquo;).{" "}
             <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-800">sent</span> has actually left.
           </p>
-          <ul className="space-y-1 text-sm">
+          <ul className="divide-y divide-neutral-100 text-sm">
             {recent.map((r) => {
               const colour =
                 r.status === "sent" ? "bg-emerald-100 text-emerald-800" :
@@ -207,12 +209,30 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                 r.status === "failed" ? "bg-red-100 text-red-700" :
                 "bg-neutral-200 text-neutral-700";
               return (
-                <li key={r.id} className="flex items-center gap-2 border-b border-neutral-100 py-1">
-                  <span className={`rounded px-1.5 py-0.5 text-xs ${colour}`}>{r.status}</span>
-                  <span className="font-medium">{r.contact?.full_name ?? "?"}</span>
-                  <span className="text-neutral-500">&lt;{r.contact?.email ?? "?"}&gt;</span>
-                  <span className="text-neutral-700">— {r.subject ?? ""}</span>
-                  <span className="ml-auto text-xs text-neutral-400">{new Date(r.ts).toLocaleString("en-GB")}</span>
+                <li key={r.id}>
+                  <details className="group">
+                    <summary className="flex cursor-pointer items-center gap-2 py-1 list-none [&::-webkit-details-marker]:hidden">
+                      <span className={`rounded px-1.5 py-0.5 text-xs ${colour}`}>{r.status}</span>
+                      <span className="font-medium">{r.contact?.full_name ?? "?"}</span>
+                      <span className="text-neutral-500">&lt;{r.contact?.email ?? "?"}&gt;</span>
+                      <span className="text-neutral-700">— {r.subject ?? ""}</span>
+                      <span className="ml-auto text-xs text-neutral-400">{new Date(r.ts).toLocaleString("en-GB")}</span>
+                      <span className="text-neutral-300 group-open:hidden">▸</span>
+                      <span className="hidden text-neutral-300 group-open:inline">▾</span>
+                    </summary>
+                    <div className="my-2 ml-1 rounded border border-neutral-200 bg-neutral-50 p-3 text-xs">
+                      <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-400">
+                        To {r.contact?.email ?? "?"}  ·  {r.subject ?? "(no subject)"}
+                      </div>
+                      {r.body_text ? (
+                        <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words font-sans text-sm text-neutral-800">
+                          {r.body_text}
+                        </pre>
+                      ) : (
+                        <p className="italic text-neutral-400">(body not captured for this send)</p>
+                      )}
+                    </div>
+                  </details>
                 </li>
               );
             })}
