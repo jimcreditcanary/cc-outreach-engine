@@ -57,6 +57,55 @@ async function resolveSenderIdentity(ownerId: string | null | undefined): Promis
   }
 }
 
+export interface TransactionalInput {
+  to: string;
+  subject: string;
+  htmlBody: string;
+  textBody: string;
+  tag?: string;
+  /** Sender identity owner (same resolution as sendBroadcast). */
+  ownerId?: string | null;
+  /** Calendar invite — attached with method=REQUEST so Gmail / Outlook /
+   *  Apple Mail render it as an actionable Yes/Maybe/No invite. */
+  ics?: { filename: string; content: string };
+}
+
+/** Transactional send on the default "outbound" stream — booking invites,
+ *  confirmations, operator notifications. No link tracking (rewritten URLs
+ *  look phishy in transactional mail and break some calendar clients). */
+export async function sendTransactional(input: TransactionalInput): Promise<SendResult> {
+  const token = process.env.POSTMARK_SERVER_TOKEN;
+  if (!token) return { messageId: `dryrun-${Date.now()}`, dryRun: true };
+
+  const { from, replyTo } = await resolveSenderIdentity(input.ownerId);
+  if (!_client) _client = new ServerClient(token);
+  const res = await _client.sendEmail({
+    From: from,
+    To: input.to,
+    Subject: input.subject,
+    HtmlBody: input.htmlBody,
+    TextBody: input.textBody,
+    ReplyTo: replyTo,
+    MessageStream: "outbound",
+    TrackOpens: false,
+    TrackLinks: Models.LinkTrackingOptions.None,
+    Tag: input.tag,
+    ...(input.ics
+      ? {
+          Attachments: [
+            {
+              Name: input.ics.filename,
+              Content: Buffer.from(input.ics.content, "utf8").toString("base64"),
+              ContentType: "text/calendar; charset=utf-8; method=REQUEST",
+              ContentID: null,
+            },
+          ],
+        }
+      : {}),
+  });
+  return { messageId: res.MessageID, dryRun: false };
+}
+
 export async function sendBroadcast(input: SendInput): Promise<SendResult> {
   const token = process.env.POSTMARK_SERVER_TOKEN;
   if (!token) return { messageId: `dryrun-${Date.now()}`, dryRun: true };

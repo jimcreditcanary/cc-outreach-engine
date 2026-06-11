@@ -7,7 +7,12 @@ import { serviceClient } from "../db/client";
 type DB = ReturnType<typeof serviceClient>;
 
 const AUTH_BASE = "https://login.microsoftonline.com";
-export const MS_SCOPES = ["openid", "offline_access", "Calendars.Read", "User.Read"];
+// Calendars.ReadWrite (was .Read) so booking-page events can be written
+// straight into the operator's calendar. Applies to NEW connects; existing
+// tokens keep their original grant (refresh deliberately omits scope below)
+// and event creation 403s → the caller falls back to emailed ICS invites
+// until the operator reconnects.
+export const MS_SCOPES = ["openid", "offline_access", "Calendars.ReadWrite", "User.Read"];
 
 function tenant(): string {
   return process.env.MS_TENANT_ID || "common";
@@ -78,7 +83,11 @@ export async function exchangeCode(code: string): Promise<TokenResponse> {
   );
 }
 
-/** Use the stored refresh token to mint a fresh access token. */
+/** Use the stored refresh token to mint a fresh access token. No scope
+ *  param on purpose: Microsoft then re-issues whatever was originally
+ *  consented. Sending the (now wider) MS_SCOPES here would fail refreshes
+ *  for tokens granted under the old read-only scope and break the hourly
+ *  calendar sync until everyone reconnected. */
 export async function refreshAccessToken(refresh_token: string): Promise<TokenResponse> {
   return tokenRequest(
     new URLSearchParams({
@@ -86,7 +95,6 @@ export async function refreshAccessToken(refresh_token: string): Promise<TokenRe
       client_secret: clientSecret(),
       refresh_token,
       grant_type: "refresh_token",
-      scope: MS_SCOPES.join(" "),
     }),
   );
 }

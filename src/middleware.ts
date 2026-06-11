@@ -11,6 +11,7 @@ const PUBLIC_PREFIXES = [
   "/api/cron",
   "/api/auth", // reserved for future OAuth callback if needed
   "/unsubscribe", // clicked from outreach emails — recipient isn't logged in
+  "/book", // public booking pages — external visitors book meetings here
 ];
 
 export async function middleware(req: NextRequest) {

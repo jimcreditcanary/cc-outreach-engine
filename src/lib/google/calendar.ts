@@ -33,6 +33,11 @@ export interface GoogleEvent {
   online_url: string | null;
   description: string | null;
   attendees: GoogleAttendee[];
+  /** TRANSP:TRANSPARENT — marked "free" (most all-day events). The booking
+   *  availability check skips these; the meeting sync keeps them. */
+  transparent: boolean;
+  /** Date-only DTSTART (all-day event). */
+  all_day: boolean;
 }
 
 /** Secret addresses look like
@@ -102,6 +107,8 @@ function toGoogleEvent(ev: VEvent, key: string, start: Date, end: Date | null): 
     online_url: onlineUrl(ev, description, location),
     description,
     attendees: parseAttendees(ev),
+    transparent: ev.transparency === "TRANSPARENT",
+    all_day: !!ev.start?.dateOnly,
   };
 }
 

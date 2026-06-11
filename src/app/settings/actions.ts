@@ -198,3 +198,73 @@ export async function resendSignatureConfirmationAction() {
   }
   revalidatePath("/settings");
 }
+
+// ── Booking page (public /book/<slug>) ──────────────────────────────
+
+const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
+const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Save the operator's public booking-page config. Clearing the link name
+ *  takes the page offline (slug null → /book 404s); everything else has
+ *  safe defaults so a partial form can't produce a broken page. */
+export async function saveBookingSettingsAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+
+  const slug = (str(formData.get("booking_slug")) ?? "").toLowerCase().trim().replace(/\s+/g, "-") || null;
+  if (slug && !SLUG_RE.test(slug)) {
+    await flash("error", "Link name can only use lowercase letters, numbers and hyphens (2–40 chars).");
+    revalidatePath("/settings");
+    return;
+  }
+
+  const dayStart = str(formData.get("booking_day_start")) ?? "09:00";
+  const dayEnd = str(formData.get("booking_day_end")) ?? "17:00";
+  if (!HM_RE.test(dayStart) || !HM_RE.test(dayEnd) || dayStart >= dayEnd) {
+    await flash("error", "Working hours need a start before the end (HH:MM).");
+    revalidatePath("/settings");
+    return;
+  }
+
+  const tz = str(formData.get("booking_tz")) ?? "Europe/London";
+  try {
+    new Intl.DateTimeFormat("en-GB", { timeZone: tz });
+  } catch {
+    await flash("error", `Unknown timezone "${tz}" — use an IANA name like Europe/London.`);
+    revalidatePath("/settings");
+    return;
+  }
+
+  const days = formData.getAll("booking_days").map((d) => String(d));
+  const clamp = (v: FormDataEntryValue | null, def: number, min: number, max: number) => {
+    const n = parseInt(String(v ?? ""), 10);
+    return isFinite(n) ? Math.min(max, Math.max(min, n)) : def;
+  };
+
+  const { error } = await serviceClient().from("user_settings").upsert(
+    {
+      user_id: me.id,
+      booking_slug: slug,
+      booking_duration_mins: clamp(formData.get("booking_duration_mins"), 30, 10, 120),
+      booking_buffer_mins: clamp(formData.get("booking_buffer_mins"), 15, 0, 60),
+      booking_day_start: dayStart,
+      booking_day_end: dayEnd,
+      booking_days: days.length > 0 ? days : ["mon", "tue", "wed", "thu", "fri"],
+      booking_tz: tz,
+      booking_title_template: str(formData.get("booking_title_template")),
+      booking_min_notice_hours: clamp(formData.get("booking_min_notice_hours"), 4, 0, 168),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) {
+    const taken = error.message.includes("booking_slug");
+    await flash("error", taken ? `The link name "${slug}" is already taken by another operator.` : `Couldn't save: ${error.message} — has migration 035 run?`);
+  } else if (slug) {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";
+    await flash("success", `Booking page live at ${appUrl}/book/${slug}`);
+  } else {
+    await flash("success", "Booking page disabled (link name cleared).");
+  }
+  revalidatePath("/settings");
+}

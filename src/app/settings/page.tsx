@@ -8,6 +8,7 @@ import {
   saveGranolaTokenAction,
   syncGranolaNowAction,
   disconnectGranolaAction,
+  saveBookingSettingsAction,
 } from "./actions";
 import {
   connectGoogleCalendarAction,
@@ -30,16 +31,25 @@ export default async function SettingsPage() {
   const db = serviceClient();
   // google_ics_url queried separately so the whole page doesn't blank out
   // if migration 034 hasn't run yet — only the Google card degrades.
-  const [{ data }, { data: gcal }, msConnected] = await Promise.all([
+  const [{ data }, { data: gcal }, { data: bk, error: bkErr }, msConnected] = await Promise.all([
     db
       .from("user_settings")
       .select("from_email, reply_to_email, postmark_signature_id, postmark_signature_verified, postmark_signature_error, postmark_signature_checked_at, granola_api_token")
       .eq("user_id", me.id)
       .maybeSingle(),
     db.from("user_settings").select("google_ics_url").eq("user_id", me.id).maybeSingle(),
+    // Booking columns isolated too — migration 035 pending only greys this card.
+    db
+      .from("user_settings")
+      .select("booking_slug, booking_duration_mins, booking_buffer_mins, booking_day_start, booking_day_end, booking_days, booking_tz, booking_title_template, booking_min_notice_hours")
+      .eq("user_id", me.id)
+      .maybeSingle(),
     isConnected(db, me.id),
   ]);
   const googleConnected = !!gcal?.google_ics_url;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";
+  const bookingDays = (bk?.booking_days as string[] | null) ?? ["mon", "tue", "wed", "thu", "fri"];
+  const DAYS: [string, string][] = [["mon", "Mon"], ["tue", "Tue"], ["wed", "Wed"], ["thu", "Thu"], ["fri", "Fri"], ["sat", "Sat"], ["sun", "Sun"]];
 
   const envFrom = process.env.POSTMARK_FROM ?? "(POSTMARK_FROM unset)";
   const envReply = process.env.POSTMARK_REPLY_TO ?? "(POSTMARK_REPLY_TO unset)";
@@ -249,6 +259,103 @@ export default async function SettingsPage() {
             </form>
             <span className="text-neutral-500">Auto-sync runs hourly.</span>
           </div>
+        )}
+      </section>
+
+      {/* Booking page — public Calendly-style /book/<slug> */}
+      <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Booking page — share a link, get meetings</h2>
+        <p className="mb-4 text-xs text-neutral-500">
+          A public page where anyone can book a slot with you. Availability comes from your connected
+          calendars above (plus existing CRM meetings); a booking creates the contact, the meeting, and
+          either writes straight into your Outlook calendar or emails calendar invites to you both.
+        </p>
+        {bkErr ? (
+          <p className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            Run migration <strong>035_booking.sql</strong> in Supabase to enable booking pages.
+          </p>
+        ) : (
+          <>
+            {bk?.booking_slug && (
+              <div className="mb-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                <span className="text-xs font-medium uppercase tracking-wide text-emerald-700">Your booking link</span>
+                <a href={`/book/${bk.booking_slug}`} target="_blank" rel="noreferrer" className="mt-0.5 block break-all font-medium text-emerald-900 underline">
+                  {appUrl}/book/{bk.booking_slug}
+                </a>
+                <p className="mt-1 text-xs text-emerald-700">Share it anywhere — email signatures, LinkedIn, outreach footers.</p>
+              </div>
+            )}
+            <form action={saveBookingSettingsAction} className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={lbl}>Link name (clear to disable)</label>
+                  <div className="flex items-center gap-1">
+                    <span className="whitespace-nowrap text-xs text-neutral-400">{appUrl.replace(/^https?:\/\//, "")}/book/</span>
+                    <input name="booking_slug" defaultValue={bk?.booking_slug ?? ""} placeholder="jim" className={field} />
+                  </div>
+                </div>
+                <div>
+                  <label className={lbl}>Meeting title template</label>
+                  <input
+                    name="booking_title_template"
+                    defaultValue={bk?.booking_title_template ?? ""}
+                    placeholder="{operator} × {visitor}"
+                    className={field}
+                  />
+                </div>
+                <div>
+                  <label className={lbl}>Duration</label>
+                  <select name="booking_duration_mins" defaultValue={String(bk?.booking_duration_mins ?? 30)} className={field}>
+                    {[15, 30, 45, 60].map((m) => <option key={m} value={m}>{m} minutes</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={lbl}>Buffer around meetings</label>
+                  <select name="booking_buffer_mins" defaultValue={String(bk?.booking_buffer_mins ?? 15)} className={field}>
+                    {[0, 10, 15, 30].map((m) => <option key={m} value={m}>{m} minutes</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={lbl}>Day starts</label>
+                  <input name="booking_day_start" type="time" defaultValue={bk?.booking_day_start ?? "09:00"} className={field} />
+                </div>
+                <div>
+                  <label className={lbl}>Day ends</label>
+                  <input name="booking_day_end" type="time" defaultValue={bk?.booking_day_end ?? "17:00"} className={field} />
+                </div>
+                <div>
+                  <label className={lbl}>Minimum notice (hours)</label>
+                  <input name="booking_min_notice_hours" type="number" min={0} max={168} defaultValue={String(bk?.booking_min_notice_hours ?? 4)} className={field} />
+                </div>
+                <div>
+                  <label className={lbl}>Timezone (IANA)</label>
+                  <input name="booking_tz" defaultValue={bk?.booking_tz ?? "Europe/London"} className={field} />
+                </div>
+              </div>
+              <div>
+                <label className={lbl}>Bookable days</label>
+                <div className="flex flex-wrap gap-3">
+                  {DAYS.map(([v, label]) => (
+                    <label key={v} className="flex items-center gap-1.5 text-sm text-neutral-700">
+                      <input type="checkbox" name="booking_days" value={v} defaultChecked={bookingDays.includes(v)} className="h-4 w-4" />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <PendingButton
+                className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
+                pendingLabel="Saving…"
+              >
+                Save booking page
+              </PendingButton>
+              <p className="text-xs text-neutral-400">
+                Tip: bookings write straight into Outlook calendars connected with the latest permissions —
+                reconnect Outlook above once to enable that. Google (and older Outlook connections) get the
+                invite by email instead.
+              </p>
+            </form>
+          </>
         )}
       </section>
 
