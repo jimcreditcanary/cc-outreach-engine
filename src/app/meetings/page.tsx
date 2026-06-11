@@ -4,16 +4,8 @@ import { serviceClient } from "@/lib/db/client";
 import { currentUser } from "@/lib/auth/server";
 import { isConnected } from "@/lib/microsoft/oauth";
 import { canSeeMeeting, emailAliases } from "@/lib/meetings/visibility";
-import {
-  syncCalendarAction,
-  setSalesRelevantAction,
-  disconnectMicrosoftAction,
-  backfillMeetingLinksAction,
-  connectGoogleCalendarAction,
-  disconnectGoogleCalendarAction,
-} from "./actions";
+import { syncCalendarAction, setSalesRelevantAction, backfillMeetingLinksAction } from "./actions";
 import { PendingButton } from "@/components/PendingButton";
-import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -40,13 +32,15 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
   const me = await currentUser();
   if (!me) redirect("/login");
 
-  // Connection state + my email aliases in one settings read. The ICS URL
-  // is a secret — only its presence reaches the page, never the value.
-  const [msConnected, { data: mySettings }] = await Promise.all([
+  // Connection state + my email aliases. google_ics_url is queried on its
+  // own so a missing migration 034 can't take the alias read down with it —
+  // and only its presence reaches the page, never the secret value.
+  const [msConnected, { data: mySettings }, { data: gcal }] = await Promise.all([
     isConnected(db, me.id),
-    db.from("user_settings").select("reply_to_email, from_email, google_ics_url").eq("user_id", me.id).maybeSingle(),
+    db.from("user_settings").select("reply_to_email, from_email").eq("user_id", me.id).maybeSingle(),
+    db.from("user_settings").select("google_ics_url").eq("user_id", me.id).maybeSingle(),
   ]);
-  const googleConnected = !!mySettings?.google_ics_url;
+  const googleConnected = !!gcal?.google_ics_url;
   const myEmails = emailAliases(me.email, mySettings);
   const anyConnected = msConnected || googleConnected;
 
@@ -91,66 +85,15 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
           <p className="text-sm text-neutral-500">
             {anyConnected
               ? `${upcoming.length} upcoming · ${past.length} recent — your meetings only (owner or invited by email).`
-              : "Connect Outlook or Google Calendar to pull your meetings in."}
+              : "No calendar connected yet."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {!msConnected ? (
-            <a href="/api/auth/microsoft/start" className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
-              Connect Outlook
-            </a>
+          {!anyConnected ? (
+            <Link href="/settings" className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
+              Connect a calendar in Settings →
+            </Link>
           ) : (
-            <form action={disconnectMicrosoftAction}>
-              <ConfirmSubmit
-                className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100"
-                message="Disconnect Outlook? Existing meetings stay; sync stops until you reconnect."
-              >
-                Outlook ✓ — disconnect
-              </ConfirmSubmit>
-            </form>
-          )}
-
-          {!googleConnected ? (
-            <details className="relative">
-              <summary className="cursor-pointer list-none rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 [&::-webkit-details-marker]:hidden">
-                Connect Google Calendar
-              </summary>
-              <div className="absolute right-0 z-10 mt-2 w-[26rem] rounded-lg border border-neutral-200 bg-white p-4 text-sm shadow-lg">
-                <p className="font-medium text-neutral-800">Paste your secret iCal address</p>
-                <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-neutral-600">
-                  <li>Open <a href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">Google Calendar settings</a></li>
-                  <li>Under <strong>Settings for my calendars</strong>, pick your calendar</li>
-                  <li>Scroll to <strong>Integrate calendar</strong></li>
-                  <li>Copy the <strong>Secret address in iCal format</strong> (ends in .ics)</li>
-                </ol>
-                <form action={connectGoogleCalendarAction} className="mt-3 flex gap-2">
-                  <input
-                    name="ics_url"
-                    placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
-                    className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-xs"
-                    required
-                  />
-                  <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700" pendingLabel="Connecting…">
-                    Connect
-                  </PendingButton>
-                </form>
-                <p className="mt-2 text-[11px] text-neutral-400">
-                  The address is private to you — it&apos;s stored server-side only and syncs hourly, exactly like the Granola token.
-                </p>
-              </div>
-            </details>
-          ) : (
-            <form action={disconnectGoogleCalendarAction}>
-              <ConfirmSubmit
-                className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100"
-                message="Disconnect Google Calendar? Existing meetings stay; sync stops. To fully revoke, also reset the secret address in Google Calendar settings."
-              >
-                Google ✓ — disconnect
-              </ConfirmSubmit>
-            </form>
-          )}
-
-          {anyConnected && (
             <>
               <form action={syncCalendarAction}>
                 <PendingButton className="rounded bg-neutral-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800" pendingLabel="Syncing…">

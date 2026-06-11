@@ -9,6 +9,13 @@ import {
   syncGranolaNowAction,
   disconnectGranolaAction,
 } from "./actions";
+import {
+  connectGoogleCalendarAction,
+  disconnectGoogleCalendarAction,
+  disconnectMicrosoftAction,
+  syncCalendarAction,
+} from "../meetings/actions";
+import { isConnected } from "@/lib/microsoft/oauth";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 
@@ -20,11 +27,19 @@ const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 
 export default async function SettingsPage() {
   const me = await currentUser();
   if (!me) redirect("/login");
-  const { data } = await serviceClient()
-    .from("user_settings")
-    .select("from_email, reply_to_email, postmark_signature_id, postmark_signature_verified, postmark_signature_error, postmark_signature_checked_at, granola_api_token")
-    .eq("user_id", me.id)
-    .maybeSingle();
+  const db = serviceClient();
+  // google_ics_url queried separately so the whole page doesn't blank out
+  // if migration 034 hasn't run yet — only the Google card degrades.
+  const [{ data }, { data: gcal }, msConnected] = await Promise.all([
+    db
+      .from("user_settings")
+      .select("from_email, reply_to_email, postmark_signature_id, postmark_signature_verified, postmark_signature_error, postmark_signature_checked_at, granola_api_token")
+      .eq("user_id", me.id)
+      .maybeSingle(),
+    db.from("user_settings").select("google_ics_url").eq("user_id", me.id).maybeSingle(),
+    isConnected(db, me.id),
+  ]);
+  const googleConnected = !!gcal?.google_ics_url;
 
   const envFrom = process.env.POSTMARK_FROM ?? "(POSTMARK_FROM unset)";
   const envReply = process.env.POSTMARK_REPLY_TO ?? "(POSTMARK_REPLY_TO unset)";
@@ -134,6 +149,105 @@ export default async function SettingsPage() {
               Once verified, every email you own (queue drafts you created, newsletter sends you trigger) will go out from
               this address. Until then, sends fall back to the workspace default.
             </p>
+          </div>
+        )}
+      </section>
+
+      {/* Calendars — Outlook (OAuth) + Google Calendar (secret iCal URL) */}
+      <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Calendars — meeting sync</h2>
+        <p className="mb-4 text-xs text-neutral-500">
+          Connected calendars feed <a href="/meetings" className="text-blue-700 hover:underline">/meetings</a> hourly:
+          attendees are matched to contacts, companies + deals inferred automatically. You only ever see
+          meetings from your own calendars (or ones you&apos;re invited to by email).
+        </p>
+
+        {/* Outlook / Microsoft 365 */}
+        <div className="rounded border border-neutral-200 bg-neutral-50 p-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium text-neutral-800">Outlook / Microsoft 365</span>
+            {msConnected ? (
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">✓ connected</span>
+            ) : (
+              <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-xs font-medium text-neutral-700">not connected</span>
+            )}
+            <span className="ml-auto" />
+            {msConnected ? (
+              <form action={disconnectMicrosoftAction}>
+                <ConfirmSubmit
+                  className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                  message="Disconnect Outlook? Existing meetings stay; sync stops until you reconnect."
+                >
+                  Disconnect
+                </ConfirmSubmit>
+              </form>
+            ) : (
+              <a href="/api/auth/microsoft/start" className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">
+                Connect Outlook
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Google Calendar */}
+        <div className="mt-3 rounded border border-neutral-200 bg-neutral-50 p-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium text-neutral-800">Google Calendar</span>
+            {googleConnected ? (
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">✓ connected</span>
+            ) : (
+              <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-xs font-medium text-neutral-700">not connected</span>
+            )}
+            <span className="ml-auto" />
+            {googleConnected && (
+              <form action={disconnectGoogleCalendarAction}>
+                <ConfirmSubmit
+                  className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                  message="Disconnect Google Calendar? Existing meetings stay; sync stops. To fully revoke, also reset the secret address in Google Calendar settings."
+                >
+                  Disconnect
+                </ConfirmSubmit>
+              </form>
+            )}
+          </div>
+          {!googleConnected && (
+            <>
+              <ol className="mt-2 list-decimal space-y-0.5 pl-4 text-xs text-neutral-600">
+                <li>Open <a href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">Google Calendar settings</a></li>
+                <li>Under <strong>Settings for my calendars</strong>, pick your calendar</li>
+                <li>Scroll to <strong>Integrate calendar</strong></li>
+                <li>Copy the <strong>Secret address in iCal format</strong> (ends in .ics)</li>
+              </ol>
+              <form action={connectGoogleCalendarAction} className="mt-2 flex flex-wrap gap-2">
+                <input
+                  name="ics_url"
+                  placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
+                  className="min-w-[18rem] flex-1 rounded border border-neutral-300 px-2 py-1.5 text-xs"
+                  autoComplete="off"
+                  required
+                />
+                <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700" pendingLabel="Connecting…">
+                  Connect
+                </PendingButton>
+              </form>
+              <p className="mt-2 text-[11px] text-neutral-400">
+                The address is private to you — stored server-side only and never shown again, exactly like the Granola key.
+              </p>
+            </>
+          )}
+        </div>
+
+        {(msConnected || googleConnected) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <form action={syncCalendarAction}>
+              <PendingButton
+                className="rounded border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                pendingLabel="Syncing…"
+              >
+                Sync now
+              </PendingButton>
+            </form>
+            <span className="text-neutral-500">Auto-sync runs hourly.</span>
           </div>
         )}
       </section>

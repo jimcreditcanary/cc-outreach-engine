@@ -16,6 +16,13 @@ const str = (v: FormDataEntryValue | null): string | null => {
   return s === "" ? null : s;
 };
 
+// Calendar connect/disconnect state renders in two places: the /meetings
+// header summary and the Calendars card on /settings.
+const revalidateCalendarPages = () => {
+  revalidatePath("/meetings");
+  revalidatePath("/settings");
+};
+
 /** Sync every calendar source this operator has connected. Each source
  *  reports "not connected" through its own ok/reason rather than failing
  *  the whole action, so Outlook-only and Google-only setups both work. */
@@ -49,14 +56,14 @@ export async function connectGoogleCalendarAction(formData: FormData) {
   const url = str(formData.get("ics_url"));
   if (!url || !isGoogleIcsUrl(url)) {
     await flash("error", "That doesn't look like a Google secret iCal address — it should start with https://calendar.google.com/calendar/ical/… and end in .ics");
-    revalidatePath("/meetings");
+    revalidateCalendarPages();
     return;
   }
   try {
     await fetchIcs(url);
   } catch (e) {
     await flash("error", (e as Error).message);
-    revalidatePath("/meetings");
+    revalidateCalendarPages();
     return;
   }
   const db = serviceClient();
@@ -65,7 +72,7 @@ export async function connectGoogleCalendarAction(formData: FormData) {
     .upsert({ user_id: me.id, google_ics_url: url, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
   if (error) {
     await flash("error", `Couldn't save: ${error.message} — has migration 034 run?`);
-    revalidatePath("/meetings");
+    revalidateCalendarPages();
     return;
   }
   const res = await syncGoogleCalendar(db, me.id).catch((e) => ({ ok: false, reason: (e as Error).message, fetched: 0, upserted: 0, linked_to_contact: 0 }));
@@ -75,7 +82,7 @@ export async function connectGoogleCalendarAction(formData: FormData) {
       ? `Google Calendar connected — ${res.upserted} event${res.upserted === 1 ? "" : "s"} synced (${res.linked_to_contact} linked to contacts)`
       : `Connected, but first sync failed: ${res.reason}`,
   );
-  revalidatePath("/meetings");
+  revalidateCalendarPages();
 }
 
 /** Disconnect Google Calendar: drop the stored secret URL. Existing
@@ -89,7 +96,7 @@ export async function disconnectGoogleCalendarAction() {
     .from("user_settings")
     .upsert({ user_id: me.id, google_ics_url: null, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
   await flash("success", "Google Calendar disconnected — existing meetings kept, sync stopped");
-  revalidatePath("/meetings");
+  revalidateCalendarPages();
 }
 
 /** Re-link existing meetings whose org / primary contact / deal is null.
@@ -197,7 +204,7 @@ export async function disconnectMicrosoftAction() {
   if (!me) redirect("/login");
   await serviceClient().from("ms_oauth_tokens").delete().eq("user_id", me.id);
   await flash("success", "Outlook disconnected — Connect again to re-sync");
-  revalidatePath("/meetings");
+  revalidateCalendarPages();
 }
 
 /** Convert a not-yet-in-CRM meeting attendee into a real contact, optionally
