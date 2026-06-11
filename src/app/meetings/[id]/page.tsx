@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { currentUser } from "@/lib/auth/server";
+import { canSeeMeeting, emailAliases } from "@/lib/meetings/visibility";
 import { generateBriefAction, updateMeetingAction, deleteMeetingAction, setSalesRelevantAction, saveTranscriptAction, generatePostSummaryAction, addAttendeeToCrmAction } from "../actions";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
@@ -32,6 +33,28 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
   }
   if (!m) notFound();
 
+  // Hard per-user fence — same rule as the /meetings list: you can open a
+  // meeting only if it's off one of YOUR calendars or you're on the invite.
+  // Calendars are private, unlike the shared CRM lists.
+  const meUser = await currentUser();
+  if (!meUser) redirect("/login");
+  const { data: myVisSettings } = await db
+    .from("user_settings")
+    .select("reply_to_email, from_email")
+    .eq("user_id", meUser.id)
+    .maybeSingle();
+  const myEmails = emailAliases(meUser.email, myVisSettings);
+  if (!canSeeMeeting(m as { owner_id: string | null; attendees: unknown }, meUser.id, myEmails)) {
+    return (
+      <main className="px-8 py-6">
+        <Link href="/meetings" className="text-sm text-blue-700 hover:underline">← Meetings</Link>
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          🔒 This meeting is on another operator&apos;s calendar and you&apos;re not on the invite, so it isn&apos;t visible to you.
+        </div>
+      </main>
+    );
+  }
+
   // Pre-load orgs for the per-attendee "Add to CRM" Combobox. One round trip
   // even if there are many attendees; bounded at 2000.
   const { data: orgsData } = await db
@@ -61,11 +84,9 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
     }
   } catch { /* best-effort */ }
 
-  // Soft per-user fence: a user can still load any meeting by direct URL
-  // (handy when sharing links across the team), but if it's not theirs we
-  // flag it so they know they're looking at someone else's calendar.
-  const meUser = await currentUser();
-  const notMine = meUser && m.owner_id && m.owner_id !== meUser.id;
+  // You're on the invite but it synced from a teammate's calendar — let
+  // them know whose meeting record they're looking at.
+  const notMine = m.owner_id && m.owner_id !== meUser.id;
 
   const [{ data: orgs }, { data: orgContacts }, { data: orgDeals }] = await Promise.all([
     db.from("organisations").select("id, name").order("name").limit(1000),
@@ -112,7 +133,7 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
           {end && ` → ${end.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`}
           {m.location && ` · ${m.location}`}
           {m.online_url && (
-            <> · <a href={m.online_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">join Teams</a></>
+            <> · <a href={m.online_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">join call</a></>
           )}
         </p>
       </header>

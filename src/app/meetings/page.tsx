@@ -1,12 +1,19 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { currentUser } from "@/lib/auth/server";
 import { isConnected } from "@/lib/microsoft/oauth";
-import { syncCalendarAction, setSalesRelevantAction, disconnectMicrosoftAction, backfillMeetingLinksAction } from "./actions";
+import { canSeeMeeting, emailAliases } from "@/lib/meetings/visibility";
+import {
+  syncCalendarAction,
+  setSalesRelevantAction,
+  disconnectMicrosoftAction,
+  backfillMeetingLinksAction,
+  connectGoogleCalendarAction,
+  disconnectGoogleCalendarAction,
+} from "./actions";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
-import { OwnerFilter } from "@/components/OwnerFilter";
-import { resolveOwnerFilter } from "@/lib/auth/owner";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,27 +27,52 @@ interface Row {
   sales_relevant: boolean;
   online_url: string | null;
   brief: string | null;
+  owner_id: string | null;
+  attendees: unknown;
   organisation: { id: string; name: string | null } | null;
   primary_contact: { id: string; full_name: string | null } | null;
 }
 
-export default async function MeetingsPage({ searchParams }: { searchParams: Promise<{ show?: string; ms_connected?: string; ms_error?: string; owner?: string }> }) {
+export default async function MeetingsPage({ searchParams }: { searchParams: Promise<{ show?: string; ms_connected?: string; ms_error?: string }> }) {
   const sp = await searchParams;
   const showAll = sp.show === "all";
   const db = serviceClient();
   const me = await currentUser();
-  const connected = me ? await isConnected(db, me.id) : false;
-  const ownerId = await resolveOwnerFilter(sp.owner);
+  if (!me) redirect("/login");
+
+  // Connection state + my email aliases in one settings read. The ICS URL
+  // is a secret — only its presence reaches the page, never the value.
+  const [msConnected, { data: mySettings }] = await Promise.all([
+    isConnected(db, me.id),
+    db.from("user_settings").select("reply_to_email, from_email, google_ics_url").eq("user_id", me.id).maybeSingle(),
+  ]);
+  const googleConnected = !!mySettings?.google_ics_url;
+  const myEmails = emailAliases(me.email, mySettings);
+  const anyConnected = msConnected || googleConnected;
 
   let query = db
     .from("meetings")
-    .select("id, subject, start_at, end_at, status, sales_relevant, online_url, brief, organisation:organisations(id, name), primary_contact:contacts(id, full_name)")
+    .select("id, subject, start_at, end_at, status, sales_relevant, online_url, brief, owner_id, attendees, organisation:organisations(id, name), primary_contact:contacts(id, full_name)")
     .order("start_at", { ascending: true })
     .gte("start_at", new Date(Date.now() - 7 * 86_400_000).toISOString());
   if (!showAll) query = query.eq("sales_relevant", true);
-  if (ownerId) query = query.eq("owner_id", ownerId);
   const { data } = await query;
-  const rows = (data ?? []) as unknown as Row[];
+
+  // Hard per-user scope: your own calendars' meetings, plus anything you're
+  // invited to by email. There's deliberately no "all users" switch here —
+  // calendars are private, unlike the shared CRM lists.
+  const visible = ((data ?? []) as unknown as Row[]).filter((r) => canSeeMeeting(r, me.id, myEmails));
+
+  // Collapse cross-calendar copies: when you AND a teammate both sync the
+  // same event (each calendar produces its own row), prefer your own row —
+  // that's the one carrying your brief / notes / Join link.
+  const byKey = new Map<string, Row>();
+  for (const r of visible) {
+    const key = `${r.start_at}|${(r.subject ?? "").trim().toLowerCase()}`;
+    const cur = byKey.get(key);
+    if (!cur || (cur.owner_id !== me.id && r.owner_id === me.id)) byKey.set(key, r);
+  }
+  const rows = [...byKey.values()];
 
   const now = Date.now();
   // Query orders ascending so Upcoming reads soonest-first (Today before
@@ -53,20 +85,72 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
 
   return (
     <main className="px-8 py-6">
-      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 pb-3">
         <div>
           <h1 className="text-xl font-semibold">Meetings</h1>
           <p className="text-sm text-neutral-500">
-            Synced from Outlook. {connected ? `${upcoming.length} upcoming · ${past.length} recent` : "Microsoft account not connected yet."}
+            {anyConnected
+              ? `${upcoming.length} upcoming · ${past.length} recent — your meetings only (owner or invited by email).`
+              : "Connect Outlook or Google Calendar to pull your meetings in."}
           </p>
         </div>
-        <OwnerFilter current={sp.owner} pathname="/meetings" extraParams={{ show: sp.show }} />
-        <div className="flex items-center gap-2">
-          {!connected ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {!msConnected ? (
             <a href="/api/auth/microsoft/start" className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
               Connect Outlook
             </a>
           ) : (
+            <form action={disconnectMicrosoftAction}>
+              <ConfirmSubmit
+                className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100"
+                message="Disconnect Outlook? Existing meetings stay; sync stops until you reconnect."
+              >
+                Outlook ✓ — disconnect
+              </ConfirmSubmit>
+            </form>
+          )}
+
+          {!googleConnected ? (
+            <details className="relative">
+              <summary className="cursor-pointer list-none rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 [&::-webkit-details-marker]:hidden">
+                Connect Google Calendar
+              </summary>
+              <div className="absolute right-0 z-10 mt-2 w-[26rem] rounded-lg border border-neutral-200 bg-white p-4 text-sm shadow-lg">
+                <p className="font-medium text-neutral-800">Paste your secret iCal address</p>
+                <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-neutral-600">
+                  <li>Open <a href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">Google Calendar settings</a></li>
+                  <li>Under <strong>Settings for my calendars</strong>, pick your calendar</li>
+                  <li>Scroll to <strong>Integrate calendar</strong></li>
+                  <li>Copy the <strong>Secret address in iCal format</strong> (ends in .ics)</li>
+                </ol>
+                <form action={connectGoogleCalendarAction} className="mt-3 flex gap-2">
+                  <input
+                    name="ics_url"
+                    placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
+                    className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-xs"
+                    required
+                  />
+                  <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700" pendingLabel="Connecting…">
+                    Connect
+                  </PendingButton>
+                </form>
+                <p className="mt-2 text-[11px] text-neutral-400">
+                  The address is private to you — it&apos;s stored server-side only and syncs hourly, exactly like the Granola token.
+                </p>
+              </div>
+            </details>
+          ) : (
+            <form action={disconnectGoogleCalendarAction}>
+              <ConfirmSubmit
+                className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100"
+                message="Disconnect Google Calendar? Existing meetings stay; sync stops. To fully revoke, also reset the secret address in Google Calendar settings."
+              >
+                Google ✓ — disconnect
+              </ConfirmSubmit>
+            </form>
+          )}
+
+          {anyConnected && (
             <>
               <form action={syncCalendarAction}>
                 <PendingButton className="rounded bg-neutral-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800" pendingLabel="Syncing…">
@@ -81,14 +165,6 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
                 >
                   ⛓ Re-link
                 </PendingButton>
-              </form>
-              <form action={disconnectMicrosoftAction}>
-                <ConfirmSubmit
-                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100"
-                  message="Disconnect Outlook? Existing meetings stay; sync stops until you reconnect."
-                >
-                  Disconnect
-                </ConfirmSubmit>
               </form>
             </>
           )}
@@ -112,7 +188,7 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
       </div>
 
       {/* Upcoming */}
-      <Section title={`Upcoming (${upcoming.length})`} rows={upcoming} emptyMsg="Nothing scheduled. Sync to pull from Outlook." />
+      <Section title={`Upcoming (${upcoming.length})`} rows={upcoming} emptyMsg="Nothing scheduled. Sync to pull from your calendar." />
       <Section title={`Recent (${past.length})`} rows={past} emptyMsg="No recent meetings in the last 7 days." />
     </main>
   );

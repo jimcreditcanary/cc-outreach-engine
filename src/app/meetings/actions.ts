@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { syncCalendar, backfillMeetingLinks } from "@/lib/meetings/sync";
+import { syncGoogleCalendar } from "@/lib/google/sync";
+import { fetchIcs, isGoogleIcsUrl } from "@/lib/google/calendar";
 import { generateMeetingBrief } from "@/lib/meetings/brief";
 import { generatePostMeetingSummary } from "@/lib/meetings/postSummary";
 import { flash } from "@/lib/flash";
@@ -14,14 +16,79 @@ const str = (v: FormDataEntryValue | null): string | null => {
   return s === "" ? null : s;
 };
 
+/** Sync every calendar source this operator has connected. Each source
+ *  reports "not connected" through its own ok/reason rather than failing
+ *  the whole action, so Outlook-only and Google-only setups both work. */
 export async function syncCalendarAction() {
   const me = await currentUser();
   if (!me) redirect("/login");
-  const res = await syncCalendar(serviceClient(), me.id);
-  if (!res.ok && res.reason?.includes("not connected")) {
-    redirect("/api/auth/microsoft/start");
+  const db = serviceClient();
+  const [ms, g] = [
+    await syncCalendar(db, me.id).catch((e) => ({ ok: false, reason: (e as Error).message, fetched: 0, upserted: 0, linked_to_contact: 0 })),
+    await syncGoogleCalendar(db, me.id).catch((e) => ({ ok: false, reason: (e as Error).message, fetched: 0, upserted: 0, linked_to_contact: 0 })),
+  ];
+  if (!ms.ok && !g.ok) {
+    await flash("error", `Nothing synced. Outlook: ${ms.reason} · Google: ${g.reason}`);
+  } else {
+    const parts: string[] = [];
+    if (ms.ok) parts.push(`Outlook ${ms.upserted} event${ms.upserted === 1 ? "" : "s"} (${ms.linked_to_contact} linked)`);
+    if (g.ok) parts.push(`Google ${g.upserted} event${g.upserted === 1 ? "" : "s"} (${g.linked_to_contact} linked)`);
+    await flash("success", `Calendar synced — ${parts.join(" · ")}`);
   }
-  await flash("success", `Calendar synced — ${res.upserted ?? 0} event${res.upserted === 1 ? "" : "s"} (${res.linked_to_contact ?? 0} linked to contacts)`);
+  revalidatePath("/meetings");
+}
+
+/** Connect Google Calendar by saving the operator's secret iCal address.
+ *  The URL is a capability credential — stored server-side in user_settings
+ *  (like the Granola token) and never rendered back to the browser. We
+ *  test-fetch before saving so a bad paste fails loudly, then run an
+ *  immediate sync so /meetings populates without waiting for the cron. */
+export async function connectGoogleCalendarAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const url = str(formData.get("ics_url"));
+  if (!url || !isGoogleIcsUrl(url)) {
+    await flash("error", "That doesn't look like a Google secret iCal address — it should start with https://calendar.google.com/calendar/ical/… and end in .ics");
+    revalidatePath("/meetings");
+    return;
+  }
+  try {
+    await fetchIcs(url);
+  } catch (e) {
+    await flash("error", (e as Error).message);
+    revalidatePath("/meetings");
+    return;
+  }
+  const db = serviceClient();
+  const { error } = await db
+    .from("user_settings")
+    .upsert({ user_id: me.id, google_ics_url: url, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  if (error) {
+    await flash("error", `Couldn't save: ${error.message} — has migration 034 run?`);
+    revalidatePath("/meetings");
+    return;
+  }
+  const res = await syncGoogleCalendar(db, me.id).catch((e) => ({ ok: false, reason: (e as Error).message, fetched: 0, upserted: 0, linked_to_contact: 0 }));
+  await flash(
+    res.ok ? "success" : "error",
+    res.ok
+      ? `Google Calendar connected — ${res.upserted} event${res.upserted === 1 ? "" : "s"} synced (${res.linked_to_contact} linked to contacts)`
+      : `Connected, but first sync failed: ${res.reason}`,
+  );
+  revalidatePath("/meetings");
+}
+
+/** Disconnect Google Calendar: drop the stored secret URL. Existing
+ *  meetings stay (briefs / transcripts / notes live on them); sync stops.
+ *  For belt-and-braces the operator can also reset the secret address on
+ *  Google's side, which invalidates the old URL entirely. */
+export async function disconnectGoogleCalendarAction() {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  await serviceClient()
+    .from("user_settings")
+    .upsert({ user_id: me.id, google_ics_url: null, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  await flash("success", "Google Calendar disconnected — existing meetings kept, sync stopped");
   revalidatePath("/meetings");
 }
 

@@ -12,8 +12,10 @@ const nextConfig: NextConfig = {
   // `Object.defineProperty` on things webpack mangles in the RSC bundle and
   // dies with "Object.defineProperty called on non-object"). Marking them
   // external tells Next to load them as regular Node deps at runtime rather
-  // than try to bundle them.
-  serverExternalPackages: ["unpdf", "mammoth"],
+  // than try to bundle them. node-ical is in the same boat: its rrule-temporal
+  // dependency ships a Temporal/BigInt polyfill Turbopack's runtime mangles
+  // ("s.BigInt is not a function" at build-time page collection).
+  serverExternalPackages: ["unpdf", "mammoth", "node-ical"],
   // Proposal uploads are PDF/DOCX — easily larger than the default 1MB
   // server-action limit. Bump to 25MB.
   experimental: {

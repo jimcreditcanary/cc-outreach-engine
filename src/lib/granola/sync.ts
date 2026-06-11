@@ -39,6 +39,7 @@ const PLAUSIBILITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 interface MeetingRow {
   id: string;
   ms_event_id: string | null;
+  google_event_uid: string | null;
   subject: string | null;
   start_at: string;
   attendees: Array<{ email?: string | null }> | null;
@@ -65,20 +66,31 @@ export async function syncGranolaForUser(
   // about-to-happen meetings are rare but possible).
   const windowStart = new Date(Date.now() - 7 * 86_400_000).toISOString();
   const windowEnd = new Date(Date.now() + 1 * 86_400_000).toISOString();
-  const { data: meetingsData, error: mErr } = await db
-    .from("meetings")
-    .select(`
-      id, ms_event_id, subject, start_at, attendees, transcript, granola_note_id,
+  const meetingsSelect = (withGoogleUid: boolean) => {
+    // Plain-string select (not a template literal type) — the dynamic
+    // column makes supabase-js's query parser blow the type-complexity cap.
+    const cols: string = `
+      id, ms_event_id, ${withGoogleUid ? "google_event_uid, " : ""}subject, start_at, attendees, transcript, granola_note_id,
       granola_followup_send_id, brief, owner_id, organisation_id, deal_id,
       organisation:organisations(name),
       primary_contact:contacts(id, full_name, email),
       deal:deals(title, stage)
-    `)
+    `;
+    return db
+    .from("meetings")
+    .select(cols)
     .eq("owner_id", userId)
     .eq("sales_relevant", true)
     .gte("start_at", windowStart)
     .lte("start_at", windowEnd)
     .limit(500);
+  };
+  let { data: meetingsData, error: mErr } = await meetingsSelect(true);
+  // Migration 034 (google_event_uid) not applied yet — Granola must keep
+  // working for Outlook meetings, so retry without the column.
+  if (mErr?.message.includes("google_event_uid")) {
+    ({ data: meetingsData, error: mErr } = await meetingsSelect(false));
+  }
   if (mErr) {
     result.errors.push(`meetings(${userId}): ${mErr.message}`);
     return;
@@ -124,10 +136,16 @@ export async function syncGranolaForUser(
     return ts >= earliestMeeting - PLAUSIBILITY_WINDOW_MS && ts <= latestMeeting + PLAUSIBILITY_WINDOW_MS;
   });
 
-  // Index meetings by ms_event_id for O(1) primary-key match.
-  const byMsId = new Map<string, MeetingRow>();
+  // Index meetings by calendar event id for O(1) primary-key match.
+  // Outlook rows key on ms_event_id directly. Google rows: Granola's
+  // calendar_event_id is the Google API event id, which the ICS UID embeds
+  // as "<id>@google.com" (recurring-occurrence keys carry a ":<ts>" suffix
+  // and fall through to the time+attendee fallback instead).
+  const byEventId = new Map<string, MeetingRow>();
   for (const m of meetings) {
-    if (m.ms_event_id) byMsId.set(m.ms_event_id, m);
+    if (m.ms_event_id) byEventId.set(m.ms_event_id, m);
+    const gid = m.google_event_uid?.match(/^([^:@]+)@google\.com$/)?.[1];
+    if (gid) byEventId.set(gid, m);
   }
   // Also index by granola_note_id we've already synced — short-circuit re-runs.
   const alreadySyncedNoteIds = new Set<string>();
@@ -153,8 +171,8 @@ export async function syncGranolaForUser(
     // ── MATCH ──
     let matched: MeetingRow | undefined;
 
-    // Primary: exact ms_event_id match.
-    if (full.calendar_event_id) matched = byMsId.get(full.calendar_event_id);
+    // Primary: exact calendar event id match (Outlook or Google).
+    if (full.calendar_event_id) matched = byEventId.get(full.calendar_event_id);
 
     // Fallback: time window ±15 min + attendee email overlap.
     if (!matched && full.started_at) {

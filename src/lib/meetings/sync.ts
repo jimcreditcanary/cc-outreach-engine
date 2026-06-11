@@ -27,14 +27,14 @@ export interface SyncResult {
   linked_to_contact: number;
 }
 
-interface StoredAttendee {
+export interface StoredAttendee {
   name: string | null;
   email: string | null;
   response: string | null;
   contact_id: string | null;
 }
 
-interface ExistingLinks {
+export interface ExistingLinks {
   organisation_id: string | null;
   primary_contact_id: string | null;
   deal_id: string | null;
@@ -42,7 +42,7 @@ interface ExistingLinks {
 
 /** Collect every email that belongs to a team operator (so the inference
  *  step can skip them when picking the primary external attendee). */
-async function loadTeamEmails(db: DB): Promise<Set<string>> {
+export async function loadTeamEmails(db: DB): Promise<Set<string>> {
   const out = new Set<string>();
   try {
     const { adminClient } = await import("../auth/admin");
@@ -57,6 +57,40 @@ async function loadTeamEmails(db: DB): Promise<Set<string>> {
     if (fromAddr.includes("@")) out.add(fromAddr);
   }
   return out;
+}
+
+export interface LinkContext {
+  byEmail: Map<string, { id: string; organisation_id: string | null }>;
+  openDealByOrg: Map<string, string>;
+  teamEmails: Set<string>;
+}
+
+/** Preload everything inferMeetingLinks needs: contacts indexed by lowercase
+ *  email, latest open deal per org, and the team-operator email set. Shared
+ *  by the Outlook sync, the Google Calendar sync, and the backfill. */
+export async function loadLinkContext(db: DB): Promise<LinkContext> {
+  const { data: contactRows } = await db.from("contacts").select("id, email, organisation_id").not("email", "is", null);
+  const byEmail = new Map<string, { id: string; organisation_id: string | null }>();
+  for (const c of contactRows ?? []) {
+    byEmail.set(String(c.email).toLowerCase(), { id: c.id as string, organisation_id: c.organisation_id as string | null });
+  }
+
+  // Latest open deal per org so we can default the meeting's deal_id.
+  // Most recently updated wins on ties (more likely the "current" deal).
+  const { data: openDeals } = await db
+    .from("deals")
+    .select("id, organisation_id, updated_at")
+    .eq("status", "open")
+    .order("updated_at", { ascending: false });
+  const openDealByOrg = new Map<string, string>();
+  for (const d of openDeals ?? []) {
+    if (d.organisation_id && !openDealByOrg.has(d.organisation_id as string)) {
+      openDealByOrg.set(d.organisation_id as string, d.id as string);
+    }
+  }
+
+  const teamEmails = await loadTeamEmails(db);
+  return { byEmail, openDealByOrg, teamEmails };
 }
 
 /** Infer (organisation_id, primary_contact_id, deal_id) from a meeting's
@@ -106,29 +140,7 @@ export async function syncCalendar(db: DB, userId: string): Promise<SyncResult> 
   const end = new Date(now.getTime() + 14 * 86_400_000).toISOString();
   const events = await listEvents(accessToken, start, end);
 
-  // Preload contacts indexed by lowercase email so attendee matching is O(1).
-  const { data: contactRows } = await db.from("contacts").select("id, email, organisation_id").not("email", "is", null);
-  const byEmail = new Map<string, { id: string; organisation_id: string | null }>();
-  for (const c of contactRows ?? []) {
-    byEmail.set(String(c.email).toLowerCase(), { id: c.id as string, organisation_id: c.organisation_id as string | null });
-  }
-
-  // Preload latest open deal per org so we can default the meeting's deal_id.
-  // Most recently updated wins on ties (more likely the "current" deal).
-  const { data: openDeals } = await db
-    .from("deals")
-    .select("id, organisation_id, updated_at")
-    .eq("status", "open")
-    .order("updated_at", { ascending: false });
-  const openDealByOrg = new Map<string, string>();
-  for (const d of openDeals ?? []) {
-    if (d.organisation_id && !openDealByOrg.has(d.organisation_id as string)) {
-      openDealByOrg.set(d.organisation_id as string, d.id as string);
-    }
-  }
-
-  // Team emails (skip them when picking the primary external attendee).
-  const teamEmails = await loadTeamEmails(db);
+  const { byEmail, openDealByOrg, teamEmails } = await loadLinkContext(db);
 
   // Pre-fetch existing links so we don't clobber operator manual picks
   // every sync tick. One batched query keyed on ms_event_id.
@@ -211,23 +223,7 @@ export async function syncCalendar(db: DB, userId: string): Promise<SyncResult> 
 export async function backfillMeetingLinks(db: DB): Promise<{ scanned: number; updated: number; errors: string[] }> {
   const result = { scanned: 0, updated: 0, errors: [] as string[] };
 
-  const { data: contactRows } = await db.from("contacts").select("id, email, organisation_id").not("email", "is", null);
-  const byEmail = new Map<string, { id: string; organisation_id: string | null }>();
-  for (const c of contactRows ?? []) {
-    byEmail.set(String(c.email).toLowerCase(), { id: c.id as string, organisation_id: c.organisation_id as string | null });
-  }
-  const { data: openDeals } = await db
-    .from("deals")
-    .select("id, organisation_id, updated_at")
-    .eq("status", "open")
-    .order("updated_at", { ascending: false });
-  const openDealByOrg = new Map<string, string>();
-  for (const d of openDeals ?? []) {
-    if (d.organisation_id && !openDealByOrg.has(d.organisation_id as string)) {
-      openDealByOrg.set(d.organisation_id as string, d.id as string);
-    }
-  }
-  const teamEmails = await loadTeamEmails(db);
+  const { byEmail, openDealByOrg, teamEmails } = await loadLinkContext(db);
 
   const { data: rows, error } = await db
     .from("meetings")
