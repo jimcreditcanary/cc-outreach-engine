@@ -5,6 +5,7 @@ import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { BulkApproveBar } from "./BulkApproveBar";
 import { SectorBadge } from "@/components/SectorBadge";
+import { fmtDateTime } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 // Regenerate + Send-now invoke Claude / Postmark — give them runway.
@@ -216,7 +217,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                       <span className="font-medium">{r.contact?.full_name ?? "?"}</span>
                       <span className="text-neutral-500">&lt;{r.contact?.email ?? "?"}&gt;</span>
                       <span className="text-neutral-700">— {r.subject ?? ""}</span>
-                      <span className="ml-auto text-xs text-neutral-400">{new Date(r.ts).toLocaleString("en-GB")}</span>
+                      <span className="ml-auto text-xs text-neutral-400">{fmtDateTime(r.ts)}</span>
                       <span className="text-neutral-300 group-open:hidden">▸</span>
                       <span className="hidden text-neutral-300 group-open:inline">▾</span>
                     </summary>

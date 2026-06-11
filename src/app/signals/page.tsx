@@ -1,4 +1,5 @@
 import { serviceClient } from "@/lib/db/client";
+import { fmtDate } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,7 @@ export default async function SignalsPage() {
             <li key={s.id} className="rounded-lg border border-neutral-200 bg-white p-3 text-sm shadow-sm">
               <div className="flex items-center gap-2 text-xs text-neutral-400">
                 <span className="rounded bg-neutral-100 px-1.5 py-0.5 uppercase text-neutral-600">{s.source}</span>
-                <span>{new Date(s.ts).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                <span>{fmtDate(s.ts, { day: "numeric", month: "short", year: "numeric" })}</span>
               </div>
               <a href={s.payload?.link} target="_blank" rel="noreferrer" className="font-medium text-blue-700 hover:underline">
                 {s.payload?.title}

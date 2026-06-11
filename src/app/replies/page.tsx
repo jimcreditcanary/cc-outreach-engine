@@ -17,6 +17,7 @@ import {
   createContactFromReplyAction,
   dismissReplyAction,
 } from "./actions";
+import { fmtDateTime } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -146,7 +147,7 @@ export default async function RepliesPage({ searchParams }: { searchParams: Prom
                         + {p.patched.join(", ")}
                       </span>
                     )}
-                    <span className="ml-auto text-xs text-neutral-400">{new Date(r.ts).toLocaleString("en-GB")}</span>
+                    <span className="ml-auto text-xs text-neutral-400">{fmtDateTime(r.ts)}</span>
                     <span className="text-neutral-300 group-open:hidden">▸</span>
                     <span className="hidden text-neutral-300 group-open:inline">▾</span>
                   </summary>

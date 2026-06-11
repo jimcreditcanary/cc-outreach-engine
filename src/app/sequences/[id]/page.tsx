@@ -18,6 +18,7 @@ import { RowIconAction } from "@/components/RowIconAction";
 import { Combobox } from "@/components/Combobox";
 import { SEQUENCE_STEPS, STEP_BADGE, isEmailStep, type StepKind } from "@/lib/sequences/steps";
 import { currentUserId } from "@/lib/auth/owner";
+import { fmtDate } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -403,7 +404,7 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
                             </span>
                           )}
                           {overdue && <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700">overdue</span>}
-                          <span className="ml-auto text-xs text-neutral-400">due {new Date(a.due_at).toLocaleDateString("en-GB")}</span>
+                          <span className="ml-auto text-xs text-neutral-400">due {fmtDate(a.due_at)}</span>
                           <form action={markActionDoneAction}>
                             <input type="hidden" name="id" value={a.id} />
                             <PendingButton className="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700" pendingLabel="…">
@@ -459,7 +460,7 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
                       }`}>{c.status}</span>
                     </td>
                     <td className="text-right text-neutral-700">{c.current_step}/{SEQUENCE_STEPS.length}</td>
-                    <td className="text-xs text-neutral-500">{new Date(c.started_at).toLocaleDateString("en-GB")}</td>
+                    <td className="text-xs text-neutral-500">{fmtDate(c.started_at)}</td>
                     <td className="w-10 text-right">
                       <form action={removeContactFromSequenceAction}>
                         <input type="hidden" name="sequence_id" value={seq.id} />

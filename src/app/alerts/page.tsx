@@ -7,6 +7,7 @@ import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 import { SectorBadge } from "@/components/SectorBadge";
 import { decodeHtmlEntities } from "@/lib/text/decode";
+import { fmtDate } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 // runAlertsNowAction can spend 30+ seconds enriching companies.
@@ -98,7 +99,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
                   </Link>
                 )}
                 <SectorBadge sector={a.organisation?.sector} className="ml-1" />
-                <span className="ml-auto text-neutral-400">{new Date(a.ts).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                <span className="ml-auto text-neutral-400">{fmtDate(a.ts, { day: "numeric", month: "short", year: "numeric" })}</span>
               </div>
               {a.link ? (
                 <a href={a.link} target="_blank" rel="noreferrer" className="font-medium text-neutral-900 hover:underline">

@@ -9,6 +9,7 @@ import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomField
 import { OwnerPicker } from "@/components/OwnerPicker";
 import { RowIconAction } from "@/components/RowIconAction";
 import { Combobox } from "@/components/Combobox";
+import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 // ✨ Generate-draft-for-this-contact calls Claude.
@@ -118,7 +119,7 @@ export default async function ContactDetail({
         <form action={unskipContact} className="mb-4 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
           <input type="hidden" name="contact_id" value={c.id} />
           <span className="text-amber-900">
-            <strong>Skipped</strong> ({c.skip_reason ?? "no reason given"}) on {new Date(c.skipped_at).toLocaleDateString("en-GB")} — hidden from LinkedIn + sequences.
+            <strong>Skipped</strong> ({c.skip_reason ?? "no reason given"}) on {fmtDate(c.skipped_at)} — hidden from LinkedIn + sequences.
           </span>
           <PendingButton className="ml-auto rounded border border-amber-300 px-2 py-1 text-xs hover:bg-amber-100" pendingLabel="…">
             Unskip (return to queue)
@@ -192,7 +193,7 @@ export default async function ContactDetail({
         <ul className="space-y-2 text-neutral-600">
           {(notes ?? []).map((n) => (
             <li key={n.id} className="border-l-2 border-neutral-200 pl-2">
-              {n.noted_at && <div className="text-xs text-neutral-400">{new Date(n.noted_at).toLocaleDateString("en-GB")}</div>}
+              {n.noted_at && <div className="text-xs text-neutral-400">{fmtDate(n.noted_at)}</div>}
               <form action={updateNote} className="flex items-start gap-2">
                 <input type="hidden" name="id" value={n.id} />
                 <input type="hidden" name="back" value={`/contacts/${c.id}`} />
@@ -214,7 +215,7 @@ export default async function ContactDetail({
             {attendances.map((a) => a.conference && (
               <li key={a.conference.id}>
                 <Link href={`/events/${a.conference.id}`} className="text-blue-700 hover:underline">{a.conference.name}</Link>
-                {a.conference.start_date && <span className="ml-2 text-neutral-400">{new Date(a.conference.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>}
+                {a.conference.start_date && <span className="ml-2 text-neutral-400">{fmtDate(a.conference.start_date, { day: "numeric", month: "short", year: "numeric" })}</span>}
                 {a.conference.location && <span className="ml-2 text-neutral-400">· {a.conference.location}</span>}
               </li>
             ))}
@@ -234,7 +235,7 @@ export default async function ContactDetail({
             rows.push({
               ts: new Date(s.ts).getTime(),
               key: `s${i}`,
-              render: () => <>✉️ {s.status} — {s.subject} {s.clicked ? "· clicked" : ""}{s.replied ? "· replied" : ""} <span className="text-neutral-400">{new Date(s.ts).toLocaleDateString("en-GB")}</span></>,
+              render: () => <>✉️ {s.status} — {s.subject} {s.clicked ? "· clicked" : ""}{s.replied ? "· replied" : ""} <span className="text-neutral-400">{fmtDate(s.ts)}</span></>,
             });
           }
           for (const [i, e] of (events ?? []).entries()) {
@@ -242,7 +243,7 @@ export default async function ContactDetail({
             rows.push({
               ts: new Date(e.ts).getTime(),
               key: `e${i}`,
-              render: () => <>• {msg ?? e.type} <span className="text-neutral-400">{new Date(e.ts).toLocaleDateString("en-GB")}</span></>,
+              render: () => <>• {msg ?? e.type} <span className="text-neutral-400">{fmtDate(e.ts)}</span></>,
             });
           }
           for (const a of attendances) {
@@ -258,7 +259,7 @@ export default async function ContactDetail({
                   🎟 Attended <Link href={`/events/${a.conference!.id}`} className="text-blue-700 hover:underline">{a.conference!.name}</Link>
                   {a.conference!.location && <span className="ml-1 text-neutral-400">· {a.conference!.location}</span>}
                   {a.conference!.start_date && (
-                    <span className="ml-2 text-neutral-400">{new Date(a.conference!.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                    <span className="ml-2 text-neutral-400">{fmtDate(a.conference!.start_date, { day: "numeric", month: "short", year: "numeric" })}</span>
                   )}
                 </>
               ),
@@ -272,7 +273,7 @@ export default async function ContactDetail({
                 <>
                   📅 <Link href={`/meetings/${m.id}`} className="text-blue-700 hover:underline">{m.subject ?? "(no subject)"}</Link>
                   {m.status && <span className="ml-2 rounded bg-neutral-100 px-1 py-0.5 text-[10px] text-neutral-600">{m.status}</span>}
-                  <span className="ml-2 text-neutral-400">{new Date(m.start_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                  <span className="ml-2 text-neutral-400">{fmtDateTime(m.start_at, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                 </>
               ),
             });

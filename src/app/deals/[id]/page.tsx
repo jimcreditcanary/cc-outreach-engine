@@ -17,6 +17,7 @@ export const maxDuration = 60;
 
 const STATUS = ["open", "won", "lost"];
 import { STAGES as DEAL_STAGES } from "@/lib/pipeline/stages";
+import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 // MEDDICC stakeholder roles.
 const DEAL_ROLES = ["Economic Buyer", "Champion", "Decision Maker", "Influencer", "Technical Evaluator", "End User", "Coach", "Blocker"];
 const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
@@ -251,7 +252,7 @@ export default async function DealDetail({
         <ul className="space-y-2 text-neutral-600">
           {notes.map((n) => (
             <li key={n.id} className="border-l-2 border-neutral-200 pl-2">
-              {n.noted_at && <div className="text-xs text-neutral-400">{new Date(n.noted_at).toLocaleDateString("en-GB")}</div>}
+              {n.noted_at && <div className="text-xs text-neutral-400">{fmtDate(n.noted_at)}</div>}
               <form action={updateNote} className="flex items-start gap-2">
                 <input type="hidden" name="id" value={n.id} />
                 <input type="hidden" name="back" value={`/deals/${deal.id}`} />
@@ -272,7 +273,7 @@ export default async function DealDetail({
         <h2 className="mb-2 font-semibold">Activity</h2>
         <ul className="space-y-1 text-neutral-600">
           {timeline.map((e, i) => (
-            <li key={i}>• {e.payload?.message ?? e.type} <span className="text-neutral-400">{new Date(e.ts).toLocaleString("en-GB")}</span></li>
+            <li key={i}>• {e.payload?.message ?? e.type} <span className="text-neutral-400">{fmtDateTime(e.ts)}</span></li>
           ))}
           {timeline.length === 0 && <li className="text-neutral-400">No activity yet.</li>}
         </ul>

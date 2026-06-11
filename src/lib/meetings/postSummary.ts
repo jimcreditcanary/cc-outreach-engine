@@ -10,6 +10,7 @@
 import { serviceClient } from "../db/client";
 import { generateText } from "../ai/claude";
 import { seedDealMeddicc } from "../meddicc/seedDeal";
+import { fmtDateTime } from "../format/datetime";
 
 type DB = ReturnType<typeof serviceClient>;
 
@@ -68,7 +69,7 @@ HARD RULES:
 
   const user = `MEETING
   Subject: ${meeting.subject ?? "(no subject)"}
-  When: ${new Date(meeting.start_at as string).toLocaleString("en-GB")}
+  When: ${fmtDateTime(meeting.start_at as string)}
   Company: ${o?.name ?? "(unlinked)"} (sector: ${o?.sector ?? "?"})
   Primary contact: ${c?.full_name ?? "(unknown)"}${c?.job_title ? `, ${c.job_title}` : ""}
   ${d ? `Linked deal: "${d.title}" (status: ${d.status}, stage: ${d.stage ?? "?"})` : "No deal linked."}

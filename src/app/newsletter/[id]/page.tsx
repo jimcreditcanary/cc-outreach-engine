@@ -8,6 +8,7 @@ import { textToHtml } from "@/lib/generate/render";
 import { unsubFooterHtml } from "@/lib/generate/config";
 import { resolveSender, signatureHtml } from "@/lib/generate/sender";
 import { currentUserId } from "@/lib/auth/owner";
+import { fmtDateTime } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 // Send loops over every subscriber — give it runway.
@@ -114,7 +115,7 @@ ${unsubFooterHtml("recipient@example.com")}
         </span>
         {isSent && (
           <span className="text-sm text-neutral-500">
-            Sent to {issue.sent_count} on {new Date(issue.sent_at).toLocaleString("en-GB")}
+            Sent to {issue.sent_count} on {fmtDateTime(issue.sent_at)}
           </span>
         )}
         {!isSent && <span className="ml-auto text-sm text-neutral-500">{subs ?? 0} subscriber{subs === 1 ? "" : "s"} ready</span>}

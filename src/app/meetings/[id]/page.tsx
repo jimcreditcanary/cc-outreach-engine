@@ -7,6 +7,7 @@ import { generateBriefAction, updateMeetingAction, deleteMeetingAction, setSales
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { Combobox } from "@/components/Combobox";
+import { fmtDateTime, fmtTime } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -129,8 +130,8 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
       <header className="mb-4 mt-2 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">{m.subject ?? "(no subject)"}</h1>
         <p className="text-sm text-neutral-500">
-          {start.toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-          {end && ` → ${end.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`}
+          {fmtDateTime(start, { weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+          {end && ` → ${fmtTime(end, { hour: "2-digit", minute: "2-digit" })}`}
           {m.location && ` · ${m.location}`}
           {m.online_url && (
             <> · <a href={m.online_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">join call</a></>
@@ -150,7 +151,7 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
                   {m.brief ? "Regenerate" : "✨ Generate brief"}
                 </PendingButton>
               </form>
-              {m.brief_generated_at && <span className="text-xs text-neutral-400">{new Date(m.brief_generated_at).toLocaleString("en-GB")}</span>}
+              {m.brief_generated_at && <span className="text-xs text-neutral-400">{fmtDateTime(m.brief_generated_at)}</span>}
             </div>
             {m.brief ? (
               <pre className="whitespace-pre-wrap break-words rounded-lg border border-amber-200 bg-amber-50/40 p-4 font-sans text-sm text-amber-900">{m.brief}</pre>
@@ -194,7 +195,7 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
                 <span className="rounded bg-blue-200 px-1.5 py-0.5 text-xs font-semibold text-blue-900">Granola</span>
                 {m.granola_synced_at && (
                   <span className="text-xs text-blue-900">
-                    Transcript pulled {new Date(m.granola_synced_at).toLocaleString("en-GB")}
+                    Transcript pulled {fmtDateTime(m.granola_synced_at)}
                   </span>
                 )}
                 {(() => {
@@ -216,7 +217,7 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
                         <Link href={`/queue?owner=all`} className="ml-1 text-blue-700 hover:underline">review in /queue ↗</Link>
                       )}
                       {f.status === "sent" && f.ts && (
-                        <span className="ml-1 text-blue-900">at {new Date(f.ts).toLocaleString("en-GB")}</span>
+                        <span className="ml-1 text-blue-900">at {fmtDateTime(f.ts)}</span>
                       )}
                       {" — "}
                       <span className="italic">{f.subject}</span>
@@ -261,7 +262,7 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
                 </PendingButton>
                 {m.post_summary_generated_at && (
                   <span className="self-center text-xs text-neutral-400">
-                    Last: {new Date(m.post_summary_generated_at).toLocaleString("en-GB")}
+                    Last: {fmtDateTime(m.post_summary_generated_at)}
                   </span>
                 )}
               </div>

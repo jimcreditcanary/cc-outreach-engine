@@ -6,6 +6,7 @@ import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 import { deleteSequenceAction } from "./actions";
+import { fmtDate } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -132,7 +133,7 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
                 <td className="text-right text-neutral-700">{c.contacts}</td>
                 <td className="text-right text-emerald-700">{c.replied || ""}</td>
                 <td className="text-right text-amber-700">{c.actions || ""}</td>
-                <td className="text-neutral-500 text-xs">{new Date(s.created_at).toLocaleDateString("en-GB")}</td>
+                <td className="text-neutral-500 text-xs">{fmtDate(s.created_at)}</td>
                 <td className="w-10 text-right">
                   <form>
                     <input type="hidden" name="id" value={s.id} />

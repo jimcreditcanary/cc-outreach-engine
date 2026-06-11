@@ -8,6 +8,7 @@ import { CustomFieldInputs, CustomFieldsManager } from "@/components/CustomField
 import { OwnerPicker } from "@/components/OwnerPicker";
 import { RowIconAction } from "@/components/RowIconAction";
 import { decodeHtmlEntities } from "@/lib/text/decode";
+import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 
 // Enrichment takes 15-30s (homepage scrape + AI summary + feed discovery).
 export const maxDuration = 60;
@@ -188,7 +189,7 @@ export default async function CompanyDetail({
           <ul className="space-y-2 text-neutral-600">
             {(notes ?? []).map((n) => (
               <li key={n.id} className="border-l-2 border-neutral-200 pl-2">
-                {n.noted_at && <div className="text-xs text-neutral-400">{new Date(n.noted_at).toLocaleDateString("en-GB")}</div>}
+                {n.noted_at && <div className="text-xs text-neutral-400">{fmtDate(n.noted_at)}</div>}
                 <form action={updateNote} className="flex items-start gap-2">
                   <input type="hidden" name="id" value={n.id} />
                   <input type="hidden" name="back" value={`/companies/${org.id}`} />
@@ -213,7 +214,7 @@ export default async function CompanyDetail({
               <li key={a.id} className="rounded border border-amber-200 bg-amber-50/40 p-2">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
                   <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium uppercase text-amber-800">{a.kind}</span>
-                  <span>{new Date(a.ts).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                  <span>{fmtDate(a.ts, { day: "numeric", month: "short" })}</span>
                   {a.source && <span>· {a.source}</span>}
                 </div>
                 {a.link ? (
@@ -233,7 +234,7 @@ export default async function CompanyDetail({
         <div className="mb-2 flex items-baseline gap-3">
           <h2 className="font-semibold">From the web</h2>
           <span className="text-xs text-neutral-400">
-            {org.enriched_at ? `Last refreshed ${new Date(org.enriched_at).toLocaleDateString("en-GB")}` : "Not enriched yet"}
+            {org.enriched_at ? `Last refreshed ${fmtDate(org.enriched_at)}` : "Not enriched yet"}
           </span>
           <form action={enrichCompanyAction} className="ml-auto">
             <input type="hidden" name="id" value={org.id} />
@@ -261,7 +262,7 @@ export default async function CompanyDetail({
               {(org.recent_posts as { title: string; url: string; published_at: string | null; summary: string }[]).map((p) => (
                 <li key={p.url}>
                   <a href={p.url} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">{p.title}</a>
-                  {p.published_at && <span className="ml-1 text-xs text-neutral-400">· {new Date(p.published_at).toLocaleDateString("en-GB")}</span>}
+                  {p.published_at && <span className="ml-1 text-xs text-neutral-400">· {fmtDate(p.published_at)}</span>}
                 </li>
               ))}
             </ul>
@@ -278,7 +279,7 @@ export default async function CompanyDetail({
             rows.push({
               ts: new Date(e.ts).getTime(),
               key: `e${i}`,
-              render: () => <>• {e.payload?.message ?? e.type} <span className="text-neutral-400">{new Date(e.ts).toLocaleString("en-GB")}</span></>,
+              render: () => <>• {e.payload?.message ?? e.type} <span className="text-neutral-400">{fmtDateTime(e.ts)}</span></>,
             });
           }
           for (const c of conferencesAttended) {
@@ -294,7 +295,7 @@ export default async function CompanyDetail({
                   <span className="text-neutral-700">{attendeeNames}</span>
                   {c.conference.location && <span className="ml-1 text-neutral-400">· {c.conference.location}</span>}
                   {c.conference.start_date && (
-                    <span className="ml-2 text-neutral-400">{new Date(c.conference.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                    <span className="ml-2 text-neutral-400">{fmtDate(c.conference.start_date, { day: "numeric", month: "short", year: "numeric" })}</span>
                   )}
                 </>
               ),
@@ -310,7 +311,7 @@ export default async function CompanyDetail({
                   📅 <Link href={`/meetings/${m.id}`} className="text-blue-700 hover:underline">{m.subject ?? "(no subject)"}</Link>
                   {pc?.full_name && <span className="ml-1 text-neutral-700">— {pc.full_name}</span>}
                   {m.status && <span className="ml-2 rounded bg-neutral-100 px-1 py-0.5 text-[10px] text-neutral-600">{m.status}</span>}
-                  <span className="ml-2 text-neutral-400">{new Date(m.start_at).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                  <span className="ml-2 text-neutral-400">{fmtDateTime(m.start_at, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                 </>
               ),
             });

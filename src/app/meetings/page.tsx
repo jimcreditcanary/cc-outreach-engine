@@ -6,6 +6,7 @@ import { isConnected } from "@/lib/microsoft/oauth";
 import { canSeeMeeting, emailAliases } from "@/lib/meetings/visibility";
 import { syncCalendarAction, setSalesRelevantAction, backfillMeetingLinksAction } from "./actions";
 import { PendingButton } from "@/components/PendingButton";
+import { fmtDate, fmtTime } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -155,8 +156,8 @@ function Section({ title, rows, emptyMsg }: { title: string; rows: Row[]; emptyM
                 }`}
               >
                 <div className="min-w-28 text-neutral-700">
-                  <div className="font-medium">{when.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</div>
-                  <div className="text-xs text-neutral-500">{when.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</div>
+                  <div className="font-medium">{fmtDate(when, { weekday: "short", day: "numeric", month: "short" })}</div>
+                  <div className="text-xs text-neutral-500">{fmtTime(when, { hour: "2-digit", minute: "2-digit" })}</div>
                 </div>
                 <div className="flex-1">
                   <Link href={`/meetings/${m.id}`} className="font-medium text-blue-700 hover:underline">{m.subject ?? "(no subject)"}</Link>

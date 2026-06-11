@@ -19,6 +19,7 @@ import {
 import { isConnected } from "@/lib/microsoft/oauth";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
+import { fmtDateTime } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -125,7 +126,7 @@ export default async function SettingsPage() {
               )}
               {data.postmark_signature_checked_at && (
                 <span className="ml-auto text-xs text-neutral-400">
-                  last checked {new Date(data.postmark_signature_checked_at).toLocaleString("en-GB")}
+                  last checked {fmtDateTime(data.postmark_signature_checked_at)}
                 </span>
               )}
             </div>

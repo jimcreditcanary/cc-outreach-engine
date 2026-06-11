@@ -10,6 +10,7 @@ import {
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
+import { fmtDateTime } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,7 @@ export default async function UsersPage() {
               </form>
 
               <span className="ml-auto text-xs text-neutral-400">
-                last sign-in: {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString("en-GB") : "never"}
+                last sign-in: {u.last_sign_in_at ? fmtDateTime(u.last_sign_in_at) : "never"}
               </span>
 
               <form action={resetPasswordAction} className="flex gap-1">

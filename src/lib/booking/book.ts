@@ -213,7 +213,14 @@ export async function createBooking(db: DB, req: BookingRequest): Promise<Bookin
     }
   }
 
-  const whenText = `${start.toUTCString().replace(" GMT", "")} UTC`;
+  // Emails state the time in the OPERATOR's booking timezone with the zone
+  // name spelled out ("Thu, 12 Jun 2026, 09:00 BST") — never raw UTC, which
+  // reads an hour off for the whole of British Summer Time.
+  const whenText = start.toLocaleString("en-GB", {
+    timeZone: page.config.tz,
+    weekday: "short", day: "numeric", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", timeZoneName: "short",
+  });
   if (method === "email_invite") {
     const ics = buildInviteIcs({
       uid: `booking-${meetingId}@veepveep.co.uk`,

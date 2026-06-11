@@ -8,6 +8,7 @@ import { buildSystemPrompt, SCHEDULER_LINK, unsubFooterText, unsubFooterHtml } f
 import { signatureHtml, signatureText, type Sender } from "./sender";
 import { checkAnonymisation } from "./anonymisation";
 import type { MatchedSignal } from "../signals/triggers";
+import { fmtDate } from "../format/datetime";
 
 export interface ContactCtx {
   first_name: string;
@@ -84,7 +85,7 @@ function buildUserPrompt(
       ? "Tier 2 (lapsed deal): re-engage on what's changed since you last spoke + the most relevant new asset."
       : "Tier 3 (no proposal yet): content/capability nurture — earn relevance, no hard ask.";
 
-  const today = new Date().toLocaleDateString("en-GB", {
+  const today = fmtDate(new Date(), {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -121,7 +122,7 @@ ${themeBlock}CONTACT
   CRM label: ${ctx.label ?? "—"}
   Tier: ${tierNote}
 
-${ctx.org_summary ? `ABOUT ${ctx.org_name.toUpperCase()} (from their own website — fair game to reference):\n  ${ctx.org_summary}\n\n` : ""}${ctx.recent_posts && ctx.recent_posts.length > 0 ? `RECENT POSTS ON THEIR BLOG / NEWS (real, current — feel free to reference one if it's a genuine hook):\n${ctx.recent_posts.slice(0, 3).map((p) => `  - "${p.title}"${p.published_at ? ` (${new Date(p.published_at).toLocaleDateString("en-GB")})` : ""}`).join("\n")}\n\n` : ""}RECENT CRM NOTES (context — never quote a client name from these in the email):
+${ctx.org_summary ? `ABOUT ${ctx.org_name.toUpperCase()} (from their own website — fair game to reference):\n  ${ctx.org_summary}\n\n` : ""}${ctx.recent_posts && ctx.recent_posts.length > 0 ? `RECENT POSTS ON THEIR BLOG / NEWS (real, current — feel free to reference one if it's a genuine hook):\n${ctx.recent_posts.slice(0, 3).map((p) => `  - "${p.title}"${p.published_at ? ` (${fmtDate(p.published_at)})` : ""}`).join("\n")}\n\n` : ""}RECENT CRM NOTES (context — never quote a client name from these in the email):
 ${notes}
 
 CANDIDATE CONTENT ASSETS (link exactly ONE of these in the body if a genuinely

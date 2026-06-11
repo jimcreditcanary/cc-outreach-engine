@@ -2,6 +2,7 @@ import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { createNewsletter } from "./actions";
 import { PendingButton } from "@/components/PendingButton";
+import { fmtDate } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,7 @@ export default async function NewsletterPage() {
                 </span>
               </td>
               <td className="text-right text-neutral-600">{i.sent_count || "—"}</td>
-              <td className="text-right text-neutral-500">{i.sent_at ? new Date(i.sent_at).toLocaleDateString("en-GB") : "—"}</td>
+              <td className="text-right text-neutral-500">{i.sent_at ? fmtDate(i.sent_at) : "—"}</td>
             </tr>
           ))}
           {list.length === 0 && (

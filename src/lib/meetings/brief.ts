@@ -5,6 +5,7 @@
 
 import { serviceClient } from "../db/client";
 import { generateText } from "../ai/claude";
+import { fmtDateTime } from "../format/datetime";
 
 type DB = ReturnType<typeof serviceClient>;
 
@@ -88,7 +89,7 @@ HARD RULES:
 
   const user = `MEETING
   Subject: ${meeting.subject ?? "(no subject)"}
-  When: ${new Date(meeting.start_at).toLocaleString("en-GB")}
+  When: ${fmtDateTime(meeting.start_at)}
   Body preview: ${meeting.body_preview ?? "(none)"}
   Attendees: ${attendees.map((a) => `${a.name ?? a.email ?? "?"}`).filter(Boolean).join(", ") || "(unknown)"}
 

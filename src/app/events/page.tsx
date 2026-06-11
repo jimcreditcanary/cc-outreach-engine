@@ -5,6 +5,7 @@ import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
+import { fmtDate } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -71,8 +72,8 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
             <tr key={r.id} className="border-t border-neutral-100 hover:bg-neutral-100">
               <td className="py-1.5"><Link href={`/events/${r.id}`} className="font-medium text-blue-700 hover:underline">{r.name}</Link></td>
               <td className="text-neutral-600">
-                {r.start_date ? new Date(r.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
-                {r.end_date && r.end_date !== r.start_date && ` → ${new Date(r.end_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
+                {r.start_date ? fmtDate(r.start_date, { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                {r.end_date && r.end_date !== r.start_date && ` → ${fmtDate(r.end_date, { day: "numeric", month: "short" })}`}
               </td>
               <td className="text-neutral-600">{r.location ?? "—"}</td>
               <td className="text-right text-neutral-700">{counts.get(r.id) ?? 0}</td>

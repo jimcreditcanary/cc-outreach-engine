@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { generateStructured } from "../ai/claude";
+import { fmtDateTime } from "../format/datetime";
 
 export const FollowupSchema = z.object({
   subject: z.string().min(3).max(120),
@@ -88,7 +89,7 @@ Return ONLY the JSON via the tool.`;
 
   const user = `MEETING
 Subject: ${ctx.meeting_subject}
-When: ${new Date(ctx.meeting_started_at).toLocaleString("en-GB")}
+When: ${fmtDateTime(ctx.meeting_started_at)}
 Company: ${ctx.org_name ?? "(unlinked)"}
 ${ctx.deal_title ? `Deal: "${ctx.deal_title}" (stage: ${ctx.deal_stage ?? "?"})` : "No deal linked."}
 
