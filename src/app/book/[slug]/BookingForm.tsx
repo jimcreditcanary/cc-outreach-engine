@@ -39,7 +39,7 @@ export function LocalTime({ iso, withDate = true }: { iso: string; withDate?: bo
 
 const field = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 
-export function BookingForm({ slug, slots, durationMins }: { slug: string; slots: string[]; durationMins: number }) {
+export function BookingForm({ slug, slots, durationMins, embed }: { slug: string; slots: string[]; durationMins: number; embed?: boolean }) {
   const [sel, setSel] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -62,6 +62,7 @@ export function BookingForm({ slug, slots, durationMins }: { slug: string; slots
     <form action={submitBookingAction} className="space-y-5">
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="slot" value={sel ?? ""} />
+      {embed && <input type="hidden" name="embed" value="1" />}
       {/* Honeypot — hidden from humans, irresistible to bots */}
       <div className="hidden" aria-hidden="true">
         <label>Website<input name="website" type="text" tabIndex={-1} autoComplete="off" /></label>

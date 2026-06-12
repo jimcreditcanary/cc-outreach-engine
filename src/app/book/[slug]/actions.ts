@@ -11,10 +11,11 @@ import { createBooking } from "@/lib/booking/book";
 export async function submitBookingAction(formData: FormData) {
   const slug = String(formData.get("slug") ?? "").slice(0, 60);
   const slot = String(formData.get("slot") ?? "");
+  const embed = String(formData.get("embed") ?? "") === "1" ? "&embed=1" : "";
 
   // Honeypot — real visitors never see this field.
   if (String(formData.get("website") ?? "") !== "") {
-    redirect(`/book/${encodeURIComponent(slug)}?booked=${encodeURIComponent(slot)}`);
+    redirect(`/book/${encodeURIComponent(slug)}?booked=${encodeURIComponent(slot)}${embed}`);
   }
 
   const res = await createBooking(serviceClient(), {
@@ -27,9 +28,9 @@ export async function submitBookingAction(formData: FormData) {
   });
 
   if (!res.ok) {
-    redirect(`/book/${encodeURIComponent(slug)}?error=${encodeURIComponent(res.error ?? "Something went wrong — please try again.")}`);
+    redirect(`/book/${encodeURIComponent(slug)}?error=${encodeURIComponent(res.error ?? "Something went wrong — please try again.")}${embed}`);
   }
   const q = new URLSearchParams({ booked: res.start!.toISOString() });
   if (res.joinUrl) q.set("join", res.joinUrl);
-  redirect(`/book/${encodeURIComponent(slug)}?${q}`);
+  redirect(`/book/${encodeURIComponent(slug)}?${q}${embed}`);
 }

@@ -19,16 +19,21 @@ export const metadata: Metadata = {
 const field = "w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm";
 const lbl = "mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500";
 
-export default async function EnquirePage({ searchParams }: { searchParams: Promise<{ sent?: string; book?: string; error?: string; src?: string }> }) {
+export default async function EnquirePage({ searchParams }: { searchParams: Promise<{ sent?: string; book?: string; error?: string; src?: string; embed?: string }> }) {
   const sp = await searchParams;
+  // ?embed=1 — chromeless for <iframe> use on the marketing site: the host
+  // page supplies the branding, we supply just the form.
+  const embed = sp.embed === "1";
 
   return (
-    <main className="mx-auto min-h-screen max-w-xl px-4 py-10">
-      <header className="mb-6 text-center">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-lg font-bold text-white">CC</div>
-        <h1 className="text-xl font-semibold text-neutral-900">Talk to Credit Canary</h1>
-        <p className="text-sm text-neutral-500">Tell us a little about you and we&apos;ll come back within one working day.</p>
-      </header>
+    <main className={embed ? "mx-auto max-w-xl p-2" : "mx-auto min-h-screen max-w-xl px-4 py-10"}>
+      {!embed && (
+        <header className="mb-6 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-lg font-bold text-white">CC</div>
+          <h1 className="text-xl font-semibold text-neutral-900">Talk to Credit Canary</h1>
+          <p className="text-sm text-neutral-500">Tell us a little about you and we&apos;ll come back within one working day.</p>
+        </header>
+      )}
 
       {sp.sent ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
@@ -40,6 +45,9 @@ export default async function EnquirePage({ searchParams }: { searchParams: Prom
               <p className="mt-4 text-sm text-emerald-800">Want to skip the back-and-forth?</p>
               <a
                 href={`/book/${encodeURIComponent(sp.book)}`}
+                // From an iframe, open the booking page in the full window —
+                // a slot grid crammed into a form-sized frame is unusable.
+                target={embed ? "_top" : undefined}
                 className="mt-2 inline-block rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
               >
                 Book a call directly →
@@ -54,6 +62,7 @@ export default async function EnquirePage({ searchParams }: { searchParams: Prom
           )}
           <form action={submitEnquiryAction} className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
             {sp.src && <input type="hidden" name="src" value={sp.src.slice(0, 60)} />}
+            {embed && <input type="hidden" name="embed" value="1" />}
             {/* Honeypot — hidden from humans */}
             <div className="hidden" aria-hidden="true">
               <label>Website<input name="website" type="text" tabIndex={-1} autoComplete="off" /></label>
@@ -95,9 +104,11 @@ export default async function EnquirePage({ searchParams }: { searchParams: Prom
         </>
       )}
 
-      <footer className="mt-8 text-center text-xs text-neutral-400">
-        Credit Canary · creditcanary.co.uk
-      </footer>
+      {!embed && (
+        <footer className="mt-8 text-center text-xs text-neutral-400">
+          Credit Canary · creditcanary.co.uk
+        </footer>
+      )}
     </main>
   );
 }

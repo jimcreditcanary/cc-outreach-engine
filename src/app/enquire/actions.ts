@@ -39,7 +39,9 @@ async function resolveInboundOwner(db: DB): Promise<{ ownerId: string | null; no
 
 export async function submitEnquiryAction(formData: FormData) {
   const src = String(formData.get("src") ?? "").slice(0, 60);
-  const back = (q: string) => redirect(`/enquire?${q}${src ? `&src=${encodeURIComponent(src)}` : ""}`);
+  const embed = String(formData.get("embed") ?? "") === "1";
+  const back = (q: string) =>
+    redirect(`/enquire?${q}${src ? `&src=${encodeURIComponent(src)}` : ""}${embed ? "&embed=1" : ""}`);
 
   // Honeypot — fake success for bots.
   if (String(formData.get("website") ?? "") !== "") back("sent=1");

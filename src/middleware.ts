@@ -15,6 +15,28 @@ const PUBLIC_PREFIXES = [
   "/enquire", // public inbound-lead landing page
 ];
 
+// Pages allowed inside an <iframe> — the embeddable lead/booking forms.
+// Everything else gets frame-ancestors 'none' (clickjacking protection for
+// the authed app). Extend the allow-list with the EMBED_ALLOWED_ORIGINS env
+// var (space-separated origins) without a deploy-time code change.
+const EMBEDDABLE_PREFIXES = ["/book", "/enquire"];
+const EMBED_ANCESTORS = [
+  "'self'",
+  "https://creditcanary.co.uk",
+  "https://www.creditcanary.co.uk",
+  ...(process.env.EMBED_ALLOWED_ORIGINS?.split(/\s+/).filter(Boolean) ?? []),
+].join(" ");
+
+function withFrameHeaders(res: NextResponse, pathname: string): NextResponse {
+  if (EMBEDDABLE_PREFIXES.some((p) => pathname.startsWith(p))) {
+    res.headers.set("Content-Security-Policy", `frame-ancestors ${EMBED_ANCESTORS}`);
+  } else {
+    res.headers.set("Content-Security-Policy", "frame-ancestors 'none'");
+    res.headers.set("X-Frame-Options", "DENY");
+  }
+  return res;
+}
+
 export async function middleware(req: NextRequest) {
   let response = NextResponse.next({ request: req });
 
@@ -43,7 +65,7 @@ export async function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
-    return NextResponse.redirect(url);
+    return withFrameHeaders(NextResponse.redirect(url), pathname);
   }
 
   // Bounce a signed-in user off /login → /queue.
@@ -51,10 +73,10 @@ export async function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = "/queue";
     url.search = "";
-    return NextResponse.redirect(url);
+    return withFrameHeaders(NextResponse.redirect(url), pathname);
   }
 
-  return response;
+  return withFrameHeaders(response, pathname);
 }
 
 export const config = {
