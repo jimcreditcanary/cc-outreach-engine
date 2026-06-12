@@ -12,6 +12,7 @@ const PUBLIC_PREFIXES = [
   "/api/auth", // reserved for future OAuth callback if needed
   "/unsubscribe", // clicked from outreach emails — recipient isn't logged in
   "/book", // public booking pages — external visitors book meetings here
+  "/enquire", // public inbound-lead landing page
 ];
 
 export async function middleware(req: NextRequest) {

@@ -25,12 +25,14 @@ interface Alert {
   ts: string;
   dismissed_at: string | null;
   organisation: { id: string; name: string | null; sector: string | null } | null;
+  contact: { id: string; full_name: string | null } | null;
 }
 
 const kindBadge: Record<string, string> = {
   press: "bg-amber-100 text-amber-800",
   post: "bg-blue-100 text-blue-800",
   hiring: "bg-purple-100 text-purple-800",
+  inbound: "bg-emerald-100 text-emerald-800", // /enquire landing-page leads
 };
 
 export default async function AlertsPage({ searchParams }: { searchParams: Promise<{ owner?: string; show?: string }> }) {
@@ -41,7 +43,7 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
 
   let q = db
     .from("alerts")
-    .select("id, organisation_id, contact_id, kind, title, link, summary, source, ts, dismissed_at, organisation:organisations(id, name, sector)")
+    .select("id, organisation_id, contact_id, kind, title, link, summary, source, ts, dismissed_at, organisation:organisations(id, name, sector), contact:contacts(id, full_name)")
     .order("ts", { ascending: false })
     .limit(200);
   if (ownerId) q = q.eq("owner_id", ownerId);
@@ -96,6 +98,13 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
                 {a.organisation && (
                   <Link href={`/companies/${a.organisation.id}`} className="font-medium text-blue-700 hover:underline">
                     {a.organisation.name}
+                  </Link>
+                )}
+                {/* Inbound leads are contact-first (often no org match yet) —
+                    link straight to the person so triage is one click. */}
+                {a.contact && (
+                  <Link href={`/contacts/${a.contact.id}`} className="font-medium text-blue-700 hover:underline">
+                    {a.contact.full_name ?? "contact"}
                   </Link>
                 )}
                 <SectorBadge sector={a.organisation?.sector} className="ml-1" />
