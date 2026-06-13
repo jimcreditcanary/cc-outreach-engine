@@ -62,6 +62,12 @@ export default async function SettingsPage() {
   // The "share via email" fallback inbound address (set in Vercel).
   const granolaForwardAddress = process.env.GRANOLA_INBOUND_ADDRESS ?? "(set GRANOLA_INBOUND_ADDRESS env var)";
 
+  // Lead capture API — key + allowed origins live in Vercel env (server-side
+  // only; the value is never rendered here, just whether it's configured).
+  const leadKeySet = !!process.env.LEAD_API_KEY;
+  const leadOrigins = ["creditcanary.co.uk", "www.creditcanary.co.uk", ...(process.env.LEAD_ALLOWED_ORIGINS?.split(/\s+/).filter(Boolean) ?? [])];
+  const leadEndpoint = `${appUrl}/api/leads`;
+
   return (
     <main className="px-8 py-6">
       <header className="mb-4 border-b border-neutral-200 pb-3">
@@ -432,6 +438,65 @@ export default async function SettingsPage() {
             </p>
           </div>
         </details>
+      </section>
+
+      {/* Lead capture API — reference for the website integration */}
+      <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Lead capture API</h2>
+        <p className="mb-4 text-xs text-neutral-500">
+          Website forms (whitepaper downloads, gated content) POST leads here. New people land as{" "}
+          <a href="/contacts?status=new" className="text-blue-700 hover:underline">New leads</a> on /contacts;
+          existing contacts are appended to. Every lead also raises an{" "}
+          <a href="/alerts" className="text-blue-700 hover:underline">alert</a> and an owner notification.
+        </p>
+
+        <div className="space-y-3 text-sm">
+          <div>
+            <span className={lbl}>Endpoint</span>
+            <code className="block break-all rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-sm text-neutral-800">POST {leadEndpoint}</code>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">API key:</span>
+            {leadKeySet ? (
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">✓ configured</span>
+            ) : (
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">not set — endpoint is open</span>
+            )}
+            <span className="text-xs text-neutral-400">
+              Managed in Vercel as <code>LEAD_API_KEY</code>. Sent by the site as <code>Authorization: Bearer …</code>. Not shown here.
+            </span>
+          </div>
+
+          <div>
+            <span className={lbl}>Allowed origins</span>
+            <div className="flex flex-wrap gap-1.5">
+              {leadOrigins.map((o) => (
+                <span key={o} className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-700">{o}</span>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-neutral-400">Add more via the <code>LEAD_ALLOWED_ORIGINS</code> env var (space-separated).</p>
+          </div>
+
+          <details className="rounded border border-neutral-200 bg-neutral-50 p-3 text-xs">
+            <summary className="cursor-pointer font-medium text-neutral-700">Example request + fields</summary>
+            <div className="mt-2 space-y-2 text-neutral-600">
+              <p><code>email</code> is the only required field. Also accepted: <code>name</code>, <code>company</code>, <code>job_title</code>, <code>source</code> (e.g. <code>whitepaper</code>), <code>asset</code> (the resource title), <code>url</code>, <code>message</code>, <code>phone</code>.</p>
+              <pre className="overflow-auto rounded bg-neutral-900 p-3 text-[11px] leading-relaxed text-neutral-100">{`curl -X POST ${leadEndpoint} \\
+  -H "Authorization: Bearer $LEAD_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "email":   "jane@lender.co.uk",
+    "name":    "Jane Smith",
+    "company": "Lender Ltd",
+    "source":  "whitepaper",
+    "asset":   "Risk & Liquidity",
+    "url":     "https://www.creditcanary.co.uk/resources/whitepapers/risk-liquidity"
+  }'`}</pre>
+              <p>Full reference for the website team: <code>docs/LEAD_API.md</code> in the repo.</p>
+            </div>
+          </details>
+        </div>
       </section>
     </main>
   );

@@ -6,7 +6,6 @@ import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 import { Combobox } from "@/components/Combobox";
-import { fmtDate } from "@/lib/format/datetime";
 
 export const dynamic = "force-dynamic";
 
@@ -53,12 +52,14 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
     ({ data, count } = await build(baseCols));
   }
 
-  // New-lead count for the filter tab (whole CRM, owner-scoped).
+  // Tab counts — full totals, owner-scoped, independent of search/pagination.
   let newCount = 0;
+  let allCount = 0;
   if (hasStatus) {
     let nc = db.from("contacts").select("id", { count: "exact", head: true }).eq("status", "new");
-    if (ownerId) nc = nc.eq("owner_id", ownerId);
-    newCount = (await nc).count ?? 0;
+    let ac = db.from("contacts").select("id", { count: "exact", head: true });
+    if (ownerId) { nc = nc.eq("owner_id", ownerId); ac = ac.eq("owner_id", ownerId); }
+    [newCount, allCount] = [(await nc).count ?? 0, (await ac).count ?? 0];
   }
 
   const { data: orgs } = await db.from("organisations").select("id, name").order("name", { ascending: true }).limit(1000);
@@ -76,19 +77,9 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       </header>
 
       {hasStatus && (
-        <div className="mb-3 flex items-center gap-2 text-xs">
-          <Link
-            href={`/contacts${owner ? `?owner=${owner}` : ""}`}
-            className={`rounded px-2 py-1 ${!newOnly ? "bg-neutral-700 text-white" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}
-          >
-            All contacts
-          </Link>
-          <Link
-            href={`/contacts?status=new${owner ? `&owner=${owner}` : ""}`}
-            className={`rounded px-2 py-1 ${newOnly ? "bg-emerald-600 text-white" : newCount > 0 ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"}`}
-          >
-            🆕 New leads{newCount > 0 ? ` (${newCount})` : ""}
-          </Link>
+        <div className="mb-4 flex items-center gap-2 text-sm">
+          <ContactTab href={`/contacts${owner ? `?owner=${owner}` : ""}`} active={!newOnly} label="All contacts" count={allCount} />
+          <ContactTab href={`/contacts?status=new${owner ? `&owner=${owner}` : ""}`} active={newOnly} label="🆕 New leads" count={newCount} accent />
         </div>
       )}
 
@@ -119,7 +110,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       ) : (
         <table className="w-full text-sm">
           <thead className="text-left text-xs uppercase text-neutral-400">
-            <tr><th className="py-1">Name</th><th>Company</th><th>Title</th><th>Email</th><th>Source</th><th></th></tr>
+            <tr><th className="py-1">Name</th><th>Company</th><th>Title</th><th>Email</th><th></th></tr>
           </thead>
           <tbody>
             {contacts.map((c) => (
@@ -133,10 +124,6 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
                 <td className="text-neutral-600">
                   {c.email ?? "—"}
                   {c.email_status === "bounced" && <span className="ml-1 rounded bg-red-100 px-1 text-xs text-red-700">bounced</span>}
-                </td>
-                <td className="text-xs text-neutral-500">
-                  {c.lead_source ?? "—"}
-                  {c.status === "new" && c.created_at && <span className="block text-[10px] text-neutral-400">{fmtDate(c.created_at)}</span>}
                 </td>
                 <td className="w-28 text-right">
                   <div className="flex items-center justify-end gap-1">
@@ -176,5 +163,21 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
         </div>
       )}
     </main>
+  );
+}
+
+// Filter tabs, mirroring the /linkedin tab style: bordered pill + count chip.
+function ContactTab({ href, active, label, count, accent }: { href: string; active: boolean; label: string; count: number; accent?: boolean }) {
+  const on = accent
+    ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+    : "border-amber-300 bg-amber-50 text-amber-900";
+  const chipOn = accent ? "bg-emerald-200 text-emerald-900" : "bg-amber-200 text-amber-900";
+  return (
+    <Link
+      href={href}
+      className={`rounded-md border px-3 py-1.5 font-medium transition-colors ${active ? on : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}`}
+    >
+      {label} <span className={`ml-1 rounded px-1.5 text-xs ${active ? chipOn : "bg-neutral-100 text-neutral-500"}`}>{count}</span>
+    </Link>
   );
 }
