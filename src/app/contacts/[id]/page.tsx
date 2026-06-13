@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact, unmarkNotOnLinkedIn, unskipContact } from "../../actions";
+import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact, unmarkNotOnLinkedIn, unskipContact, markLeadActioned } from "../../actions";
 import { setNewsletterSubscription } from "../../newsletter/actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
@@ -81,6 +81,19 @@ export default async function ContactDetail({
         <p className="mb-4 text-sm text-neutral-500">
           <Link href={`/companies/${org.id}`} className="text-blue-700 hover:underline">{org.name}</Link>
         </p>
+      )}
+
+      {c.status === "new" && (
+        <form action={markLeadActioned} className="mb-4 flex flex-wrap items-center gap-2 rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm">
+          <input type="hidden" name="contact_id" value={c.id} />
+          <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">New lead</span>
+          <span className="text-emerald-900">
+            Came in{c.lead_source ? ` via ${c.lead_source}` : ""}{c.created_at ? ` on ${fmtDate(c.created_at)}` : ""} — see the timeline below for what they did.
+          </span>
+          <PendingButton className="ml-auto rounded border border-emerald-400 px-2 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100" pendingLabel="…">
+            ✓ Mark as actioned
+          </PendingButton>
+        </form>
       )}
 
       {c.email && (

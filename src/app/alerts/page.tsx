@@ -33,6 +33,7 @@ const kindBadge: Record<string, string> = {
   post: "bg-blue-100 text-blue-800",
   hiring: "bg-purple-100 text-purple-800",
   inbound: "bg-emerald-100 text-emerald-800", // /enquire landing-page leads
+  lead: "bg-indigo-100 text-indigo-800", // /api/leads — whitepaper downloads etc.
 };
 
 export default async function AlertsPage({ searchParams }: { searchParams: Promise<{ owner?: string; show?: string }> }) {

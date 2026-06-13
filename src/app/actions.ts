@@ -424,6 +424,20 @@ export async function unskipContact(formData: FormData) {
   revalidatePath(`/contacts/${id}`);
 }
 
+/** Clear the 'new' lead flag once an operator has dealt with an inbound
+ *  lead. Sets status='engaged' so it drops off the New-leads filter but the
+ *  provenance (lead_source) and timeline stay intact. */
+export async function markLeadActioned(formData: FormData) {
+  const id = String(formData.get("contact_id"));
+  if (!id) return;
+  const db = serviceClient();
+  await db.from("contacts").update({ status: "engaged" }).eq("id", id);
+  await logEvent(db, { contact_id: id, message: "Lead marked as actioned" });
+  await flash("success", "Lead marked as actioned");
+  revalidatePath("/contacts");
+  revalidatePath(`/contacts/${id}`);
+}
+
 /** Shared persistence for the per-row LinkedIn form: contact edits + inline
  *  sector assignment. Returns the resolved organisation_id so each caller
  *  can stamp it onto the activity event. */
