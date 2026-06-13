@@ -79,7 +79,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       {hasStatus && (
         <div className="mb-4 flex items-center gap-2 text-sm">
           <ContactTab href={`/contacts${owner ? `?owner=${owner}` : ""}`} active={!newOnly} label="All contacts" count={allCount} />
-          <ContactTab href={`/contacts?status=new${owner ? `&owner=${owner}` : ""}`} active={newOnly} label="🆕 New leads" count={newCount} accent />
+          <ContactTab href={`/contacts?status=new${owner ? `&owner=${owner}` : ""}`} active={newOnly} label="New leads" count={newCount} accent />
         </div>
       )}
 
