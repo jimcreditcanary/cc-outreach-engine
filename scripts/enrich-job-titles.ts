@@ -33,6 +33,10 @@ const argVal = (flag: string): string | undefined => {
 const LIMIT = Number(argVal("--limit") ?? "0") || Infinity;
 const DELAY_MS = (Number(argVal("--delay-sec") ?? "120") || 120) * 1000;
 const DRY = process.argv.includes("--dry-run");
+// "titles" (default): contacts missing a job_title (and a URL).
+// "research": the /linkedin Research queue — contacts missing a URL (regardless
+// of title); fills the URL, and the title too only if it's currently blank.
+const MODE: "titles" | "research" = process.argv.includes("--research") ? "research" : "titles";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -97,20 +101,27 @@ function resolveProvider(): { name: string; search: Provider } {
 interface Row {
   id: string;
   full_name: string;
+  job_title: string | null;
   organisation: { name: string | null } | null;
 }
 
-async function loadEligible(db: SupabaseClient, limit: number): Promise<Row[]> {
-  const { data, error } = await db
+async function loadEligible(db: SupabaseClient, limit: number, mode: "titles" | "research"): Promise<Row[]> {
+  let q = db
     .from("contacts")
-    .select("id, full_name, organisation:organisations(name)")
-    .is("job_title", null)
+    .select("id, full_name, job_title, organisation:organisations(name)")
     .is("linkedin_url", null)
     .eq("not_on_linkedin", false)
     .not("full_name", "is", null)
-    .not("organisation_id", "is", null)
-    .order("id", { ascending: true })
-    .limit(Number.isFinite(limit) ? limit : 5000);
+    .not("organisation_id", "is", null);
+  if (mode === "titles") {
+    // Contacts missing a job title.
+    q = q.is("job_title", null);
+  } else {
+    // The /linkedin Research queue: missing a URL, not connected, no request
+    // sent, not skipped (mirrors the in-app filter).
+    q = q.eq("linkedin_connected", false).is("linkedin_request_sent_at", null).is("skipped_at", null);
+  }
+  const { data, error } = await q.order("id", { ascending: true }).limit(Number.isFinite(limit) ? limit : 5000);
   if (error) throw error;
   return (data ?? []) as unknown as Row[];
 }
@@ -122,9 +133,9 @@ async function logEvent(db: SupabaseClient, contactId: string, message: string) 
 async function main() {
   const provider = resolveProvider();
   const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-  const rows = await loadEligible(db, LIMIT);
+  const rows = await loadEligible(db, LIMIT, MODE);
 
-  console.log(`Provider: ${provider.name}${DRY ? " · DRY RUN" : ""}`);
+  console.log(`Provider: ${provider.name} · mode: ${MODE}${DRY ? " · DRY RUN" : ""}`);
   console.log(`Processing ${rows.length} contact(s) · ${DELAY_MS / 1000}s between searches\n`);
 
   let titled = 0, urlOnly = 0, notFound = 0, errors = 0;
@@ -149,14 +160,23 @@ async function main() {
       console.log(`${tag}  — no LinkedIn match → not_on_linkedin`);
       if (!DRY) { await db.from("contacts").update({ not_on_linkedin: true }).eq("id", c.id); await logEvent(db, c.id, "No LinkedIn profile found in Google SERP — marked not on LinkedIn"); }
       notFound++;
-    } else if (match.jobTitle) {
-      console.log(`${tag}  ✓ ${match.jobTitle}   (${match.link})`);
-      if (!DRY) { await db.from("contacts").update({ job_title: match.jobTitle, linkedin_url: match.link }).eq("id", c.id); await logEvent(db, c.id, `Job title from LinkedIn SERP: ${match.jobTitle}`); }
-      titled++;
     } else {
-      console.log(`${tag}  ~ profile found, no title in SERP → URL only   (${match.link})`);
-      if (!DRY) { await db.from("contacts").update({ linkedin_url: match.link }).eq("id", c.id); await logEvent(db, c.id, "LinkedIn profile found in SERP (no title visible) — URL saved"); }
-      urlOnly++;
+      // Always save the profile URL. Fill the title only when it's blank —
+      // never overwrite a title the contact already has (research mode).
+      const fillTitle = !c.job_title && !!match.jobTitle;
+      const patch: Record<string, unknown> = { linkedin_url: match.link };
+      if (fillTitle) patch.job_title = match.jobTitle;
+      if (fillTitle) {
+        console.log(`${tag}  ✓ ${match.jobTitle}   (${match.link})`);
+        titled++;
+      } else {
+        console.log(`${tag}  ✓ profile${c.job_title ? "" : " (no title in SERP)"}   (${match.link})`);
+        urlOnly++;
+      }
+      if (!DRY) {
+        await db.from("contacts").update(patch).eq("id", c.id);
+        await logEvent(db, c.id, fillTitle ? `Job title from LinkedIn SERP: ${match.jobTitle}` : "LinkedIn profile found in SERP — URL saved");
+      }
     }
 
     if (i < rows.length - 1) await sleep(DELAY_MS);
