@@ -67,24 +67,60 @@ export function extractJobTitle(serpTitle: string, companyName: string | null): 
 
   // First segment before the next separator is the candidate title.
   let candidate = rest;
-  for (const sep of [" - ", " – ", " — ", " | ", " · ", " @ "]) {
+  for (const sep of [" - ", " – ", " — ", " | ", " · ", " @ ", " I "]) {
     const i = rest.indexOf(sep);
     if (i >= 0) { candidate = rest.slice(0, i); break; }
   }
-  // "Head of Risk at Acme" → "Head of Risk"; "Head of Risk @Acme" → "Head of Risk".
-  const atIdx = candidate.toLowerCase().lastIndexOf(" at ");
-  if (atIdx > 0) candidate = candidate.slice(0, atIdx);
-  candidate = candidate.replace(/\s*@\s*\S.*$/, ""); // strip a trailing "@Company"
-  // Drop headline qualifiers that aren't part of the role itself.
-  candidate = candidate.replace(/^(experienced|seasoned|former|formerly|ex)\s+/i, "");
-  candidate = candidate.trim();
+  candidate = tidyTitle(candidate);
 
-  // Reject if it's just the company name, or junk.
+  // Reject if it's just the company name, junk, or a non-title headline.
   if (!candidate) return null;
   if (companyName && norm(candidate) === norm(companyName)) return null;
-  if (candidate.length < 2 || candidate.length > 90) return null;
-  if (!/[a-z]/i.test(candidate)) return null;
+  if (!isPlausibleTitle(candidate)) return null;
   return candidate;
+}
+
+/** Common trim applied to a raw title fragment: cut at a sentence boundary,
+ *  drop a leaked "@Company"/"at Company", strip leading headline qualifiers
+ *  and trailing ellipsis/punctuation. */
+export function tidyTitle(raw: string): string {
+  let c = raw.trim();
+  // First segment before a separator: "Public Policy I Govt Relations I …" → "Public Policy".
+  for (const sep of [" - ", " – ", " — ", " | ", " · ", " I "]) {
+    const i = c.indexOf(sep);
+    if (i > 0) c = c.slice(0, i);
+  }
+  // Sentence boundary: "CEO. Advantage Finance" → "CEO".
+  const dot = c.search(/\.\s/);
+  if (dot > 0) c = c.slice(0, dot);
+  // "Head of Risk at Acme" → "Head of Risk"; trailing "@Company".
+  const atIdx = c.toLowerCase().lastIndexOf(" at ");
+  if (atIdx > 0) c = c.slice(0, atIdx);
+  c = c.replace(/\s*@\s*\S.*$/, "");
+  // Leading headline qualifiers that aren't the role.
+  c = c.replace(/^(experienced|seasoned|former|formerly|ex|aspiring)\s+/i, "");
+  // Trailing ellipsis / stray punctuation.
+  c = c.replace(/\s*(\.{2,}|…)\s*$/, "").replace(/[\s.,;:–-]+$/, "").trim();
+  // Dangling connectors left when a sentence was cut: "…, Germany and" → "…, Germany".
+  let prev: string;
+  do { prev = c; c = c.replace(/[\s,]+(and|with|for|of|to|the|a|an|in|on|at|part|&)\s*$/i, "").trim(); } while (c !== prev);
+  return c;
+}
+
+const GENERIC = new Set(["leader", "senior leader", "professional", "expert", "consultant", "specialist", "manager", "director", "owner", "founder"]);
+
+/** Is this a real-looking job title, vs a tagline / sentence / location? */
+export function isPlausibleTitle(t: string): boolean {
+  if (!t || t.length < 2 || t.length > 70) return false;
+  if (!/[a-z]/i.test(t)) return false;
+  if (/^[a-z]/.test(t)) return false; // sentence fragments start lowercase
+  // Tagline / sentence openers.
+  if (/^(at|we|our|helping|driving|building|passionate|making|bringing|delivering|enabling|supporting|creating|transforming|empowering)\b/i.test(t)) return false;
+  // Location-shaped ("Walton-On-Thames, England", "London, United Kingdom").
+  if (/,\s*(england|scotland|wales|northern ireland|united kingdom|uk)\b/i.test(t) && !/\b(manager|director|head|officer|lead|analyst|executive|partner|chief|president|vp|ceo|cfo|coo|cto|cro)\b/i.test(t)) return false;
+  // Too vague on its own.
+  if (GENERIC.has(t.toLowerCase())) return false;
+  return true;
 }
 
 export interface SerpMatch {
@@ -113,6 +149,15 @@ export function canonicalLinkedIn(link: string): string {
   } catch {
     return link.split(/[?#]/)[0]!.replace(/\/+$/, "");
   }
+}
+
+/** Re-clean an already-stored title. Returns the tidied title, or null if
+ *  what's stored isn't a real title (tagline/sentence/location) and should
+ *  be cleared. Used by scripts/clean-job-titles.ts over the SERP-enriched set. */
+export function cleanStoredTitle(stored: string | null): string | null {
+  if (!stored) return null;
+  const t = tidyTitle(stored);
+  return isPlausibleTitle(t) ? t : null;
 }
 
 /** The Google query string for a contact. */

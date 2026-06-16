@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildQuery, canonicalLinkedIn, extractJobTitle, nameMatches, pickMatch, titleNamePart } from "../serpJobTitle";
+import { buildQuery, canonicalLinkedIn, cleanStoredTitle, extractJobTitle, nameMatches, pickMatch, titleNamePart } from "../serpJobTitle";
 
 describe("titleNamePart", () => {
   it("takes the bit before the first separator", () => {
@@ -59,6 +59,22 @@ describe("pickMatch", () => {
   it("returns null when no in/ profile in the top N matches the name", () => {
     expect(pickMatch(results, "Bob Jones", "Acme Ltd")).toBeNull();
     expect(pickMatch([results[0]!], "Jane Smith", "Acme Ltd")).toBeNull(); // only a company page
+  });
+});
+
+describe("cleanStoredTitle", () => {
+  it("salvages a real title from messy stored values", () => {
+    expect(cleanStoredTitle("CEO. Advantage Finance")).toBe("CEO");
+    expect(cleanStoredTitle("Authorised High Court Enforcement Officer. Expert ...")).toBe("Authorised High Court Enforcement Officer");
+    expect(cleanStoredTitle("Public Policy I Government Relations I ...")).toBe("Public Policy");
+    expect(cleanStoredTitle("Head of Credit Risk")).toBe("Head of Credit Risk"); // already clean
+  });
+  it("clears taglines, sentences and locations", () => {
+    expect(cleanStoredTitle("Walton-On-Thames, England ...")).toBeNull();
+    expect(cleanStoredTitle("At Bonafidee and Redline we reduce your ...")).toBeNull();
+    expect(cleanStoredTitle("Helping clients understand and support ...")).toBeNull();
+    expect(cleanStoredTitle("Driving Growth & Client Success")).toBeNull();
+    expect(cleanStoredTitle("Senior Leader")).toBeNull();
   });
 });
 
