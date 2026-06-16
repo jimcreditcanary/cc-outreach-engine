@@ -67,13 +67,16 @@ export function extractJobTitle(serpTitle: string, companyName: string | null): 
 
   // First segment before the next separator is the candidate title.
   let candidate = rest;
-  for (const sep of [" - ", " – ", " — ", " | ", " · "]) {
+  for (const sep of [" - ", " – ", " — ", " | ", " · ", " @ "]) {
     const i = rest.indexOf(sep);
     if (i >= 0) { candidate = rest.slice(0, i); break; }
   }
-  // "Head of Risk at Acme" → "Head of Risk".
+  // "Head of Risk at Acme" → "Head of Risk"; "Head of Risk @Acme" → "Head of Risk".
   const atIdx = candidate.toLowerCase().lastIndexOf(" at ");
   if (atIdx > 0) candidate = candidate.slice(0, atIdx);
+  candidate = candidate.replace(/\s*@\s*\S.*$/, ""); // strip a trailing "@Company"
+  // Drop headline qualifiers that aren't part of the role itself.
+  candidate = candidate.replace(/^(experienced|seasoned|former|formerly|ex)\s+/i, "");
   candidate = candidate.trim();
 
   // Reject if it's just the company name, or junk.

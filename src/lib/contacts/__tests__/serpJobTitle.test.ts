@@ -31,6 +31,11 @@ describe("extractJobTitle", () => {
     expect(extractJobTitle("Jane Smith - Acme Ltd | LinkedIn", "Acme Ltd")).toBeNull();
     expect(extractJobTitle("Jane Smith | LinkedIn", "Acme")).toBeNull();
   });
+  it("strips a leaked @Company and headline qualifiers", () => {
+    expect(extractJobTitle("James Hicks - MD Autolend @ Lendable | LinkedIn", "Lendable")).toBe("MD Autolend");
+    expect(extractJobTitle("Chris Harper - Experienced Chief Risk Officer | LinkedIn", "Secure Trust Bank")).toBe("Chief Risk Officer");
+    expect(extractJobTitle("Sam Lee - Former Head of Sales - Acme | LinkedIn", "Acme")).toBe("Head of Sales");
+  });
 });
 
 describe("canonicalLinkedIn", () => {
