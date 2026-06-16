@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
-import { createContact, deleteContact, markLeadActioned } from "../actions";
+import { createContact, deleteContact, markLeadActioned, confirmGuessedEmail, clearGuessedEmail, confirmGuessedForCompany, clearGuessedForCompany } from "../actions";
 import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
@@ -25,13 +25,20 @@ interface ContactRow {
 
 const PAGE = 100;
 
-export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; status?: string }> }) {
-  const { q, page: pageStr, owner, status } = await searchParams;
+interface GuessGroup {
+  orgId: string | null;
+  orgName: string;
+  rows: { id: string; full_name: string | null; email: string | null }[];
+}
+
+export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; status?: string; guessed?: string }> }) {
+  const { q, page: pageStr, owner, status, guessed } = await searchParams;
   const page = Math.max(1, parseInt(pageStr ?? "1") || 1);
   const from = (page - 1) * PAGE;
   const db = serviceClient();
   const ownerId = await resolveOwnerFilter(owner);
   const newOnly = status === "new";
+  const guessedView = guessed === "1";
 
   // Select status/lead_source if migration 036 ran; fall back if not so the
   // page never blanks out before the migration is applied.
@@ -56,11 +63,33 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   // Tab counts — full totals, owner-scoped, independent of search/pagination.
   let newCount = 0;
   let allCount = 0;
+  let guessedCount = 0;
   if (hasStatus) {
     let nc = db.from("contacts").select("id", { count: "exact", head: true }).eq("status", "new");
     let ac = db.from("contacts").select("id", { count: "exact", head: true });
-    if (ownerId) { nc = nc.eq("owner_id", ownerId); ac = ac.eq("owner_id", ownerId); }
-    [newCount, allCount] = [(await nc).count ?? 0, (await ac).count ?? 0];
+    let gc = db.from("contacts").select("id", { count: "exact", head: true }).eq("email_guessed", true);
+    if (ownerId) { nc = nc.eq("owner_id", ownerId); ac = ac.eq("owner_id", ownerId); gc = gc.eq("owner_id", ownerId); }
+    [newCount, allCount, guessedCount] = [(await nc).count ?? 0, (await ac).count ?? 0, (await gc).count ?? 0];
+  }
+
+  // Guessed-email review: all guessed contacts grouped by company for bulk triage.
+  let guessGroups: GuessGroup[] = [];
+  if (guessedView && hasStatus) {
+    let gq = db
+      .from("contacts")
+      .select("id, full_name, email, organisation_id, organisation:organisations(name)")
+      .eq("email_guessed", true)
+      .order("full_name", { ascending: true })
+      .limit(3000);
+    if (ownerId) gq = gq.eq("owner_id", ownerId);
+    const { data: gdata } = await gq;
+    const map = new Map<string, GuessGroup>();
+    for (const c of (gdata ?? []) as unknown as { id: string; full_name: string | null; email: string | null; organisation_id: string | null; organisation: { name: string | null } | null }[]) {
+      const key = c.organisation_id ?? "none";
+      if (!map.has(key)) map.set(key, { orgId: c.organisation_id, orgName: c.organisation?.name ?? "(no company)", rows: [] });
+      map.get(key)!.rows.push({ id: c.id, full_name: c.full_name, email: c.email });
+    }
+    guessGroups = [...map.values()].sort((a, b) => b.rows.length - a.rows.length || a.orgName.localeCompare(b.orgName));
   }
 
   const { data: orgs } = await db.from("organisations").select("id, name").order("name", { ascending: true }).limit(1000);
@@ -78,12 +107,19 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       </header>
 
       {hasStatus && (
-        <div className="mb-4 flex items-center gap-2 text-sm">
-          <ContactTab href={`/contacts${owner ? `?owner=${owner}` : ""}`} active={!newOnly} label="All contacts" count={allCount} />
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+          <ContactTab href={`/contacts${owner ? `?owner=${owner}` : ""}`} active={!newOnly && !guessedView} label="All contacts" count={allCount} />
           <ContactTab href={`/contacts?status=new${owner ? `&owner=${owner}` : ""}`} active={newOnly} label="New leads" count={newCount} accent />
+          {(guessedCount > 0 || guessedView) && (
+            <ContactTab href={`/contacts?guessed=1${owner ? `&owner=${owner}` : ""}`} active={guessedView} label="Guessed emails" count={guessedCount} />
+          )}
         </div>
       )}
 
+      {guessedView ? (
+        <GuessedReview groups={guessGroups} />
+      ) : (
+      <>
       <form className="mb-3">
         <input name="q" defaultValue={q ?? ""} placeholder="Search name or email…" className="w-full rounded border border-neutral-300 px-3 py-2 text-sm" />
         {newOnly && <input type="hidden" name="status" value="new" />}
@@ -164,7 +200,68 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
           {page < lastPage ? <Link href={qp(page + 1)} className="text-blue-700 hover:underline">Next →</Link> : <span className="text-neutral-300">Next →</span>}
         </div>
       )}
+      </>
+      )}
     </main>
+  );
+}
+
+// Guessed-email triage: contacts grouped by company, with bulk Confirm/Clear
+// per company plus per-row controls. Confirming clears the email_guessed flag
+// (the contact becomes eligible for outreach); clearing wipes the address.
+function GuessedReview({ groups }: { groups: GuessGroup[] }) {
+  if (groups.length === 0) {
+    return (
+      <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
+        No guessed emails to review. Run <code>scripts/guess-emails.ts</code> to infer missing addresses.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-neutral-500">
+        These addresses were inferred from each company&apos;s email pattern and are held back from outreach until you confirm them.
+        <strong> Confirm</strong> makes them eligible; <strong>Clear</strong> wipes the guess.
+      </p>
+      {groups.map((g) => (
+        <div key={g.orgId ?? "none"} className="rounded-lg border border-neutral-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-4 py-2">
+            <span className="font-medium text-neutral-800">{g.orgName}</span>
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">{g.rows.length} guessed</span>
+            {g.orgId && (
+              <div className="ml-auto flex gap-2">
+                <form action={confirmGuessedForCompany}>
+                  <input type="hidden" name="organisation_id" value={g.orgId} />
+                  <PendingButton className="rounded border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="…">✓ Confirm all</PendingButton>
+                </form>
+                <form action={clearGuessedForCompany}>
+                  <input type="hidden" name="organisation_id" value={g.orgId} />
+                  <PendingButton className="rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50" pendingLabel="…">✗ Clear all</PendingButton>
+                </form>
+              </div>
+            )}
+          </div>
+          <ul className="divide-y divide-neutral-100 text-sm">
+            {g.rows.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-2 px-4 py-1.5">
+                <Link href={`/contacts/${r.id}`} className="font-medium text-blue-700 hover:underline">{r.full_name ?? "?"}</Link>
+                <span className="text-neutral-500">{r.email}</span>
+                <div className="ml-auto flex gap-1">
+                  <form action={confirmGuessedEmail}>
+                    <input type="hidden" name="contact_id" value={r.id} />
+                    <PendingButton className="rounded border border-emerald-300 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50" pendingLabel="…">✓</PendingButton>
+                  </form>
+                  <form action={clearGuessedEmail}>
+                    <input type="hidden" name="contact_id" value={r.id} />
+                    <PendingButton className="rounded border border-amber-300 px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50" pendingLabel="…">✗</PendingButton>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
   );
 }
 

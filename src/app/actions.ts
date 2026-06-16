@@ -433,6 +433,7 @@ export async function confirmGuessedEmail(formData: FormData) {
   await db.from("contacts").update({ email_guessed: false }).eq("id", id);
   await logEvent(db, { contact_id: id, message: "Guessed email confirmed correct" });
   await flash("success", "Email confirmed — now eligible for outreach");
+  revalidatePath("/contacts");
   revalidatePath(`/contacts/${id}`);
 }
 
@@ -444,7 +445,42 @@ export async function clearGuessedEmail(formData: FormData) {
   await db.from("contacts").update({ email: null, email_guessed: false }).eq("id", id);
   await logEvent(db, { contact_id: id, message: "Guessed email cleared (wrong)" });
   await flash("success", "Guessed email removed");
+  revalidatePath("/contacts");
   revalidatePath(`/contacts/${id}`);
+}
+
+/** Bulk-confirm every guessed email at one company — clears the flag on all
+ *  of them so they become eligible for outreach in one click. */
+export async function confirmGuessedForCompany(formData: FormData) {
+  const orgId = String(formData.get("organisation_id"));
+  if (!orgId) return;
+  const db = serviceClient();
+  const { data } = await db
+    .from("contacts")
+    .update({ email_guessed: false })
+    .eq("organisation_id", orgId)
+    .eq("email_guessed", true)
+    .select("id");
+  for (const c of data ?? []) await logEvent(db, { contact_id: c.id as string, message: "Guessed email confirmed (bulk)" });
+  await flash("success", `Confirmed ${data?.length ?? 0} guessed email${data?.length === 1 ? "" : "s"} — now eligible for outreach`);
+  revalidatePath("/contacts");
+}
+
+/** Bulk-clear every guessed email at one company — wipes the addresses we
+ *  weren't confident enough to keep. */
+export async function clearGuessedForCompany(formData: FormData) {
+  const orgId = String(formData.get("organisation_id"));
+  if (!orgId) return;
+  const db = serviceClient();
+  const { data } = await db
+    .from("contacts")
+    .update({ email: null, email_guessed: false })
+    .eq("organisation_id", orgId)
+    .eq("email_guessed", true)
+    .select("id");
+  for (const c of data ?? []) await logEvent(db, { contact_id: c.id as string, message: "Guessed email cleared (bulk)" });
+  await flash("success", `Cleared ${data?.length ?? 0} guessed email${data?.length === 1 ? "" : "s"}`);
+  revalidatePath("/contacts");
 }
 
 /** Clear the 'new' lead flag once an operator has dealt with an inbound
