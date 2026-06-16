@@ -424,6 +424,29 @@ export async function unskipContact(formData: FormData) {
   revalidatePath(`/contacts/${id}`);
 }
 
+/** Confirm a guessed email is correct — clears the email_guessed flag so the
+ *  contact re-enters automated outreach. */
+export async function confirmGuessedEmail(formData: FormData) {
+  const id = String(formData.get("contact_id"));
+  if (!id) return;
+  const db = serviceClient();
+  await db.from("contacts").update({ email_guessed: false }).eq("id", id);
+  await logEvent(db, { contact_id: id, message: "Guessed email confirmed correct" });
+  await flash("success", "Email confirmed — now eligible for outreach");
+  revalidatePath(`/contacts/${id}`);
+}
+
+/** Reject a guessed email — wipes it so we don't carry a wrong address. */
+export async function clearGuessedEmail(formData: FormData) {
+  const id = String(formData.get("contact_id"));
+  if (!id) return;
+  const db = serviceClient();
+  await db.from("contacts").update({ email: null, email_guessed: false }).eq("id", id);
+  await logEvent(db, { contact_id: id, message: "Guessed email cleared (wrong)" });
+  await flash("success", "Guessed email removed");
+  revalidatePath(`/contacts/${id}`);
+}
+
 /** Clear the 'new' lead flag once an operator has dealt with an inbound
  *  lead. Sets status='engaged' so it drops off the New-leads filter but the
  *  provenance (lead_source) and timeline stay intact. */

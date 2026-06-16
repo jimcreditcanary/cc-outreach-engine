@@ -42,18 +42,37 @@ export async function runGenerateBatch(db: DB, limit: number): Promise<GenerateB
   const maxPerCompany = Number(process.env.CADENCE_MAX_PER_COMPANY ?? 1);
   const now = new Date();
 
-  const { data: contacts, error } = await db
-    .from("contacts")
-    .select("id, full_name, email, job_title, label, last_touched_at, snooze_until, owner_id, organisation:organisations(id, name, sector, tier, is_partner)")
-    .not("email", "is", null)
-    .limit(3000);
-  if (error) throw error;
+  // email_guessed quarantines inferred addresses from auto-send (they're
+  // unverified — bouncing them would hurt deliverability). Select it when the
+  // column exists (migration 037), else fall back so generate keeps working.
+  const richSel = "id, full_name, email, email_guessed, job_title, label, last_touched_at, snooze_until, owner_id, organisation:organisations(id, name, sector, tier, is_partner)";
+  const baseSel = "id, full_name, email, job_title, label, last_touched_at, snooze_until, owner_id, organisation:organisations(id, name, sector, tier, is_partner)";
+  interface ContactRow {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    email_guessed?: boolean | null;
+    job_title: string | null;
+    label: string | null;
+    last_touched_at: string | null;
+    snooze_until: string | null;
+    owner_id: string | null;
+    organisation: unknown;
+  }
+  let resp: { data: ContactRow[] | null; error: { message: string } | null } =
+    await db.from("contacts").select(richSel).not("email", "is", null).limit(3000);
+  if (resp.error && /email_guessed/.test(resp.error.message)) {
+    resp = await db.from("contacts").select(baseSel).not("email", "is", null).limit(3000);
+  }
+  if (resp.error) throw resp.error;
+  const contacts = resp.data;
 
   const due = (contacts ?? []).filter((c) => {
     const org = c.organisation as unknown as
       | { id: string; name: string; sector: string | null; tier: number | null; is_partner: boolean }
       | null;
     if (!org || org.is_partner || !org.sector || (org.tier !== 2 && org.tier !== 3)) return false;
+    if ((c as { email_guessed?: boolean }).email_guessed) return false; // unverified guess — never auto-send
     if (inPipeline.has(c.id as string)) return false;
     if (c.email && suppressed.has(String(c.email).toLowerCase())) return false;
     return isDue(

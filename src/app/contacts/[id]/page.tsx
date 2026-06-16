@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact, unmarkNotOnLinkedIn, unskipContact, markLeadActioned } from "../../actions";
+import { updateContact, deleteContact, mergeContact, addNote, updateNote, deleteNote, generateDraftForContact, unmarkNotOnLinkedIn, unskipContact, markLeadActioned, confirmGuessedEmail, clearGuessedEmail } from "../../actions";
 import { setNewsletterSubscription } from "../../newsletter/actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { PendingButton } from "@/components/PendingButton";
@@ -81,6 +81,23 @@ export default async function ContactDetail({
         <p className="mb-4 text-sm text-neutral-500">
           <Link href={`/companies/${org.id}`} className="text-blue-700 hover:underline">{org.name}</Link>
         </p>
+      )}
+
+      {c.email_guessed && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
+          <span className="rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Guessed email</span>
+          <span className="text-amber-900">
+            <code className="rounded bg-white/60 px-1">{c.email}</code> was inferred from {org?.name ?? "the company"}&apos;s pattern — unverified, and held back from automated outreach.
+          </span>
+          <form action={confirmGuessedEmail} className="ml-auto">
+            <input type="hidden" name="contact_id" value={c.id} />
+            <PendingButton className="rounded border border-emerald-400 px-2 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100" pendingLabel="…">✓ Correct</PendingButton>
+          </form>
+          <form action={clearGuessedEmail}>
+            <input type="hidden" name="contact_id" value={c.id} />
+            <PendingButton className="rounded border border-amber-400 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100" pendingLabel="…">✗ Wrong — clear</PendingButton>
+          </form>
+        </div>
       )}
 
       {c.status === "new" && (

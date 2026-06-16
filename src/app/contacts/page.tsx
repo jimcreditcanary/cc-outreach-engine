@@ -19,6 +19,7 @@ interface ContactRow {
   status: string | null;
   lead_source: string | null;
   created_at: string | null;
+  email_guessed: boolean | null;
   organisation: { name: string | null } | null;
 }
 
@@ -34,7 +35,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
 
   // Select status/lead_source if migration 036 ran; fall back if not so the
   // page never blanks out before the migration is applied.
-  const richCols = "id, full_name, email, job_title, label, email_status, status, lead_source, created_at, organisation:organisations(name)";
+  const richCols = "id, full_name, email, job_title, label, email_status, status, lead_source, created_at, email_guessed, organisation:organisations(name)";
   const baseCols = "id, full_name, email, job_title, label, email_status, organisation:organisations(name)";
   const build = (cols: string) => {
     let query = db.from("contacts").select(cols, { count: "exact" });
@@ -47,7 +48,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   };
   let { data, count, error } = await build(richCols);
   let hasStatus = true;
-  if (error && /status|lead_source|created_at/.test(error.message)) {
+  if (error && /status|lead_source|created_at|email_guessed/.test(error.message)) {
     hasStatus = false;
     ({ data, count } = await build(baseCols));
   }
@@ -124,6 +125,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
                 <td className="text-neutral-600">
                   {c.email ?? "—"}
                   {c.email_status === "bounced" && <span className="ml-1 rounded bg-red-100 px-1 text-xs text-red-700">bounced</span>}
+                  {c.email_guessed && <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-700" title="Inferred from the company's email pattern — unverified">guessed</span>}
                 </td>
                 <td className="w-28 text-right">
                   <div className="flex items-center justify-end gap-1">
