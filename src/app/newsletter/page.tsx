@@ -3,8 +3,12 @@ import { serviceClient } from "@/lib/db/client";
 import { createNewsletter } from "./actions";
 import { PendingButton } from "@/components/PendingButton";
 import { fmtDate } from "@/lib/format/datetime";
+import { SortableTh } from "@/components/SortableTh";
+import { parseSort, sortRows } from "@/lib/table/sort";
 
 export const dynamic = "force-dynamic";
+
+const SORT_COLS = ["subject", "status", "sent_count", "sent_at"] as const;
 
 interface Issue {
   id: string;
@@ -15,13 +19,15 @@ interface Issue {
   created_at: string;
 }
 
-export default async function NewsletterPage() {
+export default async function NewsletterPage({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
+  const { sort: sortRaw } = await searchParams;
+  const sort = parseSort(sortRaw, SORT_COLS, { col: "created_at", dir: "desc" });
   const db = serviceClient();
   const [{ data: issues }, { count: subs }] = await Promise.all([
     db.from("newsletters").select("id, subject, status, sent_at, sent_count, created_at").order("created_at", { ascending: false }).limit(50),
     db.from("contacts").select("*", { count: "exact", head: true }).eq("newsletter_subscribed", true),
   ]);
-  const list = (issues ?? []) as Issue[];
+  const list = sortRows((issues ?? []) as Issue[], sort, (i, col) => (i as unknown as Record<string, unknown>)[col]);
 
   return (
     <main className="px-8 py-6">
@@ -43,7 +49,12 @@ export default async function NewsletterPage() {
 
       <table className="w-full text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
-          <tr><th className="py-1">Subject</th><th>Status</th><th className="text-right">Recipients</th><th className="text-right">Sent</th></tr>
+          <tr>
+            <SortableTh label="Subject" col="subject" sort={sort} basePath="/newsletter" className="py-1" />
+            <SortableTh label="Status" col="status" sort={sort} basePath="/newsletter" />
+            <SortableTh label="Recipients" col="sent_count" sort={sort} basePath="/newsletter" className="text-right" />
+            <SortableTh label="Sent" col="sent_at" sort={sort} basePath="/newsletter" className="text-right" />
+          </tr>
         </thead>
         <tbody>
           {list.map((i) => (

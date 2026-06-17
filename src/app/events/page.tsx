@@ -6,8 +6,12 @@ import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 import { fmtDate } from "@/lib/format/datetime";
+import { SortableTh } from "@/components/SortableTh";
+import { parseSort, sortRows } from "@/lib/table/sort";
 
 export const dynamic = "force-dynamic";
+
+const SORT_COLS = ["name", "start_date", "location", "attendees"] as const;
 
 interface ConferenceRow {
   id: string;
@@ -17,10 +21,12 @@ interface ConferenceRow {
   end_date: string | null;
 }
 
-export default async function EventsPage({ searchParams }: { searchParams: Promise<{ owner?: string }> }) {
-  const { owner } = await searchParams;
+export default async function EventsPage({ searchParams }: { searchParams: Promise<{ owner?: string; sort?: string }> }) {
+  const { owner, sort: sortRaw } = await searchParams;
   const db = serviceClient();
   const ownerId = await resolveOwnerFilter(owner);
+  const sort = parseSort(sortRaw, SORT_COLS, { col: "start_date", dir: "desc" });
+  const hdrParams = { ...(owner ? { owner } : {}) };
 
   let q = db
     .from("conferences")
@@ -43,6 +49,9 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
       counts.set(id, (counts.get(id) ?? 0) + 1);
     }
   }
+  const view = sortRows(rows, sort, (r, col) =>
+    col === "attendees" ? (counts.get(r.id) ?? 0) : (r as unknown as Record<string, unknown>)[col],
+  );
 
   return (
     <main className="px-8 py-6">
@@ -65,10 +74,16 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
 
       <table className="w-full text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
-          <tr><th className="py-1">Event</th><th>When</th><th>Location</th><th className="text-right">Attendees</th><th></th></tr>
+          <tr>
+            <SortableTh label="Event" col="name" sort={sort} basePath="/events" params={hdrParams} className="py-1" />
+            <SortableTh label="When" col="start_date" sort={sort} basePath="/events" params={hdrParams} />
+            <SortableTh label="Location" col="location" sort={sort} basePath="/events" params={hdrParams} />
+            <SortableTh label="Attendees" col="attendees" sort={sort} basePath="/events" params={hdrParams} className="text-right" />
+            <th></th>
+          </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {view.map((r) => (
             <tr key={r.id} className="border-t border-neutral-100 hover:bg-neutral-100">
               <td className="py-1.5"><Link href={`/events/${r.id}`} className="font-medium text-blue-700 hover:underline">{r.name}</Link></td>
               <td className="text-neutral-600">

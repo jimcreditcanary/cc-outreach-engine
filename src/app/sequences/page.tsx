@@ -7,8 +7,12 @@ import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 import { deleteSequenceAction } from "./actions";
 import { fmtDate } from "@/lib/format/datetime";
+import { SortableTh } from "@/components/SortableTh";
+import { parseSort, sortRows } from "@/lib/table/sort";
 
 export const dynamic = "force-dynamic";
+
+const SORT_COLS = ["name", "status", "contacts", "replies", "outstanding", "created_at"] as const;
 
 interface Sequence {
   id: string;
@@ -23,10 +27,12 @@ const STATUS_COLOR: Record<string, string> = {
   complete: "bg-neutral-200 text-neutral-700",
 };
 
-export default async function SequencesPage({ searchParams }: { searchParams: Promise<{ owner?: string }> }) {
-  const { owner } = await searchParams;
+export default async function SequencesPage({ searchParams }: { searchParams: Promise<{ owner?: string; sort?: string }> }) {
+  const { owner, sort: sortRaw } = await searchParams;
   const db = serviceClient();
   const ownerId = await resolveOwnerFilter(owner);
+  const sort = parseSort(sortRaw, SORT_COLS, { col: "created_at", dir: "desc" });
+  const hdrParams = { ...(owner ? { owner } : {}) };
 
   // Wrap the load so a missing table (mig 027 not run) shows a readable
   // banner instead of 500-ing the whole page.
@@ -67,6 +73,14 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
       }
     } catch (e) { errs.counts = { message: (e as Error).message }; }
   }
+
+  const view = sortRows(seqs, sort, (s, col) => {
+    const c = counts[s.id] ?? { contacts: 0, replied: 0, actions: 0 };
+    if (col === "contacts") return c.contacts;
+    if (col === "replies") return c.replied;
+    if (col === "outstanding") return c.actions;
+    return (s as unknown as Record<string, unknown>)[col];
+  });
 
   return (
     <main className="px-8 py-6">
@@ -121,7 +135,15 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
 
       <table className="w-full text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
-          <tr><th className="py-1">Sequence</th><th>Status</th><th className="text-right">Contacts</th><th className="text-right">Replies</th><th className="text-right">Outstanding</th><th>Created</th><th></th></tr>
+          <tr>
+            <SortableTh label="Sequence" col="name" sort={sort} basePath="/sequences" params={hdrParams} className="py-1" />
+            <SortableTh label="Status" col="status" sort={sort} basePath="/sequences" params={hdrParams} />
+            <SortableTh label="Contacts" col="contacts" sort={sort} basePath="/sequences" params={hdrParams} className="text-right" />
+            <SortableTh label="Replies" col="replies" sort={sort} basePath="/sequences" params={hdrParams} className="text-right" />
+            <SortableTh label="Outstanding" col="outstanding" sort={sort} basePath="/sequences" params={hdrParams} className="text-right" />
+            <SortableTh label="Created" col="created_at" sort={sort} basePath="/sequences" params={hdrParams} />
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           {seqs.map((s) => {

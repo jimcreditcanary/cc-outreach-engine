@@ -5,8 +5,23 @@ import { OwnerFilter } from "@/components/OwnerFilter";
 import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
+import { SortableTh } from "@/components/SortableTh";
+import { parseSort, sortRows } from "@/lib/table/sort";
 
 export const dynamic = "force-dynamic";
+
+const SORT_COLS = ["title", "company", "tier", "stage", "status", "value"] as const;
+function dealVal(d: DealRow, col: string): unknown {
+  switch (col) {
+    case "title": return d.title;
+    case "company": return d.organisation?.name;
+    case "tier": return d.organisation?.tier;
+    case "stage": return d.stage;
+    case "status": return d.status;
+    case "value": return d.value;
+    default: return null;
+  }
+}
 
 const STATUS = ["open", "won", "lost"];
 const MEDDICC: { key: string; label: string }[] = [
@@ -29,10 +44,12 @@ interface DealRow {
   organisation: { id: string; name: string | null; tier: number | null } | null;
 }
 
-export default async function DealsPage({ searchParams }: { searchParams: Promise<{ tier?: string; status?: string; owner?: string }> }) {
-  const { tier, status, owner } = await searchParams;
+export default async function DealsPage({ searchParams }: { searchParams: Promise<{ tier?: string; status?: string; owner?: string; sort?: string }> }) {
+  const { tier, status, owner, sort: sortRaw } = await searchParams;
   const db = serviceClient();
   const ownerId = await resolveOwnerFilter(owner);
+  const sort = parseSort(sortRaw, SORT_COLS, { col: "value", dir: "desc" });
+  const hdrParams = { ...(tier ? { tier } : {}), ...(status ? { status } : {}), ...(owner ? { owner } : {}) };
 
   const meddiccCols = MEDDICC.map((m) => `meddicc_${m.key}_filled`).join(", ");
   let query = db
@@ -58,6 +75,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
   ]);
   let deals = (data ?? []) as unknown as DealRow[];
   if (tier) deals = deals.filter((d) => String(d.organisation?.tier ?? "") === tier);
+  deals = sortRows(deals, sort, dealVal);
   const nudges = (nudgeData ?? []) as unknown as Array<Record<string, unknown> & { id: string; title: string | null; value: number | null; next_best_action: string | null; organisation: { name: string | null; sector: string | null } | null }>;
   const orgs = orgData ?? [];
 
@@ -140,7 +158,15 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
 
       <table className="w-full text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
-          <tr><th className="py-1">Deal</th><th>Company</th><th>Tier</th><th>Stage</th><th>Status</th><th className="text-right">Value</th><th></th></tr>
+          <tr>
+            <SortableTh label="Deal" col="title" sort={sort} basePath="/deals" params={hdrParams} className="py-1" />
+            <SortableTh label="Company" col="company" sort={sort} basePath="/deals" params={hdrParams} />
+            <SortableTh label="Tier" col="tier" sort={sort} basePath="/deals" params={hdrParams} />
+            <SortableTh label="Stage" col="stage" sort={sort} basePath="/deals" params={hdrParams} />
+            <SortableTh label="Status" col="status" sort={sort} basePath="/deals" params={hdrParams} />
+            <SortableTh label="Value" col="value" sort={sort} basePath="/deals" params={hdrParams} className="text-right" />
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           {deals.map((d) => (

@@ -6,8 +6,12 @@ import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 import { Combobox } from "@/components/Combobox";
+import { SortableTh } from "@/components/SortableTh";
+import { parseSort } from "@/lib/table/sort";
 
 export const dynamic = "force-dynamic";
+
+const SORT_COLS = ["full_name", "job_title", "email"] as const;
 
 interface ContactRow {
   id: string;
@@ -31,14 +35,16 @@ interface GuessGroup {
   rows: { id: string; full_name: string | null; email: string | null }[];
 }
 
-export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; status?: string; guessed?: string }> }) {
-  const { q, page: pageStr, owner, status, guessed } = await searchParams;
+export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; status?: string; guessed?: string; sort?: string }> }) {
+  const { q, page: pageStr, owner, status, guessed, sort: sortRaw } = await searchParams;
   const page = Math.max(1, parseInt(pageStr ?? "1") || 1);
   const from = (page - 1) * PAGE;
   const db = serviceClient();
   const ownerId = await resolveOwnerFilter(owner);
   const newOnly = status === "new";
   const guessedView = guessed === "1";
+  // New-leads view defaults newest-first; otherwise A→Z by name.
+  const sort = parseSort(sortRaw, SORT_COLS, newOnly ? { col: "created_at", dir: "desc" } : { col: "full_name", dir: "asc" });
 
   // Select status/lead_source if migration 036 ran; fall back if not so the
   // page never blanks out before the migration is applied.
@@ -48,9 +54,8 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
     let query = db.from("contacts").select(cols, { count: "exact" });
     if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%`);
     if (ownerId) query = query.eq("owner_id", ownerId);
-    query = newOnly
-      ? query.eq("status", "new").order("created_at", { ascending: false })
-      : query.order("full_name", { ascending: true });
+    if (newOnly) query = query.eq("status", "new");
+    query = query.order(sort.col, { ascending: sort.dir === "asc" });
     return query.range(from, from + PAGE - 1);
   };
   let { data, count, error } = await build(richCols);
@@ -96,7 +101,9 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   const contacts = (data ?? []) as unknown as ContactRow[];
   const total = count ?? contacts.length;
   const lastPage = Math.max(1, Math.ceil(total / PAGE));
-  const qp = (p: number) => `/contacts?${new URLSearchParams({ ...(q ? { q } : {}), ...(owner ? { owner } : {}), ...(newOnly ? { status: "new" } : {}), page: String(p) })}`;
+  const qp = (p: number) => `/contacts?${new URLSearchParams({ ...(q ? { q } : {}), ...(owner ? { owner } : {}), ...(newOnly ? { status: "new" } : {}), ...(sortRaw ? { sort: sortRaw } : {}), page: String(p) })}`;
+  // Params preserved when a header re-sorts (current tab, search, owner).
+  const hdrParams = { ...(q ? { q } : {}), ...(owner ? { owner } : {}), ...(newOnly ? { status: "new" } : {}) };
 
   return (
     <main className="px-8 py-6">
@@ -147,7 +154,13 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       ) : (
         <table className="w-full text-sm">
           <thead className="text-left text-xs uppercase text-neutral-400">
-            <tr><th className="py-1">Name</th><th>Company</th><th>Title</th><th>Email</th><th></th></tr>
+            <tr>
+              <SortableTh label="Name" col="full_name" sort={sort} basePath="/contacts" params={hdrParams} className="py-1" />
+              <th>Company</th>
+              <SortableTh label="Title" col="job_title" sort={sort} basePath="/contacts" params={hdrParams} />
+              <SortableTh label="Email" col="email" sort={sort} basePath="/contacts" params={hdrParams} />
+              <th></th>
+            </tr>
           </thead>
           <tbody>
             {contacts.map((c) => (

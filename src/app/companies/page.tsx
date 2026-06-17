@@ -6,8 +6,12 @@ import { resolveOwnerFilter } from "@/lib/auth/owner";
 import { SectorBadge } from "@/components/SectorBadge";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
+import { SortableTh } from "@/components/SortableTh";
+import { parseSort } from "@/lib/table/sort";
 
 export const dynamic = "force-dynamic";
+
+const SORT_COLS = ["name", "sector", "tier", "label"] as const;
 
 const SECTORS = ["bank", "broker", "building_society", "credit_union", "direct_lender", "marketplace", "sme_lender", "utility"];
 
@@ -23,16 +27,17 @@ interface OrgRow {
 
 const PAGE = 100;
 
-export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string }> }) {
-  const { q, page: pageStr, owner } = await searchParams;
+export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; sort?: string }> }) {
+  const { q, page: pageStr, owner, sort: sortRaw } = await searchParams;
   const page = Math.max(1, parseInt(pageStr ?? "1") || 1);
   const from = (page - 1) * PAGE;
   const db = serviceClient();
   const ownerId = await resolveOwnerFilter(owner);
+  const sort = parseSort(sortRaw, SORT_COLS, { col: "name", dir: "asc" });
   let query = db
     .from("organisations")
     .select("id, name, sector, tier, label, is_partner, icp", { count: "exact" })
-    .order("name", { ascending: true })
+    .order(sort.col, { ascending: sort.dir === "asc", nullsFirst: false })
     .range(from, from + PAGE - 1);
   if (q) query = query.ilike("name", `%${q}%`);
   if (ownerId) query = query.eq("owner_id", ownerId);
@@ -40,7 +45,8 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
   const orgs = (data ?? []) as OrgRow[];
   const total = count ?? orgs.length;
   const lastPage = Math.max(1, Math.ceil(total / PAGE));
-  const qp = (p: number) => `/companies?${new URLSearchParams({ ...(q ? { q } : {}), ...(owner ? { owner } : {}), page: String(p) })}`;
+  const qp = (p: number) => `/companies?${new URLSearchParams({ ...(q ? { q } : {}), ...(owner ? { owner } : {}), ...(sortRaw ? { sort: sortRaw } : {}), page: String(p) })}`;
+  const hdrParams = { ...(q ? { q } : {}), ...(owner ? { owner } : {}) };
 
   return (
     <main className="px-8 py-6">
@@ -71,10 +77,10 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
       <table className="w-full text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
           <tr>
-            <th className="py-1">Name</th>
-            <th>Sector</th>
-            <th>Tier</th>
-            <th>Label</th>
+            <SortableTh label="Name" col="name" sort={sort} basePath="/companies" params={hdrParams} className="py-1" />
+            <SortableTh label="Sector" col="sector" sort={sort} basePath="/companies" params={hdrParams} />
+            <SortableTh label="Tier" col="tier" sort={sort} basePath="/companies" params={hdrParams} />
+            <SortableTh label="Label" col="label" sort={sort} basePath="/companies" params={hdrParams} />
             <th></th>
           </tr>
         </thead>
