@@ -4,6 +4,7 @@ import "./globals.css";
 import { currentUser } from "@/lib/auth/server";
 import { AppShell } from "@/components/AppShell";
 import { FlashToaster } from "@/components/FlashToaster";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   title: "Credit Canary — Outreach",
@@ -27,6 +28,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           children
         )}
         <FlashToaster />
+        <Analytics />
       </body>
     </html>
   );
