@@ -8,6 +8,7 @@ import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
+import { DemoWizard } from "@/components/DemoWizard";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,10 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Companies</h1>
         <OwnerFilter current={owner} pathname="/companies" extraParams={{ q }} />
-        <span className="text-sm text-neutral-500">{total}{q ? " matches" : ""} · showing {orgs.length === 0 ? 0 : from + 1}–{from + orgs.length}</span>
+        <div className="flex items-center gap-3">
+          <DemoWizard />
+          <span className="text-sm text-neutral-500">{total}{q ? " matches" : ""} · showing {orgs.length === 0 ? 0 : from + 1}–{from + orgs.length}</span>
+        </div>
       </header>
 
       <form className="mb-3">
