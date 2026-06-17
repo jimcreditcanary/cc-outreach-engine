@@ -15,21 +15,21 @@ type Step = "form" | "review" | "done";
 const field = "w-full rounded border border-neutral-300 px-3 py-2 text-sm";
 const lbl = "mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500";
 
-export function DemoWizard() {
+export function DemoWizard({ initialUrl = "", initialName = "", organisationId = null }: { initialUrl?: string; initialName?: string; organisationId?: string | null }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>("form");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [url, setUrl] = useState("");
-  const [name, setName] = useState("");
+  const [url, setUrl] = useState(initialUrl);
+  const [name, setName] = useState(initialName);
   const [b, setB] = useState<Branding | null>(null);
   const [logo, setLogo] = useState<string | null>(null);
   const [slug, setSlug] = useState<string | null>(null);
 
   function reset() {
     setStep("form"); setBusy(false); setError(null);
-    setUrl(""); setName(""); setB(null); setLogo(null); setSlug(null);
+    setUrl(initialUrl); setName(initialName); setB(null); setLogo(null); setSlug(null);
   }
   function close() { setOpen(false); reset(); }
 
@@ -48,6 +48,7 @@ export function DemoWizard() {
     if (!b) return;
     setBusy(true); setError(null);
     const res = await createDemoAction({
+      organisation_id: organisationId,
       company_name: name || url,
       company_url: b.company_url,
       logo_url: logo,

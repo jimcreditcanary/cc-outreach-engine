@@ -9,6 +9,7 @@ import { OwnerPicker } from "@/components/OwnerPicker";
 import { RowIconAction } from "@/components/RowIconAction";
 import { decodeHtmlEntities } from "@/lib/text/decode";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
+import { DemoWizard } from "@/components/DemoWizard";
 
 // Enrichment takes 15-30s (homepage scrape + AI summary + feed discovery).
 export const maxDuration = 60;
@@ -95,7 +96,10 @@ export default async function CompanyDetail({
   return (
     <main className="px-8 py-6">
       <Link href="/companies" className="text-sm text-blue-700 hover:underline">← Companies</Link>
-      <h1 className="mt-2 mb-4 text-xl font-semibold">{org.name}</h1>
+      <div className="mt-2 mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">{org.name}</h1>
+        <DemoWizard initialUrl={org.website ?? ""} initialName={org.name ?? ""} organisationId={org.id} />
+      </div>
 
       <form action={updateOrg} className="grid grid-cols-2 gap-3">
         <input type="hidden" name="id" value={org.id} />
