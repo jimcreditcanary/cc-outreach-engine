@@ -7,7 +7,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { DeviceFrame } from "@/components/DeviceFrame";
-import { LoanTopUpScreen } from "@/components/demo/LoanTopUpScreen";
+import { LoanJourney } from "@/components/demo/LoanJourney";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +78,7 @@ export default async function DemoPage({ params }: { params: Promise<{ slug: str
         {/* RIGHT — device viewport */}
         <section className="flex flex-1 items-center justify-center bg-neutral-100 px-6 py-12">
           <DeviceFrame brand={brand}>
-            <LoanTopUpScreen brand={brand} fg={fg} logo={d.logo_url} companyName={d.company_name} />
+            <LoanJourney brand={brand} fg={fg} logo={d.logo_url} companyName={d.company_name} />
           </DeviceFrame>
         </section>
       </div>
