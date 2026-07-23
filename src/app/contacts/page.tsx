@@ -8,6 +8,7 @@ import { PendingButton } from "@/components/PendingButton";
 import { Combobox } from "@/components/Combobox";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
+import { contactSearchOr } from "@/lib/contacts/search";
 
 export const dynamic = "force-dynamic";
 
@@ -50,9 +51,11 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   // page never blanks out before the migration is applied.
   const richCols = "id, full_name, email, job_title, label, email_status, status, lead_source, created_at, email_guessed, organisation:organisations(name)";
   const baseCols = "id, full_name, email, job_title, label, email_status, organisation:organisations(name)";
+  // Search matches name, email OR company name (see contactSearchOr).
+  const searchOr = await contactSearchOr(db, q);
   const build = (cols: string) => {
     let query = db.from("contacts").select(cols, { count: "exact" });
-    if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%`);
+    if (searchOr) query = query.or(searchOr);
     if (ownerId) query = query.eq("owner_id", ownerId);
     if (newOnly) query = query.eq("status", "new");
     query = query.order(sort.col, { ascending: sort.dir === "asc" });
@@ -127,10 +130,19 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
         <GuessedReview groups={guessGroups} />
       ) : (
       <>
-      <form className="mb-3">
-        <input name="q" defaultValue={q ?? ""} placeholder="Search name or email…" className="w-full rounded border border-neutral-300 px-3 py-2 text-sm" />
-        {newOnly && <input type="hidden" name="status" value="new" />}
-      </form>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <form className="min-w-[240px] flex-1">
+          <input name="q" defaultValue={q ?? ""} placeholder="Search name, email or company…" className="w-full rounded border border-neutral-300 px-3 py-2 text-sm" />
+          {newOnly && <input type="hidden" name="status" value="new" />}
+        </form>
+        <a
+          href={`/api/contacts/export?${new URLSearchParams({ ...(q ? { q } : {}), ...(owner ? { owner } : {}), ...(newOnly ? { status: "new" } : {}) })}`}
+          className="shrink-0 rounded border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          title="Download the current list (all filters applied) as a CSV"
+        >
+          ↓ Export CSV
+        </a>
+      </div>
 
       <form action={createContact} className="mb-5 flex flex-wrap gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
         <input name="full_name" placeholder="New contact name…" className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" required />
