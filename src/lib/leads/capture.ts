@@ -234,7 +234,9 @@ export async function captureLead(db: DB, input: LeadInput): Promise<LeadResult>
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";
     const lines = [
       `${name} <${email}>${createdContact ? " — new contact created" : " — already in the CRM"}`,
+      input.job_title?.trim() ? `Job title: ${input.job_title.trim()}` : null,
       company ? `Company: ${company}${organisationId ? " (linked)" : ""}` : null,
+      input.mobile?.trim() ? `Mobile: ${input.mobile.trim()}` : null,
       input.asset ? `Resource: ${input.asset}` : null,
       input.source ? `Source: ${input.source}` : null,
       input.url ? `Page: ${input.url}` : null,
