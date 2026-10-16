@@ -23,7 +23,8 @@
     "signals": "tsx scripts/signals.ts",
     "import-proposals": "tsx scripts/import-proposals.ts",
     "meddicc": "tsx scripts/meddicc.ts",
-    "import-suppressions": "tsx scripts/import-suppressions.ts"
+    "import-suppressions": "tsx scripts/import-suppressions.ts",
+    "hubspot-smoke": "tsx scripts/hubspot-smoke.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
