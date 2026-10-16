@@ -26,7 +26,8 @@
     "import-suppressions": "tsx scripts/import-suppressions.ts",
     "hubspot-smoke": "tsx scripts/hubspot-smoke.ts",
     "hubspot-setup-props": "tsx scripts/hubspot-setup-props.ts",
-    "hs-mailer": "tsx scripts/hs-mailer.ts"
+    "hs-mailer": "tsx scripts/hs-mailer.ts",
+    "backfill-suppressions": "tsx scripts/backfill-suppressions.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
