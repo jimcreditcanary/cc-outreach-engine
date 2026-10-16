@@ -10,6 +10,8 @@ import { RowIconAction } from "@/components/RowIconAction";
 import { decodeHtmlEntities } from "@/lib/text/decode";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { DemoWizard } from "@/components/DemoWizard";
+import { activeBackend } from "@/lib/crm";
+import { HubspotCompanyDetail } from "../HubspotCompanyDetail";
 
 // Enrichment takes 15-30s (homepage scrape + AI summary + feed discovery).
 export const maxDuration = 60;
@@ -31,6 +33,12 @@ export default async function CompanyDetail({
   searchParams: Promise<{ merge_q?: string }>;
 }) {
   const { id } = await params;
+
+  // HubSpot-backed detail (P3) — isolated; Supabase detail below unchanged.
+  if (activeBackend() === "hubspot") {
+    return <HubspotCompanyDetail id={id} />;
+  }
+
   const { merge_q } = await searchParams;
   const db = serviceClient();
   const { data: org } = await db.from("organisations").select("*").eq("id", id).maybeSingle();

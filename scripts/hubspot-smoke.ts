@@ -46,6 +46,21 @@ async function main() {
     console.log(`  ${detail?.full_name} — ${detail?.url}`);
   }
 
+  const firstCompanyId = companies.records[0]?.id;
+  if (firstCompanyId) {
+    console.log(`\n→ getCompany(${firstCompanyId}) + contacts…`);
+    const co = await hubspotRepo.getCompany(firstCompanyId);
+    const cos = await hubspotRepo.listCompanyContacts(firstCompanyId, 5);
+    console.log(`  ${co?.name} | tier ${co?.tier ?? "—"} | partner ${co?.is_partner} | icp ${co?.icp} | ${cos.length} contact(s)`);
+  }
+
+  console.log("\n→ listDeals (3, by amount)…");
+  const deals = await hubspotRepo.listDeals({ limit: 3 });
+  console.log(`  total in portal: ${deals.total}`);
+  for (const d of deals.records) {
+    console.log(`  • ${d.name ?? "—"} | ${d.pipeline ?? "—"} › ${d.stage ?? "—"} | ${d.amount ?? "—"} ${d.currency ?? ""}`);
+  }
+
   console.log("\n✓ HubSpot read path works end-to-end.");
 }
 

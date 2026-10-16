@@ -7,6 +7,8 @@ import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort, sortRows } from "@/lib/table/sort";
+import { activeBackend } from "@/lib/crm";
+import { HubspotDealsView } from "./HubspotDealsView";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +46,15 @@ interface DealRow {
   organisation: { id: string; name: string | null; tier: number | null } | null;
 }
 
-export default async function DealsPage({ searchParams }: { searchParams: Promise<{ tier?: string; status?: string; owner?: string; sort?: string }> }) {
-  const { tier, status, owner, sort: sortRaw } = await searchParams;
+export default async function DealsPage({ searchParams }: { searchParams: Promise<{ tier?: string; status?: string; owner?: string; sort?: string; q?: string; after?: string }> }) {
+  const { tier, status, owner, sort: sortRaw, q, after } = await searchParams;
+
+  // HubSpot-backed read-only deals list (P3) — isolated; Supabase page below
+  // (MEDDICC nudges etc.) is untouched and used when CRM_BACKEND=supabase.
+  if (activeBackend() === "hubspot") {
+    return <HubspotDealsView q={q} sortRaw={sortRaw} after={after} />;
+  }
+
   const db = serviceClient();
   const ownerId = await resolveOwnerFilter(owner);
   const sort = parseSort(sortRaw, SORT_COLS, { col: "value", dir: "desc" });

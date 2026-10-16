@@ -36,6 +36,36 @@ export interface CompanyRecord {
   domain: string | null;
   website: string | null;
   industry: string | null;
+  /** Custom props created for this app (see docs/HUBSPOT_MIGRATION.md). */
+  tier: number | null;
+  is_partner: boolean;
+  icp: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  url: string;
+}
+
+export interface CompanyWrite {
+  name?: string;
+  domain?: string | null;
+  website?: string | null;
+  industry?: string | null;
+  tier?: number | null;
+  is_partner?: boolean;
+  icp?: boolean;
+  owner_id?: string | null;
+}
+
+/** A deal as the read-only deals list renders it. Pipeline/stage are resolved
+ *  to human labels; amount is in the deal's own currency. */
+export interface DealRecord {
+  id: string;
+  name: string | null;
+  pipeline: string | null;
+  stage: string | null;
+  amount: number | null;
+  currency: string | null;
+  close_date: string | null;
   created_at: string | null;
   updated_at: string | null;
   url: string;
@@ -78,6 +108,13 @@ export interface ListCompaniesOpts {
   sort?: { col: "name" | "industry" | "created_at"; dir: SortDir };
 }
 
+export interface ListDealsOpts {
+  q?: string;
+  limit?: number;
+  after?: string;
+  sort?: { col: "name" | "amount" | "close_date" | "created_at"; dir: SortDir };
+}
+
 /** One page of results plus the forward cursor and overall match count. */
 export interface Page<T> {
   records: T[];
@@ -95,4 +132,9 @@ export interface CrmRepository {
 
   listCompanies(opts: ListCompaniesOpts): Promise<Page<CompanyRecord>>;
   getCompany(id: string): Promise<CompanyRecord | null>;
+  updateCompany(id: string, patch: CompanyWrite): Promise<CompanyRecord>;
+  /** Contacts associated with a company (for the company detail page). */
+  listCompanyContacts(companyId: string, limit?: number): Promise<ContactRecord[]>;
+
+  listDeals(opts: ListDealsOpts): Promise<Page<DealRecord>>;
 }

@@ -7,7 +7,7 @@
 //   app email_guessed  → email_status  = Extrapolated (existing custom enum)
 //   app confirmed email→ email_status  = Verified
 
-import type { ContactRecord, CompanyRecord, ContactWrite } from "../crm/types";
+import type { ContactRecord, CompanyRecord, ContactWrite, CompanyWrite, DealRecord } from "../crm/types";
 import { recordUrl } from "./client";
 
 // Properties we READ. Only confirmed-existing props — custom props that aren't
@@ -22,7 +22,13 @@ export const CONTACT_READ_PROPS = [
 
 export const COMPANY_READ_PROPS = [
   "name", "domain", "website", "industry",
+  "tier", "is_partner", "icp",
   "createdate", "hs_lastmodifieddate",
+] as const;
+
+export const DEAL_READ_PROPS = [
+  "dealname", "pipeline", "dealstage", "amount", "deal_currency_code",
+  "closedate", "createdate", "hs_lastmodifieddate",
 ] as const;
 
 // Custom props to fold in once created (see docs/HUBSPOT_MIGRATION.md).
@@ -84,16 +90,57 @@ export function fromHubspotContact(obj: HsObject, company?: { id: string; name: 
 export function fromHubspotCompany(obj: HsObject): CompanyRecord {
   const p = obj.properties;
   const id = String(obj.id);
+  const tierNum = Number(str(p.tier));
   return {
     id,
     name: str(p.name),
     domain: str(p.domain),
     website: str(p.website) ?? str(p.domain),
     industry: humaniseEnum(str(p.industry)),
+    tier: Number.isFinite(tierNum) && str(p.tier) ? tierNum : null,
+    is_partner: (p.is_partner ?? "") === "true",
+    icp: (p.icp ?? "") === "true",
     created_at: str(p.createdate),
     updated_at: str(p.hs_lastmodifieddate),
     url: recordUrl("companies", id),
   };
+}
+
+export function fromHubspotDeal(
+  obj: HsObject,
+  pipelineLabel: string | null,
+  stageLabel: string | null,
+): DealRecord {
+  const p = obj.properties;
+  const id = String(obj.id);
+  const amt = Number(str(p.amount));
+  return {
+    id,
+    name: str(p.dealname),
+    pipeline: pipelineLabel ?? str(p.pipeline),
+    stage: stageLabel ?? str(p.dealstage),
+    amount: Number.isFinite(amt) && str(p.amount) ? amt : null,
+    currency: str(p.deal_currency_code),
+    close_date: str(p.closedate),
+    created_at: str(p.createdate),
+    updated_at: str(p.hs_lastmodifieddate),
+    url: recordUrl("deals", id),
+  };
+}
+
+/** Build the HubSpot property patch for a company write. Booleans serialise to
+ *  "true"/"false"; tier to its number string. Only set keys are included. */
+export function toHubspotCompanyProps(input: CompanyWrite): Props {
+  const props: Props = {};
+  if (input.name !== undefined) props.name = input.name;
+  if (input.domain !== undefined) props.domain = input.domain ?? "";
+  if (input.website !== undefined) props.website = input.website ?? "";
+  if (input.industry !== undefined) props.industry = input.industry ?? "";
+  if (input.tier !== undefined) props.tier = input.tier == null ? "" : String(input.tier);
+  if (input.is_partner !== undefined) props.is_partner = input.is_partner ? "true" : "false";
+  if (input.icp !== undefined) props.icp = input.icp ? "true" : "false";
+  if (input.owner_id !== undefined) props.hubspot_owner_id = input.owner_id ?? "";
+  return props;
 }
 
 // ── write: domain → HubSpot properties ──────────────────────────────────

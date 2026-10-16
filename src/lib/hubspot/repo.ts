@@ -13,12 +13,13 @@
 
 import { hsFetch, invalidateCache, recordUrl } from "./client";
 import {
-  CONTACT_READ_PROPS, COMPANY_READ_PROPS,
-  fromHubspotContact, fromHubspotCompany, toHubspotContactProps,
+  CONTACT_READ_PROPS, COMPANY_READ_PROPS, DEAL_READ_PROPS,
+  fromHubspotContact, fromHubspotCompany, fromHubspotDeal,
+  toHubspotContactProps, toHubspotCompanyProps,
 } from "./mapping";
 import type {
-  CrmRepository, ContactRecord, CompanyRecord, ContactWrite,
-  ListContactsOpts, ListCompaniesOpts, Page,
+  CrmRepository, ContactRecord, CompanyRecord, DealRecord, ContactWrite, CompanyWrite,
+  ListContactsOpts, ListCompaniesOpts, ListDealsOpts, Page,
 } from "../crm/types";
 
 const READ_TTL = Number(process.env.HUBSPOT_CACHE_TTL_MS ?? 15_000);
@@ -186,7 +187,74 @@ export const hubspotRepo: CrmRepository = {
       throw e;
     }
   },
+
+  async updateCompany(id: string, patch: CompanyWrite): Promise<CompanyRecord> {
+    const props = toHubspotCompanyProps(patch);
+    if (Object.keys(props).length > 0) {
+      await hsFetch<HsObj>(`/crm/v3/objects/companies/${id}`, { method: "PATCH", body: { properties: props } });
+      invalidateCache();
+    }
+    return (await this.getCompany(id))!;
+  },
+
+  async listCompanyContacts(companyId: string, limit = 100): Promise<ContactRecord[]> {
+    const assoc = await hsFetch<{ results: { toObjectId: string | number }[] }>(
+      `/crm/v4/objects/companies/${companyId}/associations/contacts?limit=${limit}`,
+      { cacheTtl: READ_TTL },
+    );
+    const ids = (assoc.results ?? []).map((r) => String(r.toObjectId));
+    if (ids.length === 0) return [];
+    const read = await hsFetch<{ results: HsObj[] }>(
+      `/crm/v3/objects/contacts/batch/read`,
+      { method: "POST", body: { properties: [...CONTACT_READ_PROPS], inputs: ids.map((id) => ({ id })) }, cacheTtl: READ_TTL },
+    );
+    const names = await companyNames([companyId]);
+    const company = { id: companyId, name: names.get(companyId) ?? null };
+    return (read.results ?? []).map((o) => fromHubspotContact(o, company));
+  },
+
+  async listDeals(opts: ListDealsOpts): Promise<Page<DealRecord>> {
+    const limit = Math.min(opts.limit ?? 100, 200);
+    const sortCol = opts.sort?.col ?? "amount";
+    const body: SearchBody = {
+      properties: [...DEAL_READ_PROPS],
+      limit,
+      after: opts.after,
+      sorts: [{
+        propertyName: DEAL_SORT[sortCol] ?? "amount",
+        direction: (opts.sort?.dir ?? "desc") === "asc" ? "ASCENDING" : "DESCENDING",
+      }],
+    };
+    if (opts.q?.trim()) body.query = opts.q.trim();
+    const [res, labels] = await Promise.all([search("deals", body), dealLabels()]);
+    const records = (res.results ?? []).map((d) =>
+      fromHubspotDeal(
+        d,
+        labels.pipelines.get(d.properties.pipeline ?? "") ?? null,
+        labels.stages.get(d.properties.dealstage ?? "") ?? null,
+      ),
+    );
+    return { records, total: res.total ?? 0, after: res.paging?.next?.after };
+  },
 };
+
+const DEAL_SORT: Record<string, string> = {
+  name: "dealname", amount: "amount", close_date: "closedate", created_at: "createdate",
+};
+
+/** Deal pipeline + stage id→label maps (cached 5m — pipelines rarely change). */
+async function dealLabels(): Promise<{ pipelines: Map<string, string>; stages: Map<string, string> }> {
+  const res = await hsFetch<{ results: { id: string; label: string; stages: { id: string; label: string }[] }[] }>(
+    `/crm/v3/pipelines/deals`, { cacheTtl: 300_000 },
+  );
+  const pipelines = new Map<string, string>();
+  const stages = new Map<string, string>();
+  for (const p of res.results ?? []) {
+    pipelines.set(p.id, p.label);
+    for (const s of p.stages ?? []) stages.set(s.id, s.label);
+  }
+  return { pipelines, stages };
+}
 
 // ── capture helpers (used by the lead-capture pipeline) ─────────────────
 

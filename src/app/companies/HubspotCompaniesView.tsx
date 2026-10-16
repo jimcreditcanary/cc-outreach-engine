@@ -46,7 +46,7 @@ export async function HubspotCompaniesView({
           {page.records.map((o) => (
             <tr key={o.id} className="border-t border-neutral-100 hover:bg-neutral-100">
               <td className="py-1.5">
-                <a href={o.url} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-700 hover:underline">{o.name || "—"}</a>
+                <Link href={`/companies/${o.id}`} className="font-medium text-blue-700 hover:underline">{o.name || "—"}</Link>
               </td>
               <td className="text-neutral-600">{o.website ?? "—"}</td>
               <td className="text-neutral-600">{o.industry ?? "—"}</td>
