@@ -101,7 +101,7 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
 }
 
-function eventMessage(input: LeadInput): string {
+export function eventMessage(input: LeadInput): string {
   const via = input.source ? ` · via ${input.source}` : "";
   switch (input.kind) {
     case "download":

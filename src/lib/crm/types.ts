@@ -54,6 +54,8 @@ export interface ContactWrite {
   lead_source?: string | null;
   /** Associate with this company on create/update. */
   company_id?: string | null;
+  /** HubSpot owner id (hubspot_owner_id). Captured leads are assigned to Jim. */
+  owner_id?: string | null;
 }
 
 export type SortDir = "asc" | "desc";

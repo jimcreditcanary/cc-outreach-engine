@@ -188,6 +188,58 @@ export const hubspotRepo: CrmRepository = {
   },
 };
 
+// ── capture helpers (used by the lead-capture pipeline) ─────────────────
+
+/** Exact-match a contact by email (the natural key for lead dedupe). */
+export async function findContactByEmail(email: string): Promise<ContactRecord | null> {
+  const res = await search("contacts", {
+    properties: [...CONTACT_READ_PROPS],
+    limit: 1,
+    filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: email.trim().toLowerCase() }] }],
+  });
+  const first = res.results?.[0];
+  if (!first) return null;
+  const [withCompany] = await attachCompanies([first]);
+  return withCompany ?? null;
+}
+
+/** Exact-match a company by name (HubSpot string EQ is case-insensitive). */
+export async function findCompanyByName(name: string): Promise<CompanyRecord | null> {
+  const res = await search("companies", {
+    properties: [...COMPANY_READ_PROPS],
+    limit: 1,
+    filterGroups: [{ filters: [{ propertyName: "name", operator: "EQ", value: name.trim() }] }],
+  });
+  const first = res.results?.[0];
+  return first ? fromHubspotCompany(first) : null;
+}
+
+export async function createCompany(input: { name: string; domain?: string | null; owner_id?: string | null }): Promise<CompanyRecord> {
+  const properties: Record<string, string> = { name: input.name };
+  if (input.domain) properties.domain = input.domain;
+  if (input.owner_id) properties.hubspot_owner_id = input.owner_id;
+  const created = await hsFetch<HsObj>(`/crm/v3/objects/companies`, { method: "POST", body: { properties } });
+  invalidateCache();
+  return fromHubspotCompany(created);
+}
+
+/** Log a Note engagement on a contact (the lead timeline entry). Best-effort:
+ *  needs crm.objects.notes write scope — returns false (doesn't throw) if not
+ *  granted, so lead capture still succeeds without the timeline note. */
+export async function addContactNote(contactId: string, body: string): Promise<boolean> {
+  try {
+    const note = await hsFetch<HsObj>(`/crm/v3/objects/notes`, {
+      method: "POST",
+      body: { properties: { hs_timestamp: String(Date.now()), hs_note_body: body } },
+    });
+    await hsFetch(`/crm/v4/objects/notes/${note.id}/associations/default/contacts/${contactId}`, { method: "PUT" });
+    invalidateCache();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Set the (default) contact→company association. Additive — doesn't clear an
  *  existing different company. v4 "default" endpoint needs no typeId. */
 async function setContactCompany(contactId: string, companyId: string): Promise<void> {

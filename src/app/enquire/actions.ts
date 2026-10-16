@@ -9,6 +9,8 @@
 import { redirect } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { captureLead } from "@/lib/leads/capture";
+import { captureLeadHubspot } from "@/lib/leads/captureHubspot";
+import { activeBackend } from "@/lib/crm";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -26,15 +28,18 @@ export async function submitEnquiryAction(formData: FormData) {
   if (!name) back(`error=${encodeURIComponent("Please enter your name.")}`);
   if (!EMAIL_RE.test(email)) back(`error=${encodeURIComponent("That email address doesn't look right.")}`);
 
-  const res = await captureLead(serviceClient(), {
+  const input = {
     email,
     name,
     company: String(formData.get("company") ?? "").trim().slice(0, 120) || null,
     message: String(formData.get("message") ?? "").trim().slice(0, 2000) || null,
     source: src || "enquiry-form",
-    kind: "enquiry",
+    kind: "enquiry" as const,
     createCompany: false,
-  });
+  };
+  const res = activeBackend() === "hubspot"
+    ? await captureLeadHubspot(input)
+    : await captureLead(serviceClient(), input);
   if (!res.ok) back(`error=${encodeURIComponent(res.error ?? "Something went wrong — please try again.")}`);
 
   back(`sent=1${res.booking_slug ? `&book=${encodeURIComponent(res.booking_slug)}` : ""}`);

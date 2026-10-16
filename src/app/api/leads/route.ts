@@ -21,6 +21,8 @@
 
 import { serviceClient } from "@/lib/db/client";
 import { captureLead, type LeadKind } from "@/lib/leads/capture";
+import { captureLeadHubspot } from "@/lib/leads/captureHubspot";
+import { activeBackend } from "@/lib/crm";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -94,7 +96,7 @@ export async function POST(req: Request): Promise<Response> {
   const kindRaw = (str("kind") ?? (str("asset") ? "download" : "lead")).toLowerCase();
   const kind: LeadKind = kindRaw === "download" || kindRaw === "enquiry" ? (kindRaw as LeadKind) : "lead";
 
-  const res = await captureLead(serviceClient(), {
+  const input = {
     email,
     name: str("name") ?? str("full_name"),
     company: str("company") ?? str("company_name"),
@@ -107,7 +109,10 @@ export async function POST(req: Request): Promise<Response> {
     kind,
     createCompany: true, // a named company on a gated download is qualified
     notify: true,
-  });
+  };
+  const res = activeBackend() === "hubspot"
+    ? await captureLeadHubspot(input)
+    : await captureLead(serviceClient(), input);
 
   if (!res.ok) return json(req, res, 422);
   return json(req, {
