@@ -63,6 +63,12 @@ async function main() {
       const { count } = await db.from("hs_sends").select("*", { count: "exact", head: true }).eq("status", st);
       if ((count ?? 0) > 0) console.log(`  ${st.padEnd(11)} ${count}`);
     }
+    const [clk, rep, bnc] = await Promise.all([
+      db.from("hs_sends").select("*", { count: "exact", head: true }).eq("clicked", true).then((r) => r.count ?? 0),
+      db.from("hs_sends").select("*", { count: "exact", head: true }).eq("replied", true).then((r) => r.count ?? 0),
+      db.from("hs_sends").select("*", { count: "exact", head: true }).eq("bounced", true).then((r) => r.count ?? 0),
+    ]);
+    if (clk + rep + bnc > 0) console.log(`  — engagement: clicked ${clk} · replied ${rep} · bounced ${bnc}`);
     if (arg) {
       const { data } = await db.from("hs_sends").select("email, subject, campaign, status, sent_at").eq("status", arg).order("ts", { ascending: false }).limit(20);
       console.log("");

@@ -7,6 +7,7 @@
 
 import { redirect } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
+import { addSuppression } from "@/lib/suppress";
 
 const str = (v: FormDataEntryValue | null): string | null => {
   const s = String(v ?? "").trim();
@@ -32,11 +33,8 @@ export async function submitUnsubscribe(formData: FormData) {
   const recontact_at = resolveRecontactAt(str(formData.get("recontact")));
 
   const db = serviceClient();
-  // Suppression row (PK email — upsert handles repeat clicks).
-  await db.from("suppressions").upsert(
-    { email, reason: "unsubscribe", why, note, recontact_at },
-    { onConflict: "email" },
-  );
+  // Suppression row — update on repeat clicks so a changed recontact pref sticks.
+  await addSuppression(db, { email, reason: "unsubscribe", why, note, recontact_at }, { updateIfExists: true });
   // Snooze every contact at this email so the generator/sender both skip them.
   // `9999-12-31` is the "never" sentinel; if a recontact_at was chosen we use
   // that instead so they can reappear in the funnel when that date passes.

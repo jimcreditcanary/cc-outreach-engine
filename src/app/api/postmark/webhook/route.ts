@@ -4,6 +4,7 @@
 
 import { serviceClient } from "@/lib/db/client";
 import { authorized } from "@/lib/webhooks/guard";
+import { addSuppression } from "@/lib/suppress";
 
 type DB = ReturnType<typeof serviceClient>;
 
@@ -22,6 +23,17 @@ async function sendByMessageId(db: DB, messageId?: string) {
   const { data } = await db
     .from("sends")
     .select("id, contact_id")
+    .eq("postmark_message_id", messageId)
+    .maybeSingle();
+  return data ?? null;
+}
+
+/** HubSpot mailer send (hs_sends) by Postmark message id. */
+async function hsSendByMessageId(db: DB, messageId?: string) {
+  if (!messageId) return null;
+  const { data } = await db
+    .from("hs_sends")
+    .select("id, hs_contact_id")
     .eq("postmark_message_id", messageId)
     .maybeSingle();
   return data ?? null;
@@ -65,6 +77,12 @@ export async function POST(req: Request) {
           source: "postmark",
           payload: { message_id: messageId, url: body.OriginalLink ?? null },
         });
+        break;
+      }
+      // HubSpot mailer click — recorded on hs_sends.clicked.
+      const hs = await hsSendByMessageId(db, messageId);
+      if (hs) {
+        await db.from("hs_sends").update({ clicked: true }).eq("id", hs.id);
       } else {
         // Maybe it's a newsletter click — log it against the right contact
         // and tag the newsletter_id so /newsletter/[id] can aggregate.
@@ -113,11 +131,11 @@ export async function POST(req: Request) {
         });
       }
       if (hard && email) {
-        await db.from("suppressions").upsert(
-          { email, reason: "hard_bounce", contact_id: contact?.id ?? null, note: body.Type ?? null },
-          { onConflict: "email" },
-        );
+        await addSuppression(db, { email, reason: "hard_bounce", contact_id: contact?.id ?? null, note: body.Type ?? null });
       }
+      // HubSpot mailer: flag the bounced send (suppression above already
+      // protects future sends to this address, from either mailer).
+      if (messageId) await db.from("hs_sends").update({ bounced: true }).eq("postmark_message_id", messageId);
       break;
     }
     case "SpamComplaint": {
@@ -130,20 +148,14 @@ export async function POST(req: Request) {
         payload: { message_id: messageId },
       });
       if (email) {
-        await db.from("suppressions").upsert(
-          { email, reason: "complaint", contact_id: contact?.id ?? null },
-          { onConflict: "email" },
-        );
+        await addSuppression(db, { email, reason: "complaint", contact_id: contact?.id ?? null });
       }
       break;
     }
     case "SubscriptionChange": {
       if (body.SuppressSending && email) {
         const contact = await contactByEmail(db, email);
-        await db.from("suppressions").upsert(
-          { email, reason: "unsubscribe", contact_id: contact?.id ?? null },
-          { onConflict: "email" },
-        );
+        await addSuppression(db, { email, reason: "unsubscribe", contact_id: contact?.id ?? null });
       }
       break;
     }

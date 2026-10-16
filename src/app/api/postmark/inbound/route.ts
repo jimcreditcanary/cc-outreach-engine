@@ -13,6 +13,7 @@
 
 import { serviceClient } from "@/lib/db/client";
 import { authorized } from "@/lib/webhooks/guard";
+import { addSuppression } from "@/lib/suppress";
 import { isUnsubscribe } from "@/lib/cadence/reply";
 import { snoozeUntil } from "@/lib/cadence/cadence";
 import { parseSignature } from "@/lib/inbound/signature";
@@ -64,6 +65,21 @@ export async function POST(req: Request) {
   const subject = (body.Subject ?? "") as string;
   const recipients = recipientAddresses(body);
   const now = new Date();
+
+  // HubSpot mailer: mark the most recent send to this address as replied.
+  // Runs independently of the Supabase contact match (HubSpot contacts won't
+  // be in the Supabase contacts table).
+  if (from) {
+    const { data: lastHs } = await db
+      .from("hs_sends")
+      .select("id")
+      .eq("email", from)
+      .eq("status", "sent")
+      .order("sent_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastHs) await db.from("hs_sends").update({ replied: true }).eq("id", (lastHs as { id: string }).id);
+  }
 
   // ── Resolve owner from inbound recipient ──────────────────────────
   // Look up every operator's reply_to_email + from_email and pick the
@@ -119,6 +135,11 @@ export async function POST(req: Request) {
       owner_id,
       payload: { ...basePayload, unmatched: true },
     });
+    // Honour opt-out even for senders not in the Supabase CRM (e.g. HubSpot
+    // contacts) — suppression is email-keyed and protects both mailers.
+    if (from && isUnsubscribe(text)) {
+      await addSuppression(db, { email: from, reason: "unsubscribe", note: "reply opt-out (unmatched)" });
+    }
     return Response.json({ ok: true, matched: false });
   }
 
@@ -158,10 +179,7 @@ export async function POST(req: Request) {
   });
 
   if (isUnsubscribe(text)) {
-    await db.from("suppressions").upsert(
-      { email: from, reason: "unsubscribe", contact_id: contact.id, note: "reply opt-out" },
-      { onConflict: "email" },
-    );
+    await addSuppression(db, { email: from, reason: "unsubscribe", contact_id: contact.id, note: "reply opt-out" });
   } else {
     await db.from("contacts").update({ snooze_until: snoozeUntil(now, REPLY_PAUSE_DAYS) }).eq("id", contact.id);
   }
