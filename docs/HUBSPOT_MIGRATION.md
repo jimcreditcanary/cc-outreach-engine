@@ -92,20 +92,29 @@ Create at → https://app-eu1.hubspot.com/private-apps/9175484
 
 ## Phased build plan
 
-- **P0 — mapping & access** *(this doc)*. Confirm portal ✓. Create custom
-  props + Private App token.
-- **P1 — repository abstraction + read client.** One `crm` interface in front
-  of today's Supabase reads/writes; HubSpot read client with cache; dual-run
-  behind a flag; parity-check contacts/companies.
-- **P2 — flip reads** for the contacts + companies pages to HubSpot.
-- **P3 — write path.** Contact edits + lead forms (`/api/leads`, `/enquire`)
-  write to HubSpot (contact + company assoc + `hs_lead_status=NEW`); timeline
-  events → engagements.
-- **P4 — decommission** Supabase CRM tables (keep operational ones). Add the
-  read-only deals list.
+- **P0 — mapping & access** ✅ Portal confirmed; custom props created
+  (`lead_source`, company `tier`/`is_partner`/`icp`); Service Key in use.
+- **P1 — repository abstraction + read client** ✅ `crm` interface + getCrm()
+  backend flag; raw-fetch HubSpot client (Bearer, 429 back-off, TTL cache);
+  pure mapping; 20 mapping tests.
+- **P2 — flip reads** ✅ `/contacts` + `/companies` read HubSpot behind the
+  flag; search, tabs, sort, cursor paging, badges.
+- **P3 — write path** ✅
+  - P3a: lead forms (`/api/leads`, `/enquire`) write to HubSpot; match-by-email
+    dedupe, company assoc, `hs_lead_status=NEW`, **assigned to Jim Fell**
+    (owner 86510668). Timeline Note best-effort (needs notes write scope).
+  - P3b: in-app contact detail (edit name/email/title/mobile, mark-actioned,
+    confirm email).
+  - P3c: in-app company detail (edit tier/partner/icp + contacts) and a
+    read-only deals list (pipeline › stage labels, amounts).
+  - Remaining: contact/company add + delete on the HubSpot path.
+- **P4 — decommission** Supabase CRM tables (keep operational ones).
 - **P5 — mailer** on the HubSpot base via Postmark: segment builder, sends
   logged back as engagements, our suppression respected + HubSpot unsubscribes
-  synced in. (Likely builds the read-mirror here.)
+  synced in. **Gated on the operational-data decision** (how sends/meetings/
+  timeline relate to HubSpot contacts — leaning hybrid: metrics in Supabase
+  keyed by HubSpot id, key events mirrored to HubSpot). Likely builds the
+  read-mirror here.
 
 ## Open items
 
