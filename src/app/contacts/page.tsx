@@ -9,6 +9,8 @@ import { Combobox } from "@/components/Combobox";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
 import { contactSearchOr } from "@/lib/contacts/search";
+import { activeBackend } from "@/lib/crm";
+import { HubspotContactsView } from "./HubspotContactsView";
 
 export const dynamic = "force-dynamic";
 
@@ -36,8 +38,14 @@ interface GuessGroup {
   rows: { id: string; full_name: string | null; email: string | null }[];
 }
 
-export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; status?: string; guessed?: string; sort?: string }> }) {
-  const { q, page: pageStr, owner, status, guessed, sort: sortRaw } = await searchParams;
+export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; status?: string; guessed?: string; sort?: string; after?: string }> }) {
+  const { q, page: pageStr, owner, status, guessed, sort: sortRaw, after } = await searchParams;
+
+  // HubSpot-backed view (P2) — isolated component; the Supabase path below is
+  // untouched and still used when CRM_BACKEND=supabase / no token.
+  if (activeBackend() === "hubspot") {
+    return <HubspotContactsView q={q} newOnly={status === "new"} sortRaw={sortRaw} after={after} />;
+  }
   const page = Math.max(1, parseInt(pageStr ?? "1") || 1);
   const from = (page - 1) * PAGE;
   const db = serviceClient();

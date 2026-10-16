@@ -8,6 +8,8 @@ import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
+import { activeBackend } from "@/lib/crm";
+import { HubspotCompaniesView } from "./HubspotCompaniesView";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +29,13 @@ interface OrgRow {
 
 const PAGE = 100;
 
-export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; sort?: string }> }) {
-  const { q, page: pageStr, owner, sort: sortRaw } = await searchParams;
+export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; sort?: string; after?: string }> }) {
+  const { q, page: pageStr, owner, sort: sortRaw, after } = await searchParams;
+
+  // HubSpot-backed view (P2) — isolated; Supabase path below unchanged.
+  if (activeBackend() === "hubspot") {
+    return <HubspotCompaniesView q={q} sortRaw={sortRaw} after={after} />;
+  }
   const page = Math.max(1, parseInt(pageStr ?? "1") || 1);
   const from = (page - 1) * PAGE;
   const db = serviceClient();

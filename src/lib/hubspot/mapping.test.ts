@@ -1,7 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
-  splitName, fullName, fromHubspotContact, fromHubspotCompany, toHubspotContactProps,
+  splitName, fullName, humaniseEnum, fromHubspotContact, fromHubspotCompany, toHubspotContactProps,
 } from "./mapping";
+
+describe("humaniseEnum", () => {
+  it("title-cases ALL_CAPS_UNDERSCORE enums", () => {
+    expect(humaniseEnum("COMPUTER_SOFTWARE")).toBe("Computer Software");
+    expect(humaniseEnum("ACCOUNTING")).toBe("Accounting");
+  });
+  it("leaves already-readable text and nulls untouched", () => {
+    expect(humaniseEnum("Banking")).toBe("Banking");
+    expect(humaniseEnum(null)).toBeNull();
+  });
+});
 
 describe("splitName", () => {
   it("splits first and last", () => {

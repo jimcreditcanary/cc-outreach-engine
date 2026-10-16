@@ -50,6 +50,13 @@ export function fullName(first: string | null | undefined, last: string | null |
   return name || fallback || "";
 }
 
+/** HubSpot enum values come back ALL_CAPS_UNDERSCORE (e.g. COMPUTER_SOFTWARE).
+ *  Title-case only those; leave already-readable text untouched. */
+export function humaniseEnum(v: string | null): string | null {
+  if (!v || !/^[A-Z0-9]+(_[A-Z0-9]+)*$/.test(v)) return v;
+  return v.toLowerCase().split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
 // ── read: HubSpot → domain ──────────────────────────────────────────────
 export function fromHubspotContact(obj: HsObject, company?: { id: string; name: string | null } | null): ContactRecord {
   const p = obj.properties;
@@ -82,7 +89,7 @@ export function fromHubspotCompany(obj: HsObject): CompanyRecord {
     name: str(p.name),
     domain: str(p.domain),
     website: str(p.website) ?? str(p.domain),
-    industry: str(p.industry),
+    industry: humaniseEnum(str(p.industry)),
     created_at: str(p.createdate),
     updated_at: str(p.hs_lastmodifieddate),
     url: recordUrl("companies", id),
