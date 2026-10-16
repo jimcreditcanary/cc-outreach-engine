@@ -109,12 +109,21 @@ Create at → https://app-eu1.hubspot.com/private-apps/9175484
     read-only deals list (pipeline › stage labels, amounts).
   - Remaining: contact/company add + delete on the HubSpot path.
 - **P4 — decommission** Supabase CRM tables (keep operational ones).
-- **P5 — mailer** on the HubSpot base via Postmark: segment builder, sends
-  logged back as engagements, our suppression respected + HubSpot unsubscribes
-  synced in. **Gated on the operational-data decision** (how sends/meetings/
-  timeline relate to HubSpot contacts — leaning hybrid: metrics in Supabase
-  keyed by HubSpot id, key events mirrored to HubSpot). Likely builds the
-  read-mirror here.
+- **P5 — mailer** on the HubSpot base via Postmark. Operational-data decision
+  made: **hybrid** (metrics in Supabase `hs_sends` keyed by HubSpot contact id;
+  suppression shared email-keyed; key events mirrored to HubSpot).
+  - ✅ Foundation: audience (HubSpot segments) → approval queue → send with
+    guardrails (auto-pause / window / warm-up+cap / suppression); `hs_sends`
+    log; Note mirrored to HubSpot timeline. CLI: `npm run hs-mailer`.
+  - ✅ Webhook loop: Postmark Click/Bounce → `hs_sends`; replies → `replied`
+    + opt-out suppression for non-Supabase senders.
+  - ✅ Fixed a silently-broken suppression upsert (expression index vs
+    onConflict) — bounces/complaints/opt-outs now actually suppress, both
+    mailers. `addSuppression` helper + `npm run backfill-suppressions`.
+  - Remaining: campaign UI in the console; optional AI per-contact drafting
+    (reuse the voice spec) instead of flat templates.
+  - To send for real: set `POSTMARK_SERVER_TOKEN`. To flip prod CRM to
+    HubSpot: set `HUBSPOT_TOKEN` on Vercel.
 
 ## Open items
 
