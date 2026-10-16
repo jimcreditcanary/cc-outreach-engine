@@ -25,7 +25,8 @@
     "meddicc": "tsx scripts/meddicc.ts",
     "import-suppressions": "tsx scripts/import-suppressions.ts",
     "hubspot-smoke": "tsx scripts/hubspot-smoke.ts",
-    "hubspot-setup-props": "tsx scripts/hubspot-setup-props.ts"
+    "hubspot-setup-props": "tsx scripts/hubspot-setup-props.ts",
+    "hs-mailer": "tsx scripts/hs-mailer.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
