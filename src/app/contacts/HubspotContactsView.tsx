@@ -59,7 +59,7 @@ export async function HubspotContactsView({
           {page.records.map((c) => (
             <tr key={c.id} className={`border-t border-neutral-100 hover:bg-neutral-100 ${c.is_new ? "bg-emerald-50/40" : ""}`}>
               <td className="py-1.5">
-                <a href={c.url} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-700 hover:underline">{c.full_name || "—"}</a>
+                <Link href={`/contacts/${c.id}`} className="font-medium text-blue-700 hover:underline">{c.full_name || "—"}</Link>
                 {c.is_new && <span className="ml-2 rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">New</span>}
               </td>
               <td className="text-neutral-600">{c.company_name ?? "—"}</td>

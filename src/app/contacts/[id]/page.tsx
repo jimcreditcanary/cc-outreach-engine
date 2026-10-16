@@ -10,6 +10,8 @@ import { OwnerPicker } from "@/components/OwnerPicker";
 import { RowIconAction } from "@/components/RowIconAction";
 import { Combobox } from "@/components/Combobox";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
+import { activeBackend } from "@/lib/crm";
+import { HubspotContactDetail } from "../HubspotContactDetail";
 
 export const dynamic = "force-dynamic";
 // ✨ Generate-draft-for-this-contact calls Claude.
@@ -28,6 +30,13 @@ export default async function ContactDetail({
   searchParams: Promise<{ merge_q?: string }>;
 }) {
   const { id } = await params;
+
+  // HubSpot-backed detail (P3b) — isolated; the Supabase detail below is
+  // untouched and used when CRM_BACKEND=supabase.
+  if (activeBackend() === "hubspot") {
+    return <HubspotContactDetail id={id} />;
+  }
+
   const { merge_q } = await searchParams;
   const db = serviceClient();
   const { data: c } = await db
