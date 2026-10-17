@@ -40,6 +40,8 @@ export interface CompanyRecord {
   tier: number | null;
   is_partner: boolean;
   icp: boolean;
+  /** Continuously-updated insight (site + news) for the outreach drafter. */
+  context: string | null;
   created_at: string | null;
   updated_at: string | null;
   url: string;
@@ -53,6 +55,7 @@ export interface CompanyWrite {
   tier?: number | null;
   is_partner?: boolean;
   icp?: boolean;
+  context?: string | null;
   owner_id?: string | null;
 }
 

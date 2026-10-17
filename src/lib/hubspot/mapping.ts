@@ -22,7 +22,7 @@ export const CONTACT_READ_PROPS = [
 
 export const COMPANY_READ_PROPS = [
   "name", "domain", "website", "industry",
-  "tier", "is_partner", "icp",
+  "tier", "is_partner", "icp", "context",
   "createdate", "hs_lastmodifieddate",
 ] as const;
 
@@ -102,6 +102,7 @@ export function fromHubspotCompany(obj: HsObject): CompanyRecord {
     tier: Number.isFinite(tierNum) && str(p.tier) ? tierNum : null,
     is_partner: (p.is_partner ?? "") === "true",
     icp: (p.icp ?? "") === "true",
+    context: str(p.context),
     created_at: str(p.createdate),
     updated_at: str(p.hs_lastmodifieddate),
     url: recordUrl("companies", id),
@@ -147,6 +148,7 @@ export function toHubspotCompanyProps(input: CompanyWrite): Props {
   if (input.tier !== undefined) props.tier = input.tier == null ? "" : String(input.tier);
   if (input.is_partner !== undefined) props.is_partner = input.is_partner ? "true" : "false";
   if (input.icp !== undefined) props.icp = input.icp ? "true" : "false";
+  if (input.context !== undefined) props.context = input.context ?? "";
   if (input.owner_id !== undefined) props.hubspot_owner_id = input.owner_id ?? "";
   return props;
 }

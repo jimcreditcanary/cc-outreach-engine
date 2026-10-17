@@ -16,7 +16,7 @@ interface PropDef {
   name: string;
   label: string;
   type: "string" | "number" | "bool" | "enumeration";
-  fieldType: "text" | "number" | "booleancheckbox" | "select";
+  fieldType: "text" | "textarea" | "number" | "booleancheckbox" | "select";
   groupName: string;
   description: string;
   options?: { label: string; value: string }[];
@@ -27,6 +27,7 @@ const PROPS: PropDef[] = [
   { objectType: "companies", name: "tier", label: "Tier", type: "number", fieldType: "number", groupName: "companyinformation", description: "Account tier (1 = highest priority)." },
   { objectType: "companies", name: "is_partner", label: "Is Partner", type: "bool", fieldType: "booleancheckbox", groupName: "companyinformation", description: "Whether this company is a referral/introducer partner.", options: [{ label: "Yes", value: "true" }, { label: "No", value: "false" }] },
   { objectType: "companies", name: "icp", label: "ICP", type: "bool", fieldType: "booleancheckbox", groupName: "companyinformation", description: "In the ideal customer profile.", options: [{ label: "Yes", value: "true" }, { label: "No", value: "false" }] },
+  { objectType: "companies", name: "context", label: "Context", type: "string", fieldType: "textarea", groupName: "companyinformation", description: "Continuously-updated insight about this company (from their website + news), used by the outreach drafter to personalise emails." },
 ];
 
 async function main() {
