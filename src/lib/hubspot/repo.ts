@@ -316,6 +316,31 @@ export async function addContactNote(contactId: string, body: string): Promise<b
   }
 }
 
+/** Log an outbound email as a HubSpot Email activity on the contact (so sends
+ *  made via Postmark show on the HubSpot timeline and feed "last contacted").
+ *  Best-effort — returns false (doesn't throw) on failure. */
+export async function logEmailActivity(contactId: string, email: { subject: string; text: string }): Promise<boolean> {
+  try {
+    const obj = await hsFetch<HsObj>(`/crm/v3/objects/emails`, {
+      method: "POST",
+      body: {
+        properties: {
+          hs_timestamp: String(Date.now()),
+          hs_email_direction: "EMAIL",
+          hs_email_status: "SENT",
+          hs_email_subject: email.subject,
+          hs_email_text: email.text,
+        },
+      },
+    });
+    await hsFetch(`/crm/v4/objects/emails/${obj.id}/associations/default/contacts/${contactId}`, { method: "PUT" });
+    invalidateCache();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Set the (default) contact→company association. Additive — doesn't clear an
  *  existing different company. v4 "default" endpoint needs no typeId. */
 async function setContactCompany(contactId: string, companyId: string): Promise<void> {

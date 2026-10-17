@@ -9,7 +9,7 @@ import { isWithinSendingWindow } from "../send/window";
 import { parseRamp, dailyCap, daysSince } from "../send/warmup";
 import { shouldAutoPause } from "../send/autopause";
 import { sendBroadcast, isDryRun } from "../send/postmark";
-import { addContactNote } from "../hubspot/repo";
+import { logEmailActivity } from "../hubspot/repo";
 
 type DB = ReturnType<typeof serviceClient>;
 const env = (k: string, d: string) => process.env[k] ?? d;
@@ -107,8 +107,9 @@ export async function runHsSendBatch(db: DB, opts: { batch?: number; force?: boo
         ownerId: d.owner_id ?? null,
       });
       await db.from("hs_sends").update({ status: "sent", postmark_message_id: res.messageId, sent_at: new Date().toISOString() }).eq("id", d.id);
-      // Mirror to the HubSpot contact timeline (best-effort — needs notes scope).
-      await addContactNote(d.hs_contact_id, `✉️ Outreach sent${d.campaign ? ` (${d.campaign})` : ""}: ${d.subject ?? ""}`);
+      // Log as a HubSpot email activity (best-effort) so the send shows on the
+      // contact timeline and feeds "last contacted" / deal engagement.
+      await logEmailActivity(d.hs_contact_id, { subject: d.subject ?? "", text: d.body_text ?? "" });
       sent++;
     } catch (e) {
       await db.from("hs_sends").update({ status: "failed", error: String((e as Error)?.message ?? e) }).eq("id", d.id);

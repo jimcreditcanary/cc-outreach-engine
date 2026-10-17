@@ -28,7 +28,8 @@
     "hubspot-setup-props": "tsx scripts/hubspot-setup-props.ts",
     "hs-mailer": "tsx scripts/hs-mailer.ts",
     "backfill-suppressions": "tsx scripts/backfill-suppressions.ts",
-    "site-markdown": "tsx scripts/site-markdown.ts"
+    "site-markdown": "tsx scripts/site-markdown.ts",
+    "draft-sample": "tsx scripts/draft-sample.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
