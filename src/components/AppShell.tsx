@@ -13,7 +13,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard,
   Inbox,
   Flame,
   UserPlus,
@@ -22,12 +21,10 @@ import {
   Briefcase,
   Mail,
   Reply,
-  Calendar,
   CalendarRange,
   UserCog,
   Bell,
   Send,
-  Megaphone,
   Settings as SettingsIcon,
   ChevronsLeft,
   ChevronsRight,
@@ -35,7 +32,7 @@ import {
 } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
 
-type LucideIcon = typeof LayoutDashboard;
+type LucideIcon = typeof Inbox;
 
 interface Leaf {
   href: string;
@@ -53,7 +50,6 @@ const SECTIONS: Section[] = [
   {
     header: "CRM",
     items: [
-      { href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
       { href: "/companies", label: "Companies", Icon: Building2 },
       { href: "/contacts",  label: "Contacts",  Icon: UsersIcon },
     ],
@@ -66,27 +62,20 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    header: "Activities",
-    items: [
-      { href: "/meetings", label: "Meetings", Icon: Calendar },
-      { href: "/events",   label: "Events",   Icon: CalendarRange },
-    ],
-  },
-  {
     header: "Research",
     items: [
       { href: "/alerts",   label: "Alerts",   Icon: Bell },
       { href: "/linkedin", label: "LinkedIn", Icon: UserPlus },
+      { href: "/events",   label: "Events",   Icon: CalendarRange },
     ],
   },
   {
     header: "Outreach",
     items: [
-      { href: "/campaigns",  label: "Campaigns",  Icon: Megaphone },
-      { href: "/sequences",  label: "Sequences",  Icon: Send },
-      { href: "/newsletter", label: "Newsletter", Icon: Mail },
       { href: "/queue",      label: "Queue",      Icon: Inbox },
       { href: "/replies",    label: "Replies",    Icon: Reply },
+      { href: "/newsletter", label: "Newsletter", Icon: Mail },
+      { href: "/sequences",  label: "Sequences",  Icon: Send },
     ],
   },
   {
