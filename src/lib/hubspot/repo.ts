@@ -36,7 +36,7 @@ const COMPANY_SORT: Record<string, string> = {
 
 interface SearchBody {
   query?: string;
-  filterGroups?: { filters: { propertyName: string; operator: string; value?: string }[] }[];
+  filterGroups?: { filters: { propertyName: string; operator: string; value?: string; values?: string[] }[] }[];
   sorts?: { propertyName: string; direction: "ASCENDING" | "DESCENDING" }[];
   properties: string[];
   limit: number;
@@ -226,6 +226,7 @@ export const hubspotRepo: CrmRepository = {
       }],
     };
     if (opts.q?.trim()) body.query = opts.q.trim();
+    if (opts.stages?.length) body.filterGroups = [{ filters: [{ propertyName: "dealstage", operator: "IN", values: opts.stages }] }];
     const [res, labels] = await Promise.all([search("deals", body), dealLabels()]);
     const records = (res.results ?? []).map((d) =>
       fromHubspotDeal(
@@ -239,17 +240,24 @@ export const hubspotRepo: CrmRepository = {
 };
 
 const DEAL_SORT: Record<string, string> = {
-  name: "dealname", amount: "amount", close_date: "closedate", created_at: "createdate",
+  name: "dealname", amount: "amount", close_date: "closedate",
+  created_at: "createdate", last_contacted: "notes_last_contacted",
 };
 
-/** Deal pipeline + stage id→label maps (cached 5m — pipelines rarely change). */
+export interface DealPipeline { id: string; label: string; stages: { id: string; label: string }[] }
+
+/** Deal pipelines + stages (cached 5m — pipelines rarely change). Used for the
+ *  stage filter UI and for id→label resolution. */
+export async function dealPipelines(): Promise<DealPipeline[]> {
+  const res = await hsFetch<{ results: DealPipeline[] }>(`/crm/v3/pipelines/deals`, { cacheTtl: 300_000 });
+  return res.results ?? [];
+}
+
 async function dealLabels(): Promise<{ pipelines: Map<string, string>; stages: Map<string, string> }> {
-  const res = await hsFetch<{ results: { id: string; label: string; stages: { id: string; label: string }[] }[] }>(
-    `/crm/v3/pipelines/deals`, { cacheTtl: 300_000 },
-  );
+  const pipes = await dealPipelines();
   const pipelines = new Map<string, string>();
   const stages = new Map<string, string>();
-  for (const p of res.results ?? []) {
+  for (const p of pipes) {
     pipelines.set(p.id, p.label);
     for (const s of p.stages ?? []) stages.set(s.id, s.label);
   }

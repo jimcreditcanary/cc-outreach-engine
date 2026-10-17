@@ -63,9 +63,19 @@ export interface DealRecord {
   name: string | null;
   pipeline: string | null;
   stage: string | null;
+  /** Raw HubSpot stage id (for stage filtering). */
+  stage_id: string | null;
   amount: number | null;
   currency: string | null;
   close_date: string | null;
+  /** Last time the customer was contacted (call/email/meeting logged). */
+  last_contacted: string | null;
+  /** Last activity of any kind on the deal. */
+  last_activity: string | null;
+  /** Upcoming meeting on the deal, if one is scheduled. */
+  next_meeting_at: string | null;
+  next_meeting_name: string | null;
+  next_step: string | null;
   created_at: string | null;
   updated_at: string | null;
   url: string;
@@ -110,9 +120,11 @@ export interface ListCompaniesOpts {
 
 export interface ListDealsOpts {
   q?: string;
+  /** Filter to these HubSpot stage ids (multi-select). */
+  stages?: string[];
   limit?: number;
   after?: string;
-  sort?: { col: "name" | "amount" | "close_date" | "created_at"; dir: SortDir };
+  sort?: { col: "name" | "amount" | "close_date" | "created_at" | "last_contacted"; dir: SortDir };
 }
 
 /** One page of results plus the forward cursor and overall match count. */

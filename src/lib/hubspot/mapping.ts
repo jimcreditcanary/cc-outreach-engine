@@ -27,8 +27,10 @@ export const COMPANY_READ_PROPS = [
 ] as const;
 
 export const DEAL_READ_PROPS = [
-  "dealname", "pipeline", "dealstage", "amount", "deal_currency_code",
-  "closedate", "createdate", "hs_lastmodifieddate",
+  "dealname", "pipeline", "dealstage", "amount", "deal_currency_code", "closedate",
+  "notes_last_contacted", "notes_last_updated",
+  "hs_next_meeting_start_time", "hs_next_meeting_name", "hs_next_step",
+  "createdate", "hs_lastmodifieddate",
 ] as const;
 
 // Custom props to fold in once created (see docs/HUBSPOT_MIGRATION.md).
@@ -119,9 +121,15 @@ export function fromHubspotDeal(
     name: str(p.dealname),
     pipeline: pipelineLabel ?? str(p.pipeline),
     stage: stageLabel ?? str(p.dealstage),
+    stage_id: str(p.dealstage),
     amount: Number.isFinite(amt) && str(p.amount) ? amt : null,
     currency: str(p.deal_currency_code),
     close_date: str(p.closedate),
+    last_contacted: str(p.notes_last_contacted),
+    last_activity: str(p.notes_last_updated),
+    next_meeting_at: str(p.hs_next_meeting_start_time),
+    next_meeting_name: str(p.hs_next_meeting_name),
+    next_step: str(p.hs_next_step),
     created_at: str(p.createdate),
     updated_at: str(p.hs_lastmodifieddate),
     url: recordUrl("deals", id),

@@ -46,13 +46,13 @@ interface DealRow {
   organisation: { id: string; name: string | null; tier: number | null } | null;
 }
 
-export default async function DealsPage({ searchParams }: { searchParams: Promise<{ tier?: string; status?: string; owner?: string; sort?: string; q?: string; after?: string }> }) {
-  const { tier, status, owner, sort: sortRaw, q, after } = await searchParams;
+export default async function DealsPage({ searchParams }: { searchParams: Promise<{ tier?: string; status?: string; owner?: string; sort?: string; q?: string; after?: string; stages?: string }> }) {
+  const { tier, status, owner, sort: sortRaw, q, after, stages } = await searchParams;
 
   // HubSpot-backed read-only deals list (P3) — isolated; Supabase page below
   // (MEDDICC nudges etc.) is untouched and used when CRM_BACKEND=supabase.
   if (activeBackend() === "hubspot") {
-    return <HubspotDealsView q={q} sortRaw={sortRaw} after={after} />;
+    return <HubspotDealsView q={q} sortRaw={sortRaw} after={after} stagesRaw={stages} />;
   }
 
   const db = serviceClient();
