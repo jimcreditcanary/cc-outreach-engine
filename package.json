@@ -30,7 +30,8 @@
     "backfill-suppressions": "tsx scripts/backfill-suppressions.ts",
     "site-markdown": "tsx scripts/site-markdown.ts",
     "draft-sample": "tsx scripts/draft-sample.ts",
-    "enrich-context": "tsx scripts/enrich-context.ts"
+    "enrich-context": "tsx scripts/enrich-context.ts",
+    "workflow": "tsx scripts/workflow.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
