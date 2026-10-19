@@ -133,3 +133,54 @@ Create at → https://app-eu1.hubspot.com/private-apps/9175484
   Need a user→owner lookup table.
 - Contact match on write: email is the natural key; decide merge behaviour when
   HubSpot already has the contact (update vs skip).
+
+---
+
+## Personalised outreach engine (post-pivot, 2026-10)
+
+The mailer was reframed from blanket campaigns/sequences to a **personalisation
+workflow engine** (Jim's strategy: quality > quantity, "done our homework",
+content-first, stay present, pounce on intent). Built and live in dev:
+
+**Drafting**
+- `src/lib/mailer/draft.ts` — bespoke per-contact email tied to ONE CC page, in
+  the rep's voice. `DraftConfig` (sign-off/close/tone/length/subject) per
+  salesperson via **Settings → Outreach voice** (`user_settings.draft_config`,
+  migration 040; `loadDraftConfig`). Anonymisation-guarded. `trigger_note` for
+  inbound events. Defaults = Jim's voice (valued-partner, short, "Thanks, Jim").
+- `creditcanary-site.md` — website content map the drafter picks from
+  (`npm run site-markdown` from crawled content_assets).
+- Per-contact research → HubSpot **contact Context** field (`npm run
+  enrich-context`): Serper (`src/lib/search/serp.ts`) + Claude, strictly
+  grounded (`src/lib/mailer/research.ts`). Company Context field too.
+
+**Campaign type 1 — outbound** (`src/lib/mailer/workflow.ts`, `npm run workflow`)
+segment → research + draft per contact → review queue; high research-confidence
+auto-approved, rest queued. Keystone UI: **Outreach → Workflow** (`/outreach`).
+
+**Campaign type 2 — deal-nurture** (`src/lib/mailer/nurture.ts`, `npm run
+nurture`) owner's open deals → MEDDICC appraisal (`deal_appraisals`, migration
+042) → next-step nudge to the deal contact; skips deals contacted this week.
+
+**Send + track** — `hs_sends` (migration 039) queue; `runHsSendBatch` sends
+approved slowly (auto-pause/window/warm-up/suppression), tags CC links with
+`cc_cid` for GA4, logs each as a HubSpot **email activity**. Webhook loop:
+click/bounce/reply → hs_sends; **first click → HubSpot task** (pounce on intent).
+`hs_sends.meta` (migration 041). Suppression fixed (addSuppression; onConflict
+bug). Engagement associations fixed (typed ids: note 202 / email 198 / task 204).
+
+**Inbound follow-ups** (`src/lib/mailer/inbound.ts`, migration 043) — download/
+enquiry (lead capture), abandonment (`POST /api/inbound/abandonment`), booking
+(`/book`) enqueue → cron `/api/cron/inbound` (15m) / `npm run inbound-followups`
+drafts warm, event-aware follow-ups into the review queue.
+
+### Still open
+- **GA4 deep-intent**: needs GA4 property ID + a service-account JSON key in
+  `.env.local` + Data API (`analyticsdata.googleapis.com`) enabled + a `cc_cid`
+  custom dimension on the site's GA4. Then: ingest visits by cc_cid → high-intent
+  → HubSpot task. (Click-based intent already live.)
+- **Content page** in-app (who-it's-for / when-to-send) over the site map.
+- **Per-user HubSpot owner mapping** (`user_settings.hubspot_owner_id`) so each
+  rep nurtures *their* deals — currently defaults to Jim (86510668).
+- **To send for real**: set `POSTMARK_SERVER_TOKEN`. **Prod CRM on HubSpot**:
+  set `HUBSPOT_TOKEN` on Vercel.
