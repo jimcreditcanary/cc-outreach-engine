@@ -29,6 +29,7 @@
     "hs-mailer": "tsx scripts/hs-mailer.ts",
     "backfill-suppressions": "tsx scripts/backfill-suppressions.ts",
     "site-markdown": "tsx scripts/site-markdown.ts",
+    "content-guidance": "tsx scripts/content-guidance.ts",
     "draft-sample": "tsx scripts/draft-sample.ts",
     "enrich-context": "tsx scripts/enrich-context.ts",
     "workflow": "tsx scripts/workflow.ts",

@@ -26,6 +26,7 @@ import {
   Bell,
   Send,
   Megaphone,
+  FileText,
   Settings as SettingsIcon,
   ChevronsLeft,
   ChevronsRight,
@@ -74,6 +75,7 @@ const SECTIONS: Section[] = [
     header: "Outreach",
     items: [
       { href: "/outreach",   label: "Workflow",   Icon: Megaphone },
+      { href: "/content",    label: "Content",    Icon: FileText },
       { href: "/queue",      label: "Queue",      Icon: Inbox },
       { href: "/replies",    label: "Replies",    Icon: Reply },
       { href: "/newsletter", label: "Newsletter", Icon: Mail },

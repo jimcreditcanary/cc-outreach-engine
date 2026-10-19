@@ -20,6 +20,8 @@ interface Asset {
   tags_module: string[];
   description: string | null;
   body_text: string | null;
+  audience_fit?: string | null;
+  send_timing?: string | null;
 }
 
 // Human group headings, in order. Anything else falls into "Other pages".
@@ -48,6 +50,8 @@ function renderAsset(a: Asset): string {
   const lines = [`### ${a.title ?? a.url}`, `- URL: ${a.url}`];
   const tags = tagLine(a);
   if (tags) lines.push(`- ${tags}`);
+  if (a.audience_fit) lines.push(`- Best for: ${a.audience_fit}`);
+  if (a.send_timing) lines.push(`- When to send: ${a.send_timing}`);
   if (a.description) lines.push(`- ${excerpt(a.description, 300)}`);
   const body = excerpt(a.body_text);
   if (body) lines.push("", body);
@@ -57,13 +61,13 @@ function renderAsset(a: Asset): string {
 async function main() {
   const { serviceClient } = await import("../src/lib/db/client");
   const db = serviceClient();
-  const { data, error } = await db
-    .from("content_assets")
-    .select("url, title, type, tags_sector, tags_problem, tags_module, description, body_text")
-    .order("type", { ascending: true })
-    .order("title", { ascending: true });
-  if (error) throw error;
-  const assets = (data ?? []) as Asset[];
+  const rich = "url, title, type, tags_sector, tags_problem, tags_module, description, body_text, audience_fit, send_timing";
+  const base = "url, title, type, tags_sector, tags_problem, tags_module, description, body_text";
+  const run = (cols: string) => db.from("content_assets").select(cols).order("type", { ascending: true }).order("title", { ascending: true });
+  let r = await run(rich);
+  if (r.error && /audience_fit|send_timing/.test(r.error.message)) r = await run(base);
+  if (r.error) throw r.error;
+  const assets = (r.data ?? []) as unknown as Asset[];
 
   const byType = new Map<string, Asset[]>();
   for (const a of assets) {
