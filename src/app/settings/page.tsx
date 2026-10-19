@@ -9,7 +9,9 @@ import {
   syncGranolaNowAction,
   disconnectGranolaAction,
   saveBookingSettingsAction,
+  saveDraftConfigAction,
 } from "./actions";
+import { loadDraftConfig } from "@/lib/mailer/config";
 import {
   connectGoogleCalendarAction,
   disconnectGoogleCalendarAction,
@@ -47,6 +49,7 @@ export default async function SettingsPage() {
       .maybeSingle(),
     isConnected(db, me.id),
   ]);
+  const draftCfg = await loadDraftConfig(db, me.id);
   const googleConnected = !!gcal?.google_ics_url;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";
   const bookingDays = (bk?.booking_days as string[] | null) ?? ["mon", "tue", "wed", "thu", "fri"];
@@ -497,6 +500,40 @@ export default async function SettingsPage() {
             </div>
           </details>
         </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="mb-1 text-lg font-semibold">Outreach voice</h2>
+        <p className="mb-3 text-sm text-neutral-500">Your spin on the AI drafter. Blank fields fall back to the house defaults.</p>
+        <form action={saveDraftConfigAction} className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className={lbl}>Sender name</label>
+              <input name="senderName" defaultValue={draftCfg.senderName} className={field} />
+            </div>
+            <div>
+              <label className={lbl}>Sign-off</label>
+              <input name="signOff" defaultValue={draftCfg.signOff} className={field} />
+            </div>
+          </div>
+          <div>
+            <label className={lbl}>Closing line (the CTA, in your words)</label>
+            <input name="closeLine" defaultValue={draftCfg.closeLine} className={field} />
+          </div>
+          <div>
+            <label className={lbl}>Subject style</label>
+            <input name="subjectStyle" defaultValue={draftCfg.subjectStyle} className={field} />
+          </div>
+          <div>
+            <label className={lbl}>Length guidance</label>
+            <input name="lengthGuidance" defaultValue={draftCfg.lengthGuidance} className={field} />
+          </div>
+          <div>
+            <label className={lbl}>Tone / voice notes</label>
+            <textarea name="toneNotes" defaultValue={draftCfg.toneNotes} rows={4} className={field} />
+          </div>
+          <PendingButton className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">Save voice</PendingButton>
+        </form>
       </section>
     </main>
   );

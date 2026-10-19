@@ -19,6 +19,27 @@ const str = (v: FormDataEntryValue | null): string | null => {
   return s === "" ? null : s;
 };
 
+/** Save the signed-in operator's outreach drafting voice (DraftConfig).
+ *  Only non-empty fields are stored; blanks fall back to the app defaults. */
+export async function saveDraftConfigAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const fields = {
+    senderName: str(formData.get("senderName")),
+    signOff: str(formData.get("signOff")),
+    closeLine: str(formData.get("closeLine")),
+    toneNotes: str(formData.get("toneNotes")),
+    lengthGuidance: str(formData.get("lengthGuidance")),
+    subjectStyle: str(formData.get("subjectStyle")),
+  };
+  const draft_config = Object.fromEntries(Object.entries(fields).filter(([, v]) => v != null));
+  const { error } = await serviceClient()
+    .from("user_settings")
+    .upsert({ user_id: me.id, draft_config, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  await flash(error ? "error" : "success", error ? `Couldn't save: ${error.message}` : "Outreach voice saved.");
+  revalidatePath("/settings");
+}
+
 /** Save the signed-in operator's outbound sender identity AND register the
  *  matching Postmark sender signature in one round-trip. If the API token
  *  isn't configured (or Postmark rejects), the From/Reply-To still saves
