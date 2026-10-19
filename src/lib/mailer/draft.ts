@@ -48,7 +48,7 @@ export const DEFAULT_DRAFT_CONFIG: DraftConfig = {
   signOff: "Thanks, Jim",
   closeLine: "If you'd be open to connect, let me know — happy to share best practices we're seeing and see if we can be useful.",
   toneNotes:
-    "Write as a valued industry partner to a senior peer — assured, warm, to the point. Never salesy, never junior, never needy. No throat-clearing (\"Hope you're well\", \"I wanted to reach out\"), no self-deprecating hedges (\"not a pitch\", \"no worries\", \"sorry to bother\"). They'll either find it valuable or they won't; respect their time and let the relevance do the work.",
+    "Write as a valued industry partner to a senior peer — assured, warm, to the point. Measured British business English: never breezy, casual or American, never salesy, junior or needy. Write COMPLETE sentences — never clipped, subject-dropped fragments (write \"We wrote up what we learned\", not \"Wrote up what we learned\"; \"I'd be happy to…\", not \"Happy to…\"). No throat-clearing (\"Hope you're well\", \"I wanted to reach out\"), no self-deprecating hedges (\"not a pitch\", \"no worries\", \"sorry to bother\"). Respect their time and let the relevance do the work.",
   lengthGuidance: "Really short and sweet — a few tight sentences. Only go longer if there's a genuine, specific reason.",
   subjectStyle:
     "Short and intriguing, written purely to earn the open — a benefit or curiosity hook (e.g. \"driving growth for lenders\"), not a summary and not clickbait.",
@@ -90,10 +90,12 @@ LENGTH
 ${cfg.lengthGuidance}
 
 STRUCTURE
-- Open straight into something specific and relevant to THEM (their company, a recent move/post/news, their role's priorities) — drawn from the research/context below. No throat-clearing, no "Hi X, hope you're well".
+- Greet with "Hi <first name>," then go straight into something specific and relevant to THEM (their company, a recent move/post/news, their role's priorities) — drawn from the research/context below. No "hope you're well", no weather.
 - Reference the ONE most relevant CC page by linking it naturally — this is the "we found something for you" signal.
 - Close with this invitation, in the sender's voice (you may adjust lightly to flow, keep its warmth and intent): "${cfg.closeLine}"
+- Then a brief, warm, courteous closing line before the sign-off (e.g. "Look forward to the opportunity to speak").
 - Sign off exactly: "${cfg.signOff}"
+- Write in complete, measured British sentences throughout — no clipped fragments, no breezy/casual phrasing.
 
 HARD RULES
 - Pick EXACTLY ONE page from the WEBSITE CONTENT MAP below that best fits this prospect's sector and likely problem. Use its exact URL. NEVER invent a page, URL, statistic or claim — only use what the map provides.
