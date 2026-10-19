@@ -10,6 +10,7 @@ import { parseRamp, dailyCap, daysSince } from "../send/warmup";
 import { shouldAutoPause } from "../send/autopause";
 import { sendBroadcast, isDryRun } from "../send/postmark";
 import { logEmailActivity } from "../hubspot/repo";
+import { tagLinks } from "./tracking";
 
 type DB = ReturnType<typeof serviceClient>;
 const env = (k: string, d: string) => process.env[k] ?? d;
@@ -98,11 +99,13 @@ export async function runHsSendBatch(db: DB, opts: { batch?: number; force?: boo
     }
     if (dry) { sent++; continue; }
     try {
+      // Tag CC links with UTM + per-contact id for GA4 attribution.
+      const tagOpts = { cid: d.hs_contact_id, campaign: d.campaign ?? undefined };
       const res = await sendBroadcast({
         to: d.email,
         subject: d.subject ?? "",
-        htmlBody: d.body_html ?? "",
-        textBody: d.body_text ?? "",
+        htmlBody: tagLinks(d.body_html ?? "", tagOpts),
+        textBody: tagLinks(d.body_text ?? "", tagOpts),
         tag: `hs-${d.campaign ?? "campaign"}`,
         ownerId: d.owner_id ?? null,
       });

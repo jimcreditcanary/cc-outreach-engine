@@ -331,13 +331,18 @@ export async function createCompany(input: { name: string; domain?: string | nul
 /** Log a Note engagement on a contact (the lead timeline entry). Best-effort:
  *  needs crm.objects.notes write scope — returns false (doesn't throw) if not
  *  granted, so lead capture still succeeds without the timeline note. */
+// HubSpot-defined association type ids, engagement → contact.
+const ASSOC = { note: 202, email: 198, task: 204 } as const;
+const toContact = (contactId: string, typeId: number) => [
+  { to: { id: contactId }, types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: typeId }] },
+];
+
 export async function addContactNote(contactId: string, body: string): Promise<boolean> {
   try {
-    const note = await hsFetch<HsObj>(`/crm/v3/objects/notes`, {
+    await hsFetch<HsObj>(`/crm/v3/objects/notes`, {
       method: "POST",
-      body: { properties: { hs_timestamp: String(Date.now()), hs_note_body: body } },
+      body: { properties: { hs_timestamp: String(Date.now()), hs_note_body: body }, associations: toContact(contactId, ASSOC.note) },
     });
-    await hsFetch(`/crm/v4/objects/notes/${note.id}/associations/default/contacts/${contactId}`, { method: "PUT" });
     invalidateCache();
     return true;
   } catch {
@@ -350,7 +355,7 @@ export async function addContactNote(contactId: string, body: string): Promise<b
  *  Best-effort — returns false (doesn't throw) on failure. */
 export async function logEmailActivity(contactId: string, email: { subject: string; text: string }): Promise<boolean> {
   try {
-    const obj = await hsFetch<HsObj>(`/crm/v3/objects/emails`, {
+    await hsFetch<HsObj>(`/crm/v3/objects/emails`, {
       method: "POST",
       body: {
         properties: {
@@ -360,9 +365,37 @@ export async function logEmailActivity(contactId: string, email: { subject: stri
           hs_email_subject: email.subject,
           hs_email_text: email.text,
         },
+        associations: toContact(contactId, ASSOC.email),
       },
     });
-    await hsFetch(`/crm/v4/objects/emails/${obj.id}/associations/default/contacts/${contactId}`, { method: "PUT" });
+    invalidateCache();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Create a follow-up Task on a contact (e.g. when they engage). Best-effort. */
+export async function createContactTask(
+  contactId: string,
+  task: { subject: string; body?: string; ownerId?: string | null; priority?: "LOW" | "MEDIUM" | "HIGH" },
+): Promise<boolean> {
+  try {
+    await hsFetch<HsObj>(`/crm/v3/objects/tasks`, {
+      method: "POST",
+      body: {
+        properties: {
+          hs_task_subject: task.subject,
+          hs_task_body: task.body ?? "",
+          hs_timestamp: String(Date.now()),
+          hs_task_status: "NOT_STARTED",
+          hs_task_priority: task.priority ?? "HIGH",
+          hs_task_type: "TODO",
+          ...(task.ownerId ? { hubspot_owner_id: task.ownerId } : {}),
+        },
+        associations: toContact(contactId, ASSOC.task),
+      },
+    });
     invalidateCache();
     return true;
   } catch {

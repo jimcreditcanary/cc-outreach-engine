@@ -5,6 +5,7 @@
 import { serviceClient } from "@/lib/db/client";
 import { authorized } from "@/lib/webhooks/guard";
 import { addSuppression } from "@/lib/suppress";
+import { createContactTask } from "@/lib/hubspot/repo";
 
 type DB = ReturnType<typeof serviceClient>;
 
@@ -33,7 +34,7 @@ async function hsSendByMessageId(db: DB, messageId?: string) {
   if (!messageId) return null;
   const { data } = await db
     .from("hs_sends")
-    .select("id, hs_contact_id")
+    .select("id, hs_contact_id, clicked, subject, campaign")
     .eq("postmark_message_id", messageId)
     .maybeSingle();
   return data ?? null;
@@ -79,10 +80,19 @@ export async function POST(req: Request) {
         });
         break;
       }
-      // HubSpot mailer click — recorded on hs_sends.clicked.
-      const hs = await hsSendByMessageId(db, messageId);
+      // HubSpot mailer click — record it, and on the FIRST click create a
+      // high-intent follow-up task for the rep (the "pounce on intent" loop).
+      const hs = await hsSendByMessageId(db, messageId) as { id: string; hs_contact_id: string; clicked: boolean; subject: string | null; campaign: string | null } | null;
       if (hs) {
-        await db.from("hs_sends").update({ clicked: true }).eq("id", hs.id);
+        if (!hs.clicked) {
+          await db.from("hs_sends").update({ clicked: true }).eq("id", hs.id);
+          const ownerId = process.env.HUBSPOT_LEAD_OWNER_ID ?? "86510668";
+          await createContactTask(hs.hs_contact_id, {
+            subject: `🔥 Engaged: clicked “${hs.subject ?? "outreach"}”`,
+            body: `${email ?? "This contact"} clicked the link in the outreach email${hs.campaign ? ` (${hs.campaign})` : ""}. Warm — follow up while it's live.`,
+            ownerId,
+          });
+        }
       } else {
         // Maybe it's a newsletter click — log it against the right contact
         // and tag the newsletter_id so /newsletter/[id] can aggregate.
