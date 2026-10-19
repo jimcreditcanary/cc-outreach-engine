@@ -25,6 +25,9 @@ import { sendTransactional } from "../send/postmark";
 import { computeSlots, type BookingConfig } from "./availability";
 import { loadBusyIntervals } from "./busy";
 import { buildInviteIcs } from "./ics";
+import { activeBackend } from "../crm";
+import { hubspotRepo, findContactByEmail, findCompanyByName } from "../hubspot/repo";
+import { enqueueInboundFollowup } from "../mailer/inbound";
 
 type DB = ReturnType<typeof serviceClient>;
 
@@ -285,6 +288,25 @@ export async function createBooking(db: DB, req: BookingRequest): Promise<Bookin
       : {}),
     tag: "booking-notification",
   }).catch(() => {});
+
+  // ── Booking follow-up (HubSpot): ensure the booker is a HubSpot contact and
+  //    queue a warm pre-meeting follow-up draft. Best-effort — never blocks a
+  //    confirmed booking.
+  if (activeBackend() === "hubspot") {
+    try {
+      let hs = await findContactByEmail(email);
+      if (!hs) {
+        const companyName = req.company?.trim() || null;
+        const companyId = companyName ? (await findCompanyByName(companyName))?.id ?? null : null;
+        hs = await hubspotRepo.createContact({
+          full_name: name, email, company_id: companyId,
+          owner_id: process.env.HUBSPOT_LEAD_OWNER_ID ?? "86510668",
+          lead_source: "booking", is_new: true,
+        });
+      }
+      await enqueueInboundFollowup(db, { hsContactId: hs.id, kind: "booking", page: subject, ownerId: page.user_id });
+    } catch { /* best-effort */ }
+  }
 
   return { ok: true, start, end, operatorName: page.operator_name, joinUrl, method };
 }
