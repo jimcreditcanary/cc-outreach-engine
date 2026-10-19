@@ -15,6 +15,7 @@ import { sendTransactional } from "../send/postmark";
 import { resolveInboundOwner, eventMessage, type LeadInput, type LeadResult } from "./capture";
 import { recordUrl } from "../hubspot/client";
 import { hubspotRepo, findContactByEmail, findCompanyByName, createCompany, addContactNote } from "../hubspot/repo";
+import { enqueueInboundFollowup } from "../mailer/inbound";
 import type { ContactWrite } from "../crm/types";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -138,6 +139,16 @@ export async function captureLeadHubspot(input: LeadInput): Promise<LeadResult> 
       tag: `lead-${input.kind}`,
     }).catch(() => {});
   }
+
+  // Enqueue a personalised inbound follow-up (fast marker; drafted by the
+  // inbound-followups job so the API stays snappy).
+  await enqueueInboundFollowup(db, {
+    hsContactId: contactId,
+    kind: input.kind === "enquiry" ? "enquiry" : "download",
+    asset: input.asset ?? null,
+    page: input.url ?? null,
+    ownerId,
+  });
 
   return {
     ok: true,

@@ -22,6 +22,9 @@ export interface DraftInput {
   /** Curated, per-contact research (recent posts, news, names, a problem
    *  statement) — the "we've done our homework" layer. */
   contact_context?: string | null;
+  /** An inbound trigger to open on, e.g. "They just downloaded the Risk &
+   *  Liquidity whitepaper." When set, lead with this, naturally. */
+  trigger_note?: string | null;
 }
 
 /** Per-salesperson drafting dials. Defaults are Jim's; a future prompt-builder
@@ -116,6 +119,10 @@ function buildUser(input: DraftInput): string {
     `- Role: ${input.job_title ?? "(unknown)"}`,
     `- Company: ${input.company_name ?? "(unknown)"}`,
     `- Industry: ${input.industry ?? "(unknown)"}`,
+    "",
+    ...(input.trigger_note?.trim()
+      ? ["", `INBOUND TRIGGER (they just did this — open on it naturally, warmly; they're expecting to hear from us): ${input.trigger_note.trim()}`]
+      : []),
     "",
     "RESEARCH / CONTEXT (use this to make it personal — do not invent beyond it)",
     `- Contact context: ${input.contact_context?.trim() || "(none yet)"}`,
