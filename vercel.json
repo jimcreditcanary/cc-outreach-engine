@@ -31,6 +31,10 @@
     {
       "path": "/api/cron/inbound",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/ga4-intent",
+      "schedule": "0 * * * *"
     }
   ]
 }

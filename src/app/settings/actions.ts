@@ -36,6 +36,29 @@ export async function saveHubspotOwnerAction(formData: FormData) {
   revalidatePath("/settings");
 }
 
+/** Map every operator to their HubSpot owner by matching login email → HubSpot
+ *  user email. Idempotent; run after adding reps as HubSpot users. */
+export async function bulkSyncOwnersAction() {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const { listOperators } = await import("@/lib/auth/owner");
+  const { findOwnerIdByEmail } = await import("@/lib/hubspot/repo");
+  const db = serviceClient();
+  const ops = await listOperators();
+  let mapped = 0, unmatched = 0;
+  for (const op of ops) {
+    const ownerId = op.email ? await findOwnerIdByEmail(op.email) : null;
+    if (ownerId) {
+      await db.from("user_settings").upsert({ user_id: op.id, hubspot_owner_id: ownerId, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+      mapped++;
+    } else {
+      unmatched++;
+    }
+  }
+  await flash("success", `Mapped ${mapped} user(s) to HubSpot owners${unmatched ? `; ${unmatched} with no HubSpot match` : ""}.`);
+  revalidatePath("/settings");
+}
+
 /** Save the signed-in operator's outreach drafting voice (DraftConfig).
  *  Only non-empty fields are stored; blanks fall back to the app defaults. */
 export async function saveDraftConfigAction(formData: FormData) {

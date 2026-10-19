@@ -11,6 +11,7 @@ import {
   saveBookingSettingsAction,
   saveDraftConfigAction,
   saveHubspotOwnerAction,
+  bulkSyncOwnersAction,
 } from "./actions";
 import { loadDraftConfig } from "@/lib/mailer/config";
 import {
@@ -514,6 +515,8 @@ export default async function SettingsPage() {
             <input name="hubspot_owner_id" defaultValue={hubspotOwnerId} placeholder="auto-detect from email" className={`${field} w-56`} />
           </div>
           <PendingButton className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">Save owner</PendingButton>
+          <span className="ml-auto" />
+          <PendingButton formAction={bulkSyncOwnersAction} className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50" pendingLabel="Syncing…" title="Map every user to their HubSpot owner by email">Sync all users</PendingButton>
         </form>
 
         <h2 className="mb-1 text-lg font-semibold">Outreach voice</h2>
