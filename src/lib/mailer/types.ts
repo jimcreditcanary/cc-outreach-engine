@@ -17,20 +17,24 @@ export interface AudienceContact {
 export type Segment =
   | { kind: "new_leads" }              // hs_lead_status = NEW
   | { kind: "source"; source: string } // lead_source = <source>
-  | { kind: "all" };                   // everyone with an email
+  | { kind: "all" }                    // everyone with an email
+  | { kind: "list"; listId: string };  // members of a HubSpot list/segment
 
 export function segmentLabel(s: Segment): string {
   switch (s.kind) {
     case "new_leads": return "new-leads";
     case "source": return `source:${s.source}`;
     case "all": return "all";
+    case "list": return `list:${s.listId}`;
   }
 }
 
 export function parseSegment(spec: string): Segment {
-  const t = spec.trim().toLowerCase();
+  const raw = spec.trim();
+  const t = raw.toLowerCase();
   if (t === "new_leads" || t === "new-leads" || t === "new") return { kind: "new_leads" };
   if (t === "all") return { kind: "all" };
-  if (t.startsWith("source:")) return { kind: "source", source: spec.trim().slice("source:".length) };
-  throw new Error(`Unknown segment "${spec}". Use: new_leads | all | source:<value>`);
+  if (t.startsWith("source:")) return { kind: "source", source: raw.slice("source:".length) };
+  if (t.startsWith("list:")) return { kind: "list", listId: raw.slice("list:".length) };
+  throw new Error(`Unknown segment "${spec}". Use: new_leads | all | source:<value> | list:<id>`);
 }

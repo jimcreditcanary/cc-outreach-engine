@@ -375,6 +375,40 @@ export async function logEmailActivity(contactId: string, email: { subject: stri
   }
 }
 
+export interface HsList { id: string; name: string; size: number | null }
+
+/** Contact Lists/Segments defined in HubSpot (for the target-list picker). */
+export async function listContactLists(limit = 150): Promise<HsList[]> {
+  try {
+    const res = await hsFetch<{ lists?: { listId: string; name: string; objectTypeId?: string; additionalProperties?: Record<string, string> }[] }>(
+      `/crm/v3/lists/search`,
+      { method: "POST", body: { count: limit, query: "", offset: 0, additionalProperties: ["hs_list_size"] }, cacheTtl: 60_000 },
+    );
+    return (res.lists ?? [])
+      .filter((l) => !l.objectTypeId || l.objectTypeId === "0-1") // contact lists only
+      .map((l) => ({ id: l.listId, name: l.name, size: Number(l.additionalProperties?.hs_list_size ?? "") || null }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+
+/** Contact ids that are members of a HubSpot list. */
+export async function listMembershipIds(listId: string, cap = 3000): Promise<string[]> {
+  const out: string[] = [];
+  let after: string | undefined;
+  while (out.length < cap) {
+    const res = await hsFetch<{ results?: { recordId: string }[]; paging?: { next?: { after?: string } } }>(
+      `/crm/v3/lists/${listId}/memberships?limit=250${after ? `&after=${after}` : ""}`,
+      { cacheTtl: 30_000 },
+    );
+    for (const r of res.results ?? []) out.push(String(r.recordId));
+    after = res.paging?.next?.after;
+    if (!after) break;
+  }
+  return out.slice(0, cap);
+}
+
 /** Resolve a HubSpot owner id from an email (for mapping a rep to their owner). */
 export async function findOwnerIdByEmail(email: string): Promise<string | null> {
   try {

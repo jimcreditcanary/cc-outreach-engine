@@ -5,6 +5,7 @@
 
 import { serviceClient } from "@/lib/db/client";
 import { hubspotEnabled } from "@/lib/hubspot/client";
+import { listContactLists } from "@/lib/hubspot/repo";
 import { isDryRun } from "@/lib/send/postmark";
 import { fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
@@ -31,6 +32,7 @@ function confBadge(c?: string) {
 export default async function OutreachPage() {
   const db = serviceClient();
   const dry = isDryRun();
+  const hsLists = hubspotEnabled() ? await listContactLists() : [];
   const { data } = await db
     .from("hs_sends")
     .select("id, hs_contact_id, email, subject, body_text, campaign, status, meta, ts, sent_at, clicked, replied, bounced")
@@ -65,6 +67,11 @@ export default async function OutreachPage() {
             <option value="new_leads">New leads</option>
             <option value="all">All with email</option>
             <option value="source">By lead source…</option>
+            {hsLists.length > 0 && (
+              <optgroup label="HubSpot lists">
+                {hsLists.map((l) => <option key={l.id} value={`list:${l.id}`}>{l.name}{l.size != null ? ` (${l.size})` : ""}</option>)}
+              </optgroup>
+            )}
           </select>
         </div>
         <div>
@@ -85,7 +92,10 @@ export default async function OutreachPage() {
             Draft run
           </PendingButton>
         </div>
-        <p className="text-xs text-neutral-500 sm:col-span-4">Researches + drafts each contact (slow). For bigger batches: <code>npm run workflow -- &lt;segment&gt; --limit=N</code>.</p>
+        <p className="text-xs text-neutral-500 sm:col-span-4">
+          Researches + drafts each contact (slow). For bigger batches: <code>npm run workflow -- &lt;segment&gt; --limit=N</code>.
+          {hubspotEnabled() && hsLists.length === 0 && <span className="text-amber-700"> · No HubSpot lists shown — add the <code>crm.lists.read</code> scope to the Service Key to target saved segments.</span>}
+        </p>
       </form>
 
       {/* Deal nurture run */}
