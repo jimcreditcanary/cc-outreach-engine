@@ -4,18 +4,35 @@
 // to see which contacts (cc_cid) visited the site.
 
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
 
 interface ServiceAccount { client_email: string; private_key: string; token_uri?: string }
 
 export function ga4Enabled(): boolean {
-  return !!(process.env.GA4_PROPERTY_ID && process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  return !!(process.env.GA4_PROPERTY_ID && (process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON));
 }
 
 function loadSA(): ServiceAccount {
-  const raw = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-  if (!raw) throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON not set");
-  const sa = JSON.parse(raw) as ServiceAccount;
-  sa.private_key = sa.private_key.replace(/\\n/g, "\n"); // tolerate double-escaped keys
+  // Prefer a file path (GOOGLE_APPLICATION_CREDENTIALS — the standard Google var,
+  // ideal locally). Else an inline var (GOOGLE_APPLICATION_CREDENTIALS_JSON),
+  // base64 or raw JSON — base64 is recommended since a raw multi-line private_key
+  // doesn't survive .env parsing. This is best for Vercel (no filesystem).
+  const path = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+  let raw: string | undefined;
+  if (path) {
+    try { raw = readFileSync(path, "utf8"); }
+    catch { throw new Error(`GOOGLE_APPLICATION_CREDENTIALS file not readable: ${path}`); }
+  } else {
+    raw = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON?.trim();
+    if (raw && !raw.startsWith("{")) {
+      try { raw = Buffer.from(raw, "base64").toString("utf8"); } catch { /* fall through */ }
+    }
+  }
+  if (!raw) throw new Error("Set GOOGLE_APPLICATION_CREDENTIALS (key file path) or GOOGLE_APPLICATION_CREDENTIALS_JSON (base64).");
+  let sa: ServiceAccount;
+  try { sa = JSON.parse(raw) as ServiceAccount; }
+  catch { throw new Error("GA4 credentials aren't valid JSON — use a file path locally, or base64 for the inline var (base64 -i key.json)."); }
+  sa.private_key = sa.private_key.replace(/\\n/g, "\n");
   return sa;
 }
 
