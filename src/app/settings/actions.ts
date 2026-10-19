@@ -19,6 +19,23 @@ const str = (v: FormDataEntryValue | null): string | null => {
   return s === "" ? null : s;
 };
 
+/** Save the operator's HubSpot owner id (for deal-nurture + follow-up tasks on
+ *  their own deals). If left blank, auto-detect from their email. */
+export async function saveHubspotOwnerAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  let ownerId = str(formData.get("hubspot_owner_id"));
+  if (!ownerId && me.email) {
+    const { findOwnerIdByEmail } = await import("@/lib/hubspot/repo");
+    ownerId = await findOwnerIdByEmail(me.email);
+  }
+  const { error } = await serviceClient()
+    .from("user_settings")
+    .upsert({ user_id: me.id, hubspot_owner_id: ownerId, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  await flash(error ? "error" : "success", error ? `Couldn't save: ${error.message}` : ownerId ? `HubSpot owner set to ${ownerId}.` : "No HubSpot owner found for your email — enter the id manually.");
+  revalidatePath("/settings");
+}
+
 /** Save the signed-in operator's outreach drafting voice (DraftConfig).
  *  Only non-empty fields are stored; blanks fall back to the app defaults. */
 export async function saveDraftConfigAction(formData: FormData) {

@@ -375,6 +375,16 @@ export async function logEmailActivity(contactId: string, email: { subject: stri
   }
 }
 
+/** Resolve a HubSpot owner id from an email (for mapping a rep to their owner). */
+export async function findOwnerIdByEmail(email: string): Promise<string | null> {
+  try {
+    const res = await hsFetch<{ results: { id: string }[] }>(`/crm/v3/owners?email=${encodeURIComponent(email)}&limit=1`, { cacheTtl: 300_000 });
+    return res.results?.[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Create a follow-up Task on a contact (e.g. when they engage). Best-effort. */
 export async function createContactTask(
   contactId: string,

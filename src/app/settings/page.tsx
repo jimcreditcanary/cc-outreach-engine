@@ -10,6 +10,7 @@ import {
   disconnectGranolaAction,
   saveBookingSettingsAction,
   saveDraftConfigAction,
+  saveHubspotOwnerAction,
 } from "./actions";
 import { loadDraftConfig } from "@/lib/mailer/config";
 import {
@@ -50,6 +51,8 @@ export default async function SettingsPage() {
     isConnected(db, me.id),
   ]);
   const draftCfg = await loadDraftConfig(db, me.id);
+  const { data: hsOwnerRow } = await db.from("user_settings").select("hubspot_owner_id").eq("user_id", me.id).maybeSingle();
+  const hubspotOwnerId = (hsOwnerRow?.hubspot_owner_id as string | null) ?? "";
   const googleConnected = !!gcal?.google_ics_url;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";
   const bookingDays = (bk?.booking_days as string[] | null) ?? ["mon", "tue", "wed", "thu", "fri"];
@@ -503,6 +506,16 @@ export default async function SettingsPage() {
       </section>
 
       <section className="mt-8">
+        <h2 className="mb-1 text-lg font-semibold">HubSpot owner</h2>
+        <p className="mb-3 text-sm text-neutral-500">Links you to your HubSpot owner id so deal-nurture and follow-up tasks act on <em>your</em> deals. Leave blank and save to auto-detect from your email.</p>
+        <form action={saveHubspotOwnerAction} className="mb-8 flex flex-wrap items-end gap-2 rounded-lg border border-neutral-200 bg-white p-4">
+          <div>
+            <label className={lbl}>HubSpot owner id</label>
+            <input name="hubspot_owner_id" defaultValue={hubspotOwnerId} placeholder="auto-detect from email" className={`${field} w-56`} />
+          </div>
+          <PendingButton className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">Save owner</PendingButton>
+        </form>
+
         <h2 className="mb-1 text-lg font-semibold">Outreach voice</h2>
         <p className="mb-3 text-sm text-neutral-500">Your spin on the AI drafter. Blank fields fall back to the house defaults.</p>
         <form action={saveDraftConfigAction} className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">

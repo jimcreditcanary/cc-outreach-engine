@@ -14,6 +14,7 @@ import { runDraftWorkflow } from "@/lib/mailer/workflow";
 import { runDealNurture } from "@/lib/mailer/nurture";
 import { runHsSendBatch } from "@/lib/mailer/send";
 import { loadDraftConfig } from "@/lib/mailer/config";
+import { resolveHubspotOwner } from "@/lib/hubspot/owner";
 import { parseSegment, segmentLabel } from "@/lib/mailer/types";
 import { textToHtml } from "@/lib/mailer/render";
 
@@ -55,7 +56,7 @@ export async function nurtureRunAction(formData: FormData) {
   const limit = Math.min(Math.max(1, Number(str(formData.get("limit")) || 3)), UI_RUN_CAP);
   const db = serviceClient();
   const config = await loadDraftConfig(db, me.id);
-  const ownerHubspotId = process.env.HUBSPOT_LEAD_OWNER_ID ?? "86510668"; // TODO: per-user owner mapping
+  const ownerHubspotId = await resolveHubspotOwner(db, me.id);
   try {
     const res = await runDealNurture(db, { ownerHubspotId, ownerId: me.id, limit, config });
     await flash("success", `Appraised + drafted ${res.queued} deal nudge(s) to review (skipped ${res.skippedRecent} in-comms, ${res.skippedNoContact} no-contact).`);
