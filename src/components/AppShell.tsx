@@ -25,6 +25,7 @@ import {
   UserCog,
   Bell,
   Send,
+  Megaphone,
   Settings as SettingsIcon,
   ChevronsLeft,
   ChevronsRight,
@@ -72,6 +73,7 @@ const SECTIONS: Section[] = [
   {
     header: "Outreach",
     items: [
+      { href: "/outreach",   label: "Workflow",   Icon: Megaphone },
       { href: "/queue",      label: "Queue",      Icon: Inbox },
       { href: "/replies",    label: "Replies",    Icon: Reply },
       { href: "/newsletter", label: "Newsletter", Icon: Mail },
