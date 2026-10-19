@@ -239,6 +239,35 @@ export const hubspotRepo: CrmRepository = {
   },
 };
 
+/** Open deals owned by a HubSpot owner (for the weekly deal-nurture run). */
+export async function listOwnerOpenDeals(ownerId: string, limit = 50): Promise<DealRecord[]> {
+  const labels = await dealLabels();
+  const res = await search("deals", {
+    properties: [...DEAL_READ_PROPS],
+    limit: Math.min(limit, 200),
+    filterGroups: [{ filters: [
+      { propertyName: "hubspot_owner_id", operator: "EQ", value: ownerId },
+      { propertyName: "hs_is_closed", operator: "EQ", value: "false" },
+    ] }],
+    sorts: [{ propertyName: "amount", direction: "DESCENDING" }],
+  });
+  return (res.results ?? []).map((d) =>
+    fromHubspotDeal(d, labels.pipelines.get(d.properties.pipeline ?? "") ?? null, labels.stages.get(d.properties.dealstage ?? "") ?? null),
+  );
+}
+
+/** The contact ids associated with a deal (primary first, best-effort). */
+export async function dealContactIds(dealId: string): Promise<string[]> {
+  try {
+    const res = await hsFetch<{ results: { toObjectId: string | number }[] }>(
+      `/crm/v4/objects/deals/${dealId}/associations/contacts?limit=20`, { cacheTtl: READ_TTL },
+    );
+    return (res.results ?? []).map((r) => String(r.toObjectId));
+  } catch {
+    return [];
+  }
+}
+
 const DEAL_SORT: Record<string, string> = {
   name: "dealname", amount: "amount", close_date: "closedate",
   created_at: "createdate", last_contacted: "notes_last_contacted",

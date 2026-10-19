@@ -30,6 +30,7 @@ export const DEAL_READ_PROPS = [
   "dealname", "pipeline", "dealstage", "amount", "deal_currency_code", "closedate",
   "notes_last_contacted", "notes_last_updated",
   "hs_next_meeting_start_time", "hs_next_meeting_name", "hs_next_step",
+  "hs_is_closed", "hubspot_owner_id",
   "createdate", "hs_lastmodifieddate",
 ] as const;
 

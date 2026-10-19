@@ -113,7 +113,7 @@ export async function runDraftWorkflow(db: DB, opts: WorkflowOpts): Promise<Work
 }
 
 // Insert, degrading gracefully if the meta column (migration 041) isn't applied.
-async function insertDraft(db: DB, row: Record<string, unknown>): Promise<void> {
+export async function insertDraft(db: DB, row: Record<string, unknown>): Promise<void> {
   const r = await db.from("hs_sends").insert(row);
   if (r.error && /meta/.test(r.error.message)) {
     const { meta, ...base } = row;

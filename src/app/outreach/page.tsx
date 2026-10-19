@@ -8,7 +8,7 @@ import { hubspotEnabled } from "@/lib/hubspot/client";
 import { isDryRun } from "@/lib/send/postmark";
 import { fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
-import { draftRunAction, approveDraftAction, discardDraftAction, editDraftAction, sendBatchAction } from "./actions";
+import { draftRunAction, nurtureRunAction, approveDraftAction, discardDraftAction, editDraftAction, sendBatchAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // the in-app draft run researches + writes per contact
@@ -16,7 +16,7 @@ export const maxDuration = 300; // the in-app draft run researches + writes per 
 const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
 const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 mb-1";
 
-interface Meta { contact_name?: string; confidence?: string; page_url?: string; page_title?: string; angle?: string }
+interface Meta { contact_name?: string; confidence?: string; page_url?: string; page_title?: string; angle?: string; kind?: string; deal_name?: string; stage?: string }
 interface Row {
   id: string; hs_contact_id: string; email: string; subject: string | null; body_text: string | null;
   campaign: string | null; status: string; meta: Meta | null; ts: string; sent_at: string | null;
@@ -88,6 +88,24 @@ export default async function OutreachPage() {
         <p className="text-xs text-neutral-500 sm:col-span-4">Researches + drafts each contact (slow). For bigger batches: <code>npm run workflow -- &lt;segment&gt; --limit=N</code>.</p>
       </form>
 
+      {/* Deal nurture run */}
+      <form action={nurtureRunAction} className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+        <div>
+          <span className="text-sm font-medium text-neutral-800">Deal nurture</span>
+          <p className="text-xs text-neutral-500">Appraise your open deals (MEDDICC) → draft a next-step nudge to each. Deals contacted this week are skipped.</p>
+        </div>
+        <div className="ml-auto flex items-end gap-2">
+          <div>
+            <label className={lbl}>How many (max 6)</label>
+            <input name="limit" type="number" min="1" max="6" defaultValue={3} className="w-28 rounded border border-neutral-300 px-2 py-1.5 text-sm" />
+          </div>
+          <PendingButton className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50" pendingLabel="Appraising + drafting…" disabled={!hubspotEnabled()}>
+            Nurture deals
+          </PendingButton>
+        </div>
+        <p className="w-full text-xs text-neutral-500">Bigger weekly run: <code>npm run nurture -- --limit=20</code>.</p>
+      </form>
+
       {/* Send */}
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 p-3">
         <span className="text-sm text-neutral-700"><strong>{ready.length}</strong> ready to send · <strong>{toReview.length}</strong> to review</span>
@@ -144,6 +162,7 @@ function DraftCard({ r, editable }: { r: Row; editable?: boolean }) {
         <span className="font-medium text-neutral-800">{name}</span>
         <span className="text-xs text-neutral-400">{r.email}</span>
         {confBadge(r.meta?.confidence)}
+        {r.meta?.kind === "deal-nurture" && <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-purple-700" title={r.meta.deal_name ?? undefined}>deal{r.meta.stage ? ` · ${r.meta.stage}` : ""}</span>}
         {r.status === "approved" && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-blue-700">approved</span>}
         <div className="ml-auto flex gap-1">
           {r.status === "queued" && (

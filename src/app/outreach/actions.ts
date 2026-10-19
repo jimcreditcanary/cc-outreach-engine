@@ -11,6 +11,7 @@ import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
 import { runDraftWorkflow } from "@/lib/mailer/workflow";
+import { runDealNurture } from "@/lib/mailer/nurture";
 import { runHsSendBatch } from "@/lib/mailer/send";
 import { loadDraftConfig } from "@/lib/mailer/config";
 import { parseSegment, segmentLabel } from "@/lib/mailer/types";
@@ -44,6 +45,22 @@ export async function draftRunAction(formData: FormData) {
     await flash("success", `Drafted ${res.processed}: ${res.approved} auto-approved, ${res.queued} to review (skipped ${res.skippedRecent + res.skippedSuppressed}).`);
   } catch (e) {
     await flash("error", `Draft run failed: ${(e as Error).message}`);
+  }
+  revalidatePath("/outreach");
+}
+
+export async function nurtureRunAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const limit = Math.min(Math.max(1, Number(str(formData.get("limit")) || 3)), UI_RUN_CAP);
+  const db = serviceClient();
+  const config = await loadDraftConfig(db, me.id);
+  const ownerHubspotId = process.env.HUBSPOT_LEAD_OWNER_ID ?? "86510668"; // TODO: per-user owner mapping
+  try {
+    const res = await runDealNurture(db, { ownerHubspotId, ownerId: me.id, limit, config });
+    await flash("success", `Appraised + drafted ${res.queued} deal nudge(s) to review (skipped ${res.skippedRecent} in-comms, ${res.skippedNoContact} no-contact).`);
+  } catch (e) {
+    await flash("error", `Deal nurture failed: ${(e as Error).message}`);
   }
   revalidatePath("/outreach");
 }
