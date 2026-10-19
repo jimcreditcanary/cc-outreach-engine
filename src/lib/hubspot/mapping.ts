@@ -15,7 +15,7 @@ import { recordUrl } from "./client";
 // these lists once the P0 custom-property step runs, else HubSpot 400s the read.
 export const CONTACT_READ_PROPS = [
   "email", "firstname", "lastname", "jobtitle", "mobilephone", "phone",
-  "hs_lead_status", "email_status", "lifecyclestage", "lead_source",
+  "hs_lead_status", "email_status", "lifecyclestage", "lead_source", "context",
   "hs_email_hard_bounce_reason_enum",
   "createdate", "lastmodifieddate",
 ] as const;
@@ -83,6 +83,7 @@ export function fromHubspotContact(obj: HsObject, company?: { id: string; name: 
     email_guessed: (p.email_status ?? "") === "Extrapolated",
     email_bounced: !!str(p.hs_email_hard_bounce_reason_enum),
     lead_source: str(p.lead_source),
+    context: str(p.context),
     created_at: str(p.createdate),
     updated_at: str(p.lastmodifieddate),
     url: recordUrl("contacts", id),
@@ -169,6 +170,7 @@ export function toHubspotContactProps(input: ContactWrite): Props {
   if (input.is_new !== undefined) props.hs_lead_status = input.is_new ? "NEW" : "IN_PROGRESS";
   if (input.email_guessed !== undefined) props.email_status = input.email_guessed ? "Extrapolated" : "Verified";
   if (input.lead_source !== undefined) props.lead_source = input.lead_source ?? "";
+  if (input.context !== undefined) props.context = input.context ?? "";
   if (input.owner_id !== undefined) props.hubspot_owner_id = input.owner_id ?? "";
   return props;
 }

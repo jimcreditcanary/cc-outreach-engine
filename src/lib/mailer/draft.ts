@@ -96,6 +96,7 @@ HARD RULES
 - Pick EXACTLY ONE page from the WEBSITE CONTENT MAP below that best fits this prospect's sector and likely problem. Use its exact URL. NEVER invent a page, URL, statistic or claim — only use what the map provides.
 - NEVER name or identify a Credit Canary client or case-study company in the body. Anonymise to descriptors (e.g. "a UK credit union", "a high-street bank", "a specialist lender"). This is absolute.
 - Personalise only from real signal in the research/context or the prospect's role/sector. NEVER fabricate specifics (named people, events, numbers). If context is thin, personalise on sector/role honestly.
+- NEVER apologise for a cold or "outside" approach, NEVER say you couldn't find information about them, and NEVER refer to the research/context process itself. If the research shows no specific signal, do not mention that — simply open with a relevant sector/role-level observation as if it's naturally pertinent. Confident, not apologetic.
 - Subject line: ${cfg.subjectStyle}
 
 VOICE SPEC (reference for register/phrasing)

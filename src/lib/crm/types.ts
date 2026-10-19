@@ -24,6 +24,8 @@ export interface ContactRecord {
   /** Hard-bounced — never send (derived from HubSpot bounce signals). */
   email_bounced: boolean;
   lead_source: string | null;
+  /** Curated per-contact research brief (markdown) for the drafter. */
+  context: string | null;
   created_at: string | null;
   updated_at: string | null;
   /** Link to the record in HubSpot's UI. */
@@ -95,6 +97,8 @@ export interface ContactWrite {
   /** Mark the email as guessed (Extrapolated) vs confirmed (Verified). */
   email_guessed?: boolean;
   lead_source?: string | null;
+  /** Curated per-contact research brief (markdown). */
+  context?: string | null;
   /** Associate with this company on create/update. */
   company_id?: string | null;
   /** HubSpot owner id (hubspot_owner_id). Captured leads are assigned to Jim. */

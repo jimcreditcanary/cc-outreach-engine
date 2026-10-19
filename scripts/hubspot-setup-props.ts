@@ -24,6 +24,7 @@ interface PropDef {
 
 const PROPS: PropDef[] = [
   { objectType: "contacts", name: "lead_source", label: "Lead Source", type: "string", fieldType: "text", groupName: "contactinformation", description: "Where this contact came from (whitepaper, website, linkedin…). Set by the outreach engine's lead capture." },
+  { objectType: "contacts", name: "context", label: "Context", type: "string", fieldType: "textarea", groupName: "contactinformation", description: "Curated per-contact research brief (recent posts, news, named people, a problem statement), used by the outreach drafter to personalise. Maintained by the engine." },
   { objectType: "companies", name: "tier", label: "Tier", type: "number", fieldType: "number", groupName: "companyinformation", description: "Account tier (1 = highest priority)." },
   { objectType: "companies", name: "is_partner", label: "Is Partner", type: "bool", fieldType: "booleancheckbox", groupName: "companyinformation", description: "Whether this company is a referral/introducer partner.", options: [{ label: "Yes", value: "true" }, { label: "No", value: "false" }] },
   { objectType: "companies", name: "icp", label: "ICP", type: "bool", fieldType: "booleancheckbox", groupName: "companyinformation", description: "In the ideal customer profile.", options: [{ label: "Yes", value: "true" }, { label: "No", value: "false" }] },

@@ -37,7 +37,7 @@ async function main() {
   if (!contact) { console.error("No suitable contact found."); process.exit(1); }
 
   console.log(`\nProspect: ${contact.full_name} — ${contact.job_title ?? "—"} @ ${company?.name ?? contact.company_name ?? "—"}`);
-  console.log(`Industry: ${company?.industry ?? "—"} | Context: ${company?.context ? company.context.slice(0, 80) + "…" : "(none yet)"}`);
+  console.log(`Industry: ${company?.industry ?? "—"} | Contact context: ${contact.context ? `${contact.context.length} chars` : "(none yet)"} | Company context: ${company?.context ? "set" : "(none yet)"}`);
   console.log("Drafting…\n");
 
   const draft = await draftEmail({
@@ -47,6 +47,7 @@ async function main() {
     company_name: company?.name ?? contact.company_name,
     industry: company?.industry ?? null,
     company_context: company?.context ?? null,
+    contact_context: contact.context ?? null,
   });
 
   console.log("─".repeat(70));
