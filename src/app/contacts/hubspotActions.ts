@@ -26,6 +26,9 @@ export async function updateHubspotContact(formData: FormData) {
   const email = s(formData.get("email"));
   if (fullName) patch.full_name = fullName;
   if (email) patch.email = email;
+  // Only touch `type` when the editor was rendered (property exists), so we
+  // never PATCH a non-existent property. Empty selection clears the roles.
+  if (formData.get("contact_type_present")) patch.contact_type = formData.getAll("contact_type").map(String).filter(Boolean);
   await getCrm().updateContact(id, patch);
   revalidatePath(`/contacts/${id}`);
 }

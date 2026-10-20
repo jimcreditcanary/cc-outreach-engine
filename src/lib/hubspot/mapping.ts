@@ -17,6 +17,7 @@ export const CONTACT_READ_PROPS = [
   "email", "firstname", "lastname", "jobtitle", "mobilephone", "phone",
   "hs_lead_status", "email_status", "lifecyclestage", "lead_source", "context",
   "hs_email_hard_bounce_reason_enum",
+  "type", // account roles (multi-select) — Technical, Decision Maker, etc.
   "createdate", "lastmodifieddate",
 ] as const;
 
@@ -24,6 +25,7 @@ export const COMPANY_READ_PROPS = [
   "name", "domain", "website", "industry",
   "tier", "is_partner", "icp", "context",
   "company_number", // Companies House number (custom prop, group companyinformation)
+  "current_client", "onboarding_status", "target_group",
   "createdate", "hs_lastmodifieddate",
 ] as const;
 
@@ -86,6 +88,7 @@ export function fromHubspotContact(obj: HsObject, company?: { id: string; name: 
     email_bounced: !!str(p.hs_email_hard_bounce_reason_enum),
     lead_source: str(p.lead_source),
     context: str(p.context),
+    contact_type: (p.type ?? "").split(";").map((s) => s.trim()).filter(Boolean),
     created_at: str(p.createdate),
     updated_at: str(p.lastmodifieddate),
     url: recordUrl("contacts", id),
@@ -107,6 +110,9 @@ export function fromHubspotCompany(obj: HsObject): CompanyRecord {
     icp: (p.icp ?? "") === "true",
     context: str(p.context),
     company_number: str(p.company_number),
+    current_client: p.current_client === "true" ? true : p.current_client === "false" ? false : null,
+    onboarding_status: str(p.onboarding_status),
+    target_group: str(p.target_group),
     created_at: str(p.createdate),
     updated_at: str(p.hs_lastmodifieddate),
     url: recordUrl("companies", id),
@@ -154,6 +160,9 @@ export function toHubspotCompanyProps(input: CompanyWrite): Props {
   if (input.icp !== undefined) props.icp = input.icp ? "true" : "false";
   if (input.context !== undefined) props.context = input.context ?? "";
   if (input.owner_id !== undefined) props.hubspot_owner_id = input.owner_id ?? "";
+  if (input.current_client !== undefined) props.current_client = input.current_client == null ? "" : input.current_client ? "true" : "false";
+  if (input.onboarding_status !== undefined) props.onboarding_status = input.onboarding_status ?? "";
+  if (input.target_group !== undefined) props.target_group = input.target_group ?? "";
   return props;
 }
 
@@ -175,5 +184,6 @@ export function toHubspotContactProps(input: ContactWrite): Props {
   if (input.lead_source !== undefined) props.lead_source = input.lead_source ?? "";
   if (input.context !== undefined) props.context = input.context ?? "";
   if (input.owner_id !== undefined) props.hubspot_owner_id = input.owner_id ?? "";
+  if (input.contact_type !== undefined) props.type = input.contact_type.join(";");
   return props;
 }

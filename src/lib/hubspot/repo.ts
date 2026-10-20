@@ -12,6 +12,7 @@
 //    a nudge toward the read-mirror for full-base operations.
 
 import { hsFetch, invalidateCache, recordUrl } from "./client";
+import { safeProps } from "./schema";
 import {
   CONTACT_READ_PROPS, COMPANY_READ_PROPS, DEAL_READ_PROPS,
   fromHubspotContact, fromHubspotCompany, fromHubspotDeal,
@@ -96,7 +97,7 @@ export const hubspotRepo: CrmRepository = {
     const limit = Math.min(opts.limit ?? 100, 200);
     const sortCol = opts.sort?.col ?? "full_name";
     const body: SearchBody = {
-      properties: [...CONTACT_READ_PROPS],
+      properties: await safeProps("contacts", CONTACT_READ_PROPS),
       limit,
       after: opts.after,
       sorts: [{
@@ -118,7 +119,7 @@ export const hubspotRepo: CrmRepository = {
   async getContact(id: string): Promise<ContactRecord | null> {
     try {
       const obj = await hsFetch<HsObj & { associations?: { companies?: { results?: { id: string | number }[] } } }>(
-        `/crm/v3/objects/contacts/${id}?properties=${CONTACT_READ_PROPS.join(",")}&associations=companies`,
+        `/crm/v3/objects/contacts/${id}?properties=${(await safeProps("contacts", CONTACT_READ_PROPS)).join(",")}&associations=companies`,
         { cacheTtl: READ_TTL },
       );
       const companyId = obj.associations?.companies?.results?.[0]?.id;
@@ -158,7 +159,7 @@ export const hubspotRepo: CrmRepository = {
     const limit = Math.min(opts.limit ?? 100, 200);
     const sortCol = opts.sort?.col ?? "name";
     const body: SearchBody = {
-      properties: [...COMPANY_READ_PROPS],
+      properties: await safeProps("companies", COMPANY_READ_PROPS),
       limit,
       after: opts.after,
       sorts: [{
@@ -178,7 +179,7 @@ export const hubspotRepo: CrmRepository = {
   async getCompany(id: string): Promise<CompanyRecord | null> {
     try {
       const obj = await hsFetch<HsObj>(
-        `/crm/v3/objects/companies/${id}?properties=${COMPANY_READ_PROPS.join(",")}`,
+        `/crm/v3/objects/companies/${id}?properties=${(await safeProps("companies", COMPANY_READ_PROPS)).join(",")}`,
         { cacheTtl: READ_TTL },
       );
       return fromHubspotCompany(obj);
@@ -206,7 +207,7 @@ export const hubspotRepo: CrmRepository = {
     if (ids.length === 0) return [];
     const read = await hsFetch<{ results: HsObj[] }>(
       `/crm/v3/objects/contacts/batch/read`,
-      { method: "POST", body: { properties: [...CONTACT_READ_PROPS], inputs: ids.map((id) => ({ id })) }, cacheTtl: READ_TTL },
+      { method: "POST", body: { properties: await safeProps("contacts", CONTACT_READ_PROPS), inputs: ids.map((id) => ({ id })) }, cacheTtl: READ_TTL },
     );
     const names = await companyNames([companyId]);
     const company = { id: companyId, name: names.get(companyId) ?? null };
@@ -298,7 +299,7 @@ async function dealLabels(): Promise<{ pipelines: Map<string, string>; stages: M
 /** Exact-match a contact by email (the natural key for lead dedupe). */
 export async function findContactByEmail(email: string): Promise<ContactRecord | null> {
   const res = await search("contacts", {
-    properties: [...CONTACT_READ_PROPS],
+    properties: await safeProps("contacts", CONTACT_READ_PROPS),
     limit: 1,
     filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: email.trim().toLowerCase() }] }],
   });
@@ -311,7 +312,7 @@ export async function findContactByEmail(email: string): Promise<ContactRecord |
 /** Exact-match a company by name (HubSpot string EQ is case-insensitive). */
 export async function findCompanyByName(name: string): Promise<CompanyRecord | null> {
   const res = await search("companies", {
-    properties: [...COMPANY_READ_PROPS],
+    properties: await safeProps("companies", COMPANY_READ_PROPS),
     limit: 1,
     filterGroups: [{ filters: [{ propertyName: "name", operator: "EQ", value: name.trim() }] }],
   });

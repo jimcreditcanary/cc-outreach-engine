@@ -9,6 +9,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCrm } from "@/lib/crm";
+import { propOptions } from "@/lib/hubspot/schema";
 import { PendingButton } from "@/components/PendingButton";
 import { recordUrl } from "@/lib/hubspot/client";
 import { updateHubspotContact, markHubspotActioned, confirmHubspotEmail } from "./hubspotActions";
@@ -18,8 +19,9 @@ const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
 const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 mb-1";
 
 export async function HubspotContactDetail({ id }: { id: string }) {
-  const c = await getCrm().getContact(id);
+  const [c, typeOpts] = await Promise.all([getCrm().getContact(id), propOptions("contacts", "type")]);
   if (!c) notFound();
+  const selected = new Set(c.contact_type);
 
   return (
     <main className="mx-auto max-w-3xl px-8 py-6">
@@ -34,6 +36,9 @@ export async function HubspotContactDetail({ id }: { id: string }) {
           {c.is_new && <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">New</span>}
           {c.email_bounced && <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700">bounced</span>}
           {c.email_guessed && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">guessed</span>}
+          {c.contact_type.map((t) => (
+            <span key={t} className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-indigo-700">{t}</span>
+          ))}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-neutral-500">
           {c.company_name && (
@@ -84,6 +89,24 @@ export async function HubspotContactDetail({ id }: { id: string }) {
         <div>
           <label className={lbl}>Mobile</label>
           <input name="mobile" defaultValue={c.mobile ?? ""} className={field} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className={lbl}>Type <span className="normal-case text-neutral-400">(account roles)</span></label>
+          {typeOpts.length > 0 ? (
+            <>
+              <input type="hidden" name="contact_type_present" value="1" />
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {typeOpts.map((o) => (
+                  <label key={o.value} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" name="contact_type" value={o.value} defaultChecked={selected.has(o.value)} className="accent-indigo-600" />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-amber-700">Add the <code>type</code> contact property (Multiple checkboxes) in HubSpot with Technical / Decision Maker&nbsp;/&nbsp;Signatory / Compliance / Procurement / Billing Contact to tag roles here.</p>
+          )}
         </div>
         <div className="sm:col-span-2">
           <PendingButton className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">Save</PendingButton>

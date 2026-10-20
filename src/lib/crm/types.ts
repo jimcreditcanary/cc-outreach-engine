@@ -26,6 +26,9 @@ export interface ContactRecord {
   lead_source: string | null;
   /** Curated per-contact research brief (markdown) for the drafter. */
   context: string | null;
+  /** Account roles on this contact (HubSpot contact_type multi-select:
+   *  Technical, Decision Maker/Signatory, Compliance, Procurement, Billing). */
+  contact_type: string[];
   created_at: string | null;
   updated_at: string | null;
   /** Link to the record in HubSpot's UI. */
@@ -46,6 +49,12 @@ export interface CompanyRecord {
   context: string | null;
   /** Companies House registration number (HubSpot custom prop company_number). */
   company_number: string | null;
+  /** Whether they're a current client (HubSpot current_client Yes/No). */
+  current_client: boolean | null;
+  /** Onboarding stage (HubSpot onboarding_status enum; null until the prop exists). */
+  onboarding_status: string | null;
+  /** HubSpot target_group enum value (Banks, Consumer Lending, …). */
+  target_group: string | null;
   created_at: string | null;
   updated_at: string | null;
   url: string;
@@ -61,6 +70,9 @@ export interface CompanyWrite {
   icp?: boolean;
   context?: string | null;
   owner_id?: string | null;
+  current_client?: boolean | null;
+  onboarding_status?: string | null;
+  target_group?: string | null;
 }
 
 /** A deal as the read-only deals list renders it. Pipeline/stage are resolved
@@ -105,6 +117,8 @@ export interface ContactWrite {
   company_id?: string | null;
   /** HubSpot owner id (hubspot_owner_id). Captured leads are assigned to Jim. */
   owner_id?: string | null;
+  /** Account roles (HubSpot contact property `type`, multi-select). */
+  contact_type?: string[];
 }
 
 export type SortDir = "asc" | "desc";

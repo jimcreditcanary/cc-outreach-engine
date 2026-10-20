@@ -8,6 +8,8 @@ import { getCrm } from "@/lib/crm";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
 import { PageTabs, CRM_TABS } from "@/components/PageTabs";
+import { OnboardingBadge } from "@/components/OnboardingBadge";
+import { propOptions } from "@/lib/hubspot/schema";
 
 const SORT_COLS = ["name", "industry", "created_at"] as const;
 
@@ -16,7 +18,15 @@ export async function HubspotCompaniesView({
 }: { q?: string; sortRaw?: string; after?: string }) {
   const sort = parseSort(sortRaw, SORT_COLS, { col: "name", dir: "asc" });
   const crm = getCrm();
-  const page = await crm.listCompanies({ q, after, limit: 100, sort: { col: sort.col as typeof SORT_COLS[number], dir: sort.dir } });
+  const [page, onboardingOpts, targetOpts] = await Promise.all([
+    crm.listCompanies({ q, after, limit: 100, sort: { col: sort.col as typeof SORT_COLS[number], dir: sort.dir } }),
+    propOptions("companies", "onboarding_status"),
+    propOptions("companies", "target_group"),
+  ]);
+  // HubSpot option values can differ from their labels (e.g. "Accountants" → "Services");
+  // show the human label.
+  const onboardingLabel = new Map(onboardingOpts.map((o) => [o.value, o.label]));
+  const targetLabel = new Map(targetOpts.map((o) => [o.value, o.label]));
 
   const hdrParams = { ...(q ? { q } : {}) };
   const nextParams = new URLSearchParams({ ...hdrParams, ...(sortRaw ? { sort: sortRaw } : {}), ...(page.after ? { after: page.after } : {}) });
@@ -40,9 +50,11 @@ export async function HubspotCompaniesView({
         <thead className="text-left text-xs uppercase text-neutral-400">
           <tr>
             <SortableTh label="Name" col="name" sort={sort} basePath="/companies" params={hdrParams} className="py-1" />
-            <th>Company no.</th>
             <th>Website</th>
-            <SortableTh label="Industry" col="industry" sort={sort} basePath="/companies" params={hdrParams} />
+            <th>Current client</th>
+            <th>Onboarding</th>
+            <th>Target group</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -51,9 +63,17 @@ export async function HubspotCompaniesView({
               <td className="py-1.5">
                 <Link href={`/companies/${o.id}`} className="font-medium text-blue-700 hover:underline">{o.name || "—"}</Link>
               </td>
-              <td className="font-mono text-xs text-neutral-600">{o.company_number ?? "—"}</td>
               <td className="text-neutral-600">{o.website ?? "—"}</td>
-              <td className="text-neutral-600">{o.industry ?? "—"}</td>
+              <td>
+                {o.current_client === true ? <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">Yes</span>
+                  : o.current_client === false ? <span className="text-xs text-neutral-400">No</span>
+                  : <span className="text-neutral-300">—</span>}
+              </td>
+              <td className="text-neutral-600">{o.onboarding_status ? <OnboardingBadge status={onboardingLabel.get(o.onboarding_status) ?? o.onboarding_status} /> : <span className="text-neutral-300">—</span>}</td>
+              <td className="text-neutral-600">{o.target_group ? (targetLabel.get(o.target_group) ?? o.target_group) : <span className="text-neutral-300">—</span>}</td>
+              <td className="w-10 text-right">
+                <a href={o.url} target="_blank" rel="noopener noreferrer" title="Open in HubSpot" className="text-neutral-400 hover:text-orange-600">↗</a>
+              </td>
             </tr>
           ))}
         </tbody>

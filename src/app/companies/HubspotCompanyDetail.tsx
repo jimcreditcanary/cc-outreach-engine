@@ -1,12 +1,15 @@
 // HubSpot-backed company detail (P3). Identity + the app's custom fields
-// (tier / partner / ICP) + associated contacts. Isolated; the Supabase detail
-// page is untouched and used when CRM_BACKEND=supabase. Deals, notes, events
-// and conference panels are deferred with the operational-data decision.
+// (tier / partner / ICP / current-client / onboarding / target-group) +
+// associated contacts with their account-role tags. Isolated; the Supabase
+// detail page is untouched and used when CRM_BACKEND=supabase. Deals, notes,
+// events and conference panels are deferred with the operational-data decision.
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCrm } from "@/lib/crm";
+import { propOptions } from "@/lib/hubspot/schema";
 import { PendingButton } from "@/components/PendingButton";
+import { OnboardingBadge } from "@/components/OnboardingBadge";
 import { fmtDate } from "@/lib/format/datetime";
 import { updateHubspotCompany } from "./hubspotActions";
 
@@ -15,8 +18,16 @@ const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 
 
 export async function HubspotCompanyDetail({ id }: { id: string }) {
   const crm = getCrm();
-  const [co, contacts] = await Promise.all([crm.getCompany(id), crm.listCompanyContacts(id, 100)]);
+  const [co, contacts, onboardingOpts, targetOpts] = await Promise.all([
+    crm.getCompany(id),
+    crm.listCompanyContacts(id, 100),
+    propOptions("companies", "onboarding_status"),
+    propOptions("companies", "target_group"),
+  ]);
   if (!co) notFound();
+  // HubSpot option values can differ from labels — show the label.
+  const onboardingText = co.onboarding_status ? (onboardingOpts.find((o) => o.value === co.onboarding_status)?.label ?? co.onboarding_status) : null;
+  const targetText = co.target_group ? (targetOpts.find((o) => o.value === co.target_group)?.label ?? co.target_group) : null;
 
   return (
     <main className="mx-auto max-w-3xl px-8 py-6">
@@ -28,13 +39,16 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
       <header className="mb-5 border-b border-neutral-200 pb-3">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold">{co.name || "Company"}</h1>
+          {co.current_client && <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Client</span>}
+          {onboardingText && <OnboardingBadge status={onboardingText} />}
           {co.is_partner && <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">partner</span>}
           {co.icp && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">ICP</span>}
           {co.tier != null && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">Tier {co.tier}</span>}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-neutral-500">
           {co.website && <a href={/^https?:\/\//.test(co.website) ? co.website : `https://${co.website}`} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">{co.website} ↗</a>}
-          {co.industry && <span>{co.industry}</span>}
+          {targetText && <span>{targetText}</span>}
+          {co.company_number && <span>Co. no. <span className="font-mono text-neutral-600">{co.company_number}</span></span>}
           {co.created_at && <span>Added {fmtDate(co.created_at)}</span>}
           <a href={co.url} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">Open in HubSpot ↗</a>
         </div>
@@ -52,8 +66,30 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
           <input name="website" defaultValue={co.website ?? ""} className={field} />
         </div>
         <div>
-          <label className={lbl}>Industry</label>
-          <input name="industry" defaultValue={co.industry ?? ""} className={field} />
+          <label className={lbl}>Current client</label>
+          <select name="current_client" defaultValue={co.current_client == null ? "" : co.current_client ? "true" : "false"} className={field}>
+            <option value="">—</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+        <div>
+          <label className={lbl}>Onboarding status</label>
+          {onboardingOpts.length > 0 ? (
+            <select name="onboarding_status" defaultValue={co.onboarding_status ?? ""} className={field}>
+              <option value="">—</option>
+              {onboardingOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          ) : (
+            <input name="onboarding_status" defaultValue={co.onboarding_status ?? ""} placeholder="Add the onboarding_status property in HubSpot" className={field} disabled />
+          )}
+        </div>
+        <div>
+          <label className={lbl}>Target group</label>
+          <select name="target_group" defaultValue={co.target_group ?? ""} className={field}>
+            <option value="">—</option>
+            {targetOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
         </div>
         <div>
           <label className={lbl}>Tier</label>
@@ -79,6 +115,9 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
               <li key={c.id} className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-sm">
                 <Link href={`/contacts/${c.id}`} className="font-medium text-blue-700 hover:underline">{c.full_name || c.email || "—"}</Link>
                 {c.job_title && <span className="text-neutral-500">{c.job_title}</span>}
+                {c.contact_type.map((t) => (
+                  <span key={t} className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-indigo-700">{t}</span>
+                ))}
                 <span className="ml-auto text-neutral-400">{c.email ?? ""}</span>
                 {c.is_new && <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">New</span>}
               </li>

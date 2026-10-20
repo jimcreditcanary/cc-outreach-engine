@@ -18,12 +18,15 @@ export async function updateHubspotCompany(formData: FormData) {
   if (!id) return;
   const tierRaw = s(formData.get("tier"));
   const tierNum = tierRaw != null ? Number(tierRaw) : null;
+  const cc = s(formData.get("current_client")); // "true" | "false" | null
   const patch: CompanyWrite = {
     website: s(formData.get("website")),
-    industry: s(formData.get("industry")),
     tier: tierNum != null && Number.isFinite(tierNum) ? tierNum : null,
     is_partner: formData.get("is_partner") != null,
     icp: formData.get("icp") != null,
+    current_client: cc == null ? null : cc === "true",
+    onboarding_status: s(formData.get("onboarding_status")),
+    target_group: s(formData.get("target_group")),
   };
   const name = s(formData.get("name"));
   if (name) patch.name = name;
