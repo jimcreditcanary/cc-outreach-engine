@@ -3,14 +3,17 @@
 // .audience_fit + .send_timing (migration 045). Resumable (only fills blanks
 // unless --all). Then `npm run site-markdown` folds it into creditcanary-site.md.
 //
-//   npm run content-guidance            # fill missing
-//   npm run content-guidance -- --all   # redo all
+//   npm run content-guidance                        # fill missing
+//   npm run content-guidance -- --all               # redo all
+//   npm run content-guidance -- --types=article,case_study   # limit to types
 
 import { config } from "dotenv";
 config({ path: ".env.local", override: true });
 import { z } from "zod";
 
 const ALL = process.argv.includes("--all");
+const TYPES = (process.argv.find((a) => a.startsWith("--types="))?.slice("--types=".length) ?? "")
+  .split(",").map((t) => t.trim()).filter(Boolean);
 
 const schema = z.object({
   audience_fit: z.string().describe("Who this page is best for — sectors, roles, situations. One tight sentence."),
@@ -26,10 +29,11 @@ async function main() {
 
   let q = db.from("content_assets").select("id, title, type, tags_sector, tags_problem, description, body_text").order("type", { ascending: true });
   if (!ALL) q = q.is("audience_fit", null);
+  if (TYPES.length) q = q.in("type", TYPES);
   const { data, error } = await q;
   if (error) { console.error("✗ read failed (is migration 045 applied?):", error.message); process.exit(1); }
   const assets = (data ?? []) as { id: string; title: string | null; type: string | null; tags_sector: string[]; tags_problem: string[]; description: string | null; body_text: string | null }[];
-  console.log(`Guidance for ${assets.length} page(s)${ALL ? " (all)" : " (missing only)"}…`);
+  console.log(`Guidance for ${assets.length} page(s)${ALL ? " (all)" : " (missing only)"}${TYPES.length ? ` · types: ${TYPES.join(", ")}` : ""}…`);
 
   let done = 0;
   for (const a of assets) {
