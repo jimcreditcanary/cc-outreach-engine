@@ -75,13 +75,35 @@ const schema = z.object({
 let _site: string | null = null;
 let _voice: string | null = null;
 const read = (p: string): string => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
-const siteMap = () => (_site ??= read("creditcanary-site.md"));
+
+// We only ever point a prospect at content that *inspires* — a point of view, a
+// lesson, a peer result. The purpose is to give them something genuinely useful,
+// not to route them to a pitch. So the drafter is only shown the "Case studies"
+// and "Articles & use-cases" sections of the map; product/platform/data-product
+// pages, the home page, About, sector landing pages and the like are stripped
+// before the model ever sees them, so it cannot pick one. (The on-disk map stays
+// the complete human reference; this filtering is read-only.)
+const INSPIRING_SECTIONS = ["case studies", "articles & use-cases"];
+function toInspiringMap(md: string): string {
+  const out: string[] = [];
+  let keep = true; // keep the intro/guidance before the first "## " section
+  for (const line of md.split("\n")) {
+    const m = /^## (.+)$/.exec(line);
+    if (m) {
+      const title = (m[1] ?? "").trim().toLowerCase();
+      keep = INSPIRING_SECTIONS.some((s) => title.startsWith(s));
+    }
+    if (keep) out.push(line);
+  }
+  return out.join("\n").trim();
+}
+const siteMap = () => (_site ??= toInspiringMap(read("creditcanary-site.md")));
 const voiceSpec = () => (_voice ??= read("creditcanary-voice-spec.md"));
 
 function buildSystem(cfg: DraftConfig): string {
   return `You write a SINGLE, highly personalised outreach email for ${cfg.senderName} at Credit Canary — a UK credit decisioning, affordability and origination platform for lenders (banks, building societies, credit unions, brokers, specialist/consumer lenders).
 
-APPROACH: lead with genuine relevance. Show — without saying so — that we've done our homework on this specific person and company, and have pinpointed one thing worth their attention. Point them to the single most relevant piece of CC content, then close with a warm invitation to connect.
+APPROACH: lead with genuine relevance, and give them something genuinely useful. The purpose of this email is to INSPIRE this person — to hand them a point of view, a lesson, or a peer's result that speaks to their world and makes them think "that's relevant to me" — NOT to pitch a product or route them to a sales page. Show — without saying so — that we've done our homework on this specific person and company, pinpoint one genuinely worthwhile piece of thinking for them, and share it as a useful read. Then close with a warm invitation to connect. The content is the gift; the product is never mentioned.
 
 VOICE
 ${cfg.toneNotes}
@@ -91,14 +113,15 @@ ${cfg.lengthGuidance}
 
 STRUCTURE
 - Greet with "Hi <first name>," then go straight into something specific and relevant to THEM (their company, a recent move/post/news, their role's priorities) — drawn from the research/context below. No "hope you're well", no weather.
-- Reference the ONE most relevant CC page by linking it naturally — this is the "we found something for you" signal.
+- Reference the ONE most relevant CC page by linking it naturally — share it as a genuinely useful read, the "I thought of you when I saw this" signal. Never frame it as a product or a sales asset.
 - Close with this invitation, in the sender's voice (you may adjust lightly to flow, keep its warmth and intent): "${cfg.closeLine}"
 - Then a brief, warm, courteous closing line before the sign-off (e.g. "Look forward to the opportunity to speak").
 - Sign off exactly: "${cfg.signOff}"
 - Write in complete, measured British sentences throughout — no clipped fragments, no breezy/casual phrasing.
 
 HARD RULES
-- Pick EXACTLY ONE page from the WEBSITE CONTENT MAP below that best fits this prospect's sector and likely problem. Use its exact URL. NEVER invent a page, URL, statistic or claim — only use what the map provides.
+- Pick EXACTLY ONE page from the WEBSITE CONTENT MAP below — the single most genuinely useful, inspiring read for this prospect's sector and likely problem (an article, opinion piece, use-case perspective or peer case study). Use its exact URL. NEVER invent a page, URL, statistic or claim — only use what the map provides.
+- The map deliberately contains ONLY inspiring content — articles, opinions, use-cases and case studies. You must NEVER link to or steer them toward the home page, the About page, a "Credit Canary for <sector>" page, a platform/module or data-product page, pricing, or a "book a demo" page. We are inspiring them with a useful read, not pitching a product.
 - NEVER name or identify a Credit Canary client or case-study company in the body. Anonymise to descriptors (e.g. "a UK credit union", "a high-street bank", "a specialist lender"). This is absolute.
 - Personalise only from real signal in the research/context or the prospect's role/sector. NEVER fabricate specifics (named people, events, numbers). If context is thin, personalise on sector/role honestly.
 - NEVER apologise for a cold or "outside" approach, NEVER say you couldn't find information about them, and NEVER refer to the research/context process itself. If the research shows no specific signal, do not mention that — simply open with a relevant sector/role-level observation as if it's naturally pertinent. Confident, not apologetic.
