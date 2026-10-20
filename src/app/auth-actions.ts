@@ -21,7 +21,7 @@ export async function loginAction(formData: FormData) {
   const supa = await authClient();
   const { error } = await supa.auth.signInWithPassword({ email, password });
   if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
-  redirect("/queue");
+  redirect("/outreach");
 }
 
 export async function logoutAction() {

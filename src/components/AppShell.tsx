@@ -13,20 +13,12 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Inbox,
-  Flame,
-  UserPlus,
   Building2,
-  Users as UsersIcon,
   Briefcase,
   Mail,
   Reply,
-  CalendarRange,
-  UserCog,
-  Bell,
-  Send,
+  Telescope,
   Megaphone,
-  FileText,
   Settings as SettingsIcon,
   ChevronsLeft,
   ChevronsRight,
@@ -34,7 +26,7 @@ import {
 } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
 
-type LucideIcon = typeof Inbox;
+type LucideIcon = typeof Building2;
 
 interface Leaf {
   href: string;
@@ -48,51 +40,47 @@ interface Section {
 }
 
 // Flat sections — headers are labels, not toggles. Every item is a direct link.
+// Several destinations are now combined views with their own in-page tabs:
+//   CRM      → Companies + Contacts
+//   Research → Alerts + Content + LinkedIn + Events
+//   Workflow → Outreach + Nurture
+//   Settings → Setup + Users
 const SECTIONS: Section[] = [
-  {
-    header: "CRM",
-    items: [
-      { href: "/companies", label: "Companies", Icon: Building2 },
-      { href: "/contacts",  label: "Contacts",  Icon: UsersIcon },
-    ],
-  },
   {
     header: "Pipeline",
     items: [
-      { href: "/deals", label: "Deals", Icon: Briefcase },
-      { href: "/hot",   label: "Hot",   Icon: Flame },
-    ],
-  },
-  {
-    header: "Research",
-    items: [
-      { href: "/alerts",   label: "Alerts",   Icon: Bell },
-      { href: "/linkedin", label: "LinkedIn", Icon: UserPlus },
-      { href: "/events",   label: "Events",   Icon: CalendarRange },
+      { href: "/companies", label: "CRM",   Icon: Building2 },
+      { href: "/deals",     label: "Deals", Icon: Briefcase },
     ],
   },
   {
     header: "Outreach",
     items: [
       { href: "/outreach",   label: "Workflow",   Icon: Megaphone },
-      { href: "/content",    label: "Content",    Icon: FileText },
-      { href: "/queue",      label: "Queue",      Icon: Inbox },
+      { href: "/alerts",     label: "Research",   Icon: Telescope },
       { href: "/replies",    label: "Replies",    Icon: Reply },
       { href: "/newsletter", label: "Newsletter", Icon: Mail },
-      { href: "/sequences",  label: "Sequences",  Icon: Send },
     ],
   },
   {
-    header: "Settings",
+    header: "Admin",
     items: [
-      { href: "/settings",    label: "Setup", Icon: SettingsIcon },
-      { href: "/admin/users", label: "Users", Icon: UserCog },
+      { href: "/settings", label: "Settings", Icon: SettingsIcon },
     ],
   },
 ];
 
+// Grouped destinations: a nav item stays highlighted across all the routes that
+// live under its combined view (so "CRM" lights up on /contacts too).
+const GROUPED: Record<string, string[]> = {
+  "/companies": ["/companies", "/contacts"],
+  "/alerts": ["/alerts", "/content", "/linkedin", "/events"],
+  "/settings": ["/settings", "/admin/users"],
+};
+
 function isActive(pathname: string, href: string): boolean {
-  return pathname === href || (href !== "/" && pathname.startsWith(href + "/"));
+  const routes = GROUPED[href] ?? [href];
+  return routes.some((r) => pathname === r || (r !== "/" && pathname.startsWith(r + "/")));
 }
 
 export function AppShell({

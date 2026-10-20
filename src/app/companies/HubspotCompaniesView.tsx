@@ -7,6 +7,7 @@ import Link from "next/link";
 import { getCrm } from "@/lib/crm";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
+import { PageTabs, CRM_TABS } from "@/components/PageTabs";
 
 const SORT_COLS = ["name", "industry", "created_at"] as const;
 
@@ -22,9 +23,10 @@ export async function HubspotCompaniesView({
 
   return (
     <main className="px-8 py-6">
+      <PageTabs tabs={CRM_TABS} />
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <div className="flex items-baseline gap-2">
-          <h1 className="text-xl font-semibold">Companies</h1>
+          <h2 className="text-lg font-semibold text-neutral-800">Companies</h2>
           <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700" title="Reading live from HubSpot (CRM_BACKEND=hubspot)">HubSpot</span>
         </div>
         <span className="text-sm text-neutral-500">{page.total.toLocaleString()}{q ? " matches" : ""} · showing {page.records.length}</span>
@@ -38,6 +40,7 @@ export async function HubspotCompaniesView({
         <thead className="text-left text-xs uppercase text-neutral-400">
           <tr>
             <SortableTh label="Name" col="name" sort={sort} basePath="/companies" params={hdrParams} className="py-1" />
+            <th>Company no.</th>
             <th>Website</th>
             <SortableTh label="Industry" col="industry" sort={sort} basePath="/companies" params={hdrParams} />
           </tr>
@@ -48,6 +51,7 @@ export async function HubspotCompaniesView({
               <td className="py-1.5">
                 <Link href={`/companies/${o.id}`} className="font-medium text-blue-700 hover:underline">{o.name || "—"}</Link>
               </td>
+              <td className="font-mono text-xs text-neutral-600">{o.company_number ?? "—"}</td>
               <td className="text-neutral-600">{o.website ?? "—"}</td>
               <td className="text-neutral-600">{o.industry ?? "—"}</td>
             </tr>

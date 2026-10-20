@@ -1,6 +1,8 @@
-// Outreach workflow surface. Kick off a (small) draft run from a HubSpot
-// segment, review the drafts — read / edit / approve / discard — and send the
-// approved queue. Larger drafting runs happen via `npm run workflow` / cron;
+// Outreach workflow surface. Two tabs:
+//   Outbound — draft a (small) run from a HubSpot segment, review, send.
+//   Nurture  — appraise open deals (MEDDICC) and draft a next-step nudge.
+// Both feed one review queue; the send bar flushes the whole approved queue.
+// Larger drafting runs happen via `npm run workflow` / `npm run nurture` / cron;
 // this page is the review + send cockpit.
 
 import { serviceClient } from "@/lib/db/client";
@@ -9,6 +11,7 @@ import { listContactLists } from "@/lib/hubspot/repo";
 import { isDryRun } from "@/lib/send/postmark";
 import { fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
+import { PageTabs } from "@/components/PageTabs";
 import { draftRunAction, nurtureRunAction, approveDraftAction, discardDraftAction, editDraftAction, sendBatchAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -29,25 +32,40 @@ function confBadge(c?: string) {
   return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${cls}`}>{c ?? "—"}</span>;
 }
 
-export default async function OutreachPage() {
+const isNurture = (r: Row) => r.meta?.kind === "deal-nurture";
+
+export default async function OutreachPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const tab = (await searchParams).tab === "nurture" ? "nurture" : "outbound";
   const db = serviceClient();
   const dry = isDryRun();
-  const hsLists = hubspotEnabled() ? await listContactLists() : [];
+  const hsLists = tab === "outbound" && hubspotEnabled() ? await listContactLists() : [];
   const { data } = await db
     .from("hs_sends")
     .select("id, hs_contact_id, email, subject, body_text, campaign, status, meta, ts, sent_at, clicked, replied, bounced")
     .order("ts", { ascending: false })
     .limit(300);
   const rows = (data ?? []) as unknown as Row[];
-  const toReview = rows.filter((r) => r.status === "queued");
-  const ready = rows.filter((r) => r.status === "approved");
-  const sent = rows.filter((r) => r.status === "sent").slice(0, 25);
+
+  // Global queue counts (the send bar flushes everything approved).
+  const readyAll = rows.filter((r) => r.status === "approved").length;
+  const reviewAll = rows.filter((r) => r.status === "queued").length;
+
+  // Per-tab lists — outbound vs deal-nurture drafts.
+  const scoped = rows.filter((r) => (tab === "nurture" ? isNurture(r) : !isNurture(r)));
+  const toReview = scoped.filter((r) => r.status === "queued");
+  const ready = scoped.filter((r) => r.status === "approved");
+  const sent = scoped.filter((r) => r.status === "sent").slice(0, 25);
+
+  const wfTabs = [
+    { href: "/outreach?tab=outbound", label: "Outbound", active: tab === "outbound" },
+    { href: "/outreach?tab=nurture", label: "Nurture", active: tab === "nurture" },
+  ];
 
   return (
     <main className="px-8 py-6">
-      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
+      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
         <div className="flex items-baseline gap-2">
-          <h1 className="text-xl font-semibold">Outreach</h1>
+          <h1 className="text-xl font-semibold">Workflow</h1>
           <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700">HubSpot</span>
         </div>
         <span className={`rounded px-2 py-0.5 text-xs font-medium ${dry ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
@@ -59,52 +77,71 @@ export default async function OutreachPage() {
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Set <code>HUBSPOT_TOKEN</code> to draft from HubSpot segments.</p>
       )}
 
-      {/* Draft a run */}
-      <form action={draftRunAction} className="mb-5 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 sm:grid-cols-4">
-        <div>
-          <label className={lbl}>Segment</label>
-          <select name="segment_kind" className={field} defaultValue="new_leads">
-            <option value="new_leads">New leads</option>
-            <option value="all">All with email</option>
-            <option value="source">By lead source…</option>
-            {hsLists.length > 0 && (
-              <optgroup label="HubSpot lists">
-                {hsLists.map((l) => <option key={l.id} value={`list:${l.id}`}>{l.name}{l.size != null ? ` (${l.size})` : ""}</option>)}
-              </optgroup>
-            )}
-          </select>
-        </div>
-        <div>
-          <label className={lbl}>Source (if by source)</label>
-          <input name="source" placeholder="whitepaper" className={field} />
-        </div>
-        <div>
-          <label className={lbl}>How many (max 6 here)</label>
-          <input name="limit" type="number" min="1" max="6" defaultValue={3} className={field} />
-        </div>
-        <div>
-          <label className={lbl}>Campaign</label>
-          <input name="campaign" placeholder="auto" className={field} />
-        </div>
-        <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" name="auto_send" defaultChecked /> Auto-approve high-confidence drafts</label>
-        <div className="sm:col-span-2 sm:text-right">
-          <PendingButton className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50" pendingLabel="Researching + drafting…" disabled={!hubspotEnabled()}>
-            Draft run
+      {/* Global send bar — flushes the whole approved queue (outbound + nurture). */}
+      <div className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3">
+        <span className="text-sm text-neutral-700"><strong>{readyAll}</strong> ready to send · <strong>{reviewAll}</strong> to review <span className="text-neutral-400">(across outbound + nurture)</span></span>
+        <form action={sendBatchAction} className="ml-auto flex items-center gap-2">
+          <input name="batch" type="number" defaultValue={50} className="w-20 rounded border border-neutral-300 px-2 py-1 text-sm" />
+          <PendingButton className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50" pendingLabel="Sending…" disabled={readyAll === 0}>
+            {dry ? "Send batch (dry)" : "Send batch"}
           </PendingButton>
-        </div>
-        <p className="text-xs text-neutral-500 sm:col-span-4">
-          Researches + drafts each contact (slow). For bigger batches: <code>npm run workflow -- &lt;segment&gt; --limit=N</code>.
-          {hubspotEnabled() && hsLists.length === 0 && <span className="text-amber-700"> · No HubSpot lists shown — add the <code>crm.lists.read</code> scope to the Service Key to target saved segments.</span>}
-        </p>
-      </form>
+        </form>
+      </div>
 
-      {/* Deal nurture run */}
-      <form action={nurtureRunAction} className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
-        <div>
-          <span className="text-sm font-medium text-neutral-800">Deal nurture</span>
-          <p className="text-xs text-neutral-500">Appraise your open deals (MEDDICC) → draft a next-step nudge to each. Deals contacted this week are skipped.</p>
-        </div>
-        <div className="ml-auto flex items-end gap-2">
+      <PageTabs tabs={wfTabs} />
+
+      {/* ───────────── Outbound tab ───────────── */}
+      {tab === "outbound" && (
+        <form action={draftRunAction} className="mb-6 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 sm:grid-cols-4">
+          <div className="sm:col-span-4">
+            <h2 className="text-sm font-semibold text-neutral-800">Draft an outbound run</h2>
+            <p className="text-xs text-neutral-500">Research + hyper-personalise one email per contact in a segment, tied to a single inspiring CC page.</p>
+          </div>
+          <div>
+            <label className={lbl}>Segment</label>
+            <select name="segment_kind" className={field} defaultValue="new_leads">
+              <option value="new_leads">New leads</option>
+              <option value="all">All with email</option>
+              <option value="source">By lead source…</option>
+              {hsLists.length > 0 && (
+                <optgroup label="HubSpot lists">
+                  {hsLists.map((l) => <option key={l.id} value={`list:${l.id}`}>{l.name}{l.size != null ? ` (${l.size})` : ""}</option>)}
+                </optgroup>
+              )}
+            </select>
+          </div>
+          <div>
+            <label className={lbl}>Source (if by source)</label>
+            <input name="source" placeholder="whitepaper" className={field} />
+          </div>
+          <div>
+            <label className={lbl}>How many (max 6 here)</label>
+            <input name="limit" type="number" min="1" max="6" defaultValue={3} className={field} />
+          </div>
+          <div>
+            <label className={lbl}>Campaign</label>
+            <input name="campaign" placeholder="auto" className={field} />
+          </div>
+          <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" name="auto_send" defaultChecked /> Auto-approve high-confidence drafts</label>
+          <div className="sm:col-span-2 sm:text-right">
+            <PendingButton className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50" pendingLabel="Researching + drafting…" disabled={!hubspotEnabled()}>
+              Draft run
+            </PendingButton>
+          </div>
+          <p className="text-xs text-neutral-500 sm:col-span-4">
+            Researches + drafts each contact (slow). For bigger batches: <code>npm run workflow -- &lt;segment&gt; --limit=N</code>.
+            {hubspotEnabled() && hsLists.length === 0 && <span className="text-amber-700"> · No HubSpot lists shown — add the <code>crm.lists.read</code> scope to the Service Key to target saved segments.</span>}
+          </p>
+        </form>
+      )}
+
+      {/* ───────────── Nurture tab ───────────── */}
+      {tab === "nurture" && (
+        <form action={nurtureRunAction} className="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+          <div className="w-full">
+            <h2 className="text-sm font-semibold text-neutral-800">Nurture your open deals</h2>
+            <p className="text-xs text-neutral-500">Appraise each open deal (MEDDICC) → draft a next-step nudge. Deals contacted this week are skipped.</p>
+          </div>
           <div>
             <label className={lbl}>How many (max 6)</label>
             <input name="limit" type="number" min="1" max="6" defaultValue={3} className="w-28 rounded border border-neutral-300 px-2 py-1.5 text-sm" />
@@ -112,24 +149,13 @@ export default async function OutreachPage() {
           <PendingButton className="rounded bg-neutral-800 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50" pendingLabel="Appraising + drafting…" disabled={!hubspotEnabled()}>
             Nurture deals
           </PendingButton>
-        </div>
-        <p className="w-full text-xs text-neutral-500">Bigger weekly run: <code>npm run nurture -- --limit=20</code>.</p>
-      </form>
-
-      {/* Send */}
-      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 p-3">
-        <span className="text-sm text-neutral-700"><strong>{ready.length}</strong> ready to send · <strong>{toReview.length}</strong> to review</span>
-        <form action={sendBatchAction} className="ml-auto flex items-center gap-2">
-          <input name="batch" type="number" defaultValue={50} className="w-20 rounded border border-neutral-300 px-2 py-1 text-sm" />
-          <PendingButton className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50" pendingLabel="Sending…" disabled={ready.length === 0}>
-            {dry ? "Send batch (dry)" : "Send batch"}
-          </PendingButton>
+          <p className="w-full text-xs text-neutral-500">Bigger weekly run: <code>npm run nurture -- --limit=20</code>.</p>
         </form>
-      </div>
+      )}
 
       {/* To review */}
       <h2 className="mb-2 text-sm font-semibold text-neutral-700">To review <span className="text-neutral-400">({toReview.length})</span></h2>
-      {toReview.length === 0 ? <p className="mb-6 text-sm text-neutral-500">Nothing to review. Draft a run above.</p> : (
+      {toReview.length === 0 ? <p className="mb-6 text-sm text-neutral-500">Nothing to review on this tab. Draft a run above.</p> : (
         <div className="mb-8 space-y-2">
           {toReview.map((r) => <DraftCard key={r.id} r={r} editable />)}
         </div>

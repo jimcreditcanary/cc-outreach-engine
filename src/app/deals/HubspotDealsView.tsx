@@ -9,6 +9,7 @@ import { dealPipelines } from "@/lib/hubspot/repo";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
 import { fmtDate } from "@/lib/format/datetime";
+import { StageFilterDropdown } from "@/components/StageFilterDropdown";
 
 const SORT_COLS = ["name", "amount", "close_date", "last_contacted", "created_at"] as const;
 
@@ -30,8 +31,7 @@ function daysSince(iso: string | null): number | null {
 
 export async function HubspotDealsView({ q, sortRaw, after, stagesRaw }: { q?: string; sortRaw?: string; after?: string; stagesRaw?: string }) {
   const sort = parseSort(sortRaw, SORT_COLS, { col: "amount", dir: "desc" });
-  const selected = new Set((stagesRaw ?? "").split(",").map((s) => s.trim()).filter(Boolean));
-  const stages = [...selected];
+  const stages = [...new Set((stagesRaw ?? "").split(",").map((s) => s.trim()).filter(Boolean))];
 
   const [pipelines, page] = await Promise.all([
     dealPipelines(),
@@ -40,14 +40,6 @@ export async function HubspotDealsView({ q, sortRaw, after, stagesRaw }: { q?: s
 
   const hdrParams = { ...(q ? { q } : {}), ...(stages.length ? { stages: stages.join(",") } : {}) };
   const nextParams = new URLSearchParams({ ...hdrParams, ...(sortRaw ? { sort: sortRaw } : {}), ...(page.after ? { after: page.after } : {}) });
-
-  // Toggle a stage id in the `stages` param (resets pagination).
-  const toggleHref = (stageId: string) => {
-    const next = new Set(selected);
-    if (next.has(stageId)) next.delete(stageId); else next.add(stageId);
-    const p = new URLSearchParams({ ...(q ? { q } : {}), ...(sortRaw ? { sort: sortRaw } : {}), ...(next.size ? { stages: [...next].join(",") } : {}) });
-    return `/deals?${p}`;
-  };
 
   return (
     <main className="px-8 py-6">
@@ -59,22 +51,9 @@ export async function HubspotDealsView({ q, sortRaw, after, stagesRaw }: { q?: s
         <span className="text-sm text-neutral-500">{page.total.toLocaleString()}{q || stages.length ? " matches" : ""} · showing {page.records.length}</span>
       </header>
 
-      {/* Stage filter — chips grouped by pipeline. */}
-      <div className="mb-3 space-y-1.5">
-        {pipelines.map((pl) => (
-          <div key={pl.id} className="flex flex-wrap items-center gap-1.5">
-            <span className="w-28 shrink-0 text-xs font-medium uppercase tracking-wide text-neutral-400">{pl.label}</span>
-            {pl.stages.map((s) => {
-              const on = selected.has(s.id);
-              return (
-                <Link key={s.id} href={toggleHref(s.id)} scroll={false}
-                  className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${on ? "border-amber-300 bg-amber-100 text-amber-900" : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"}`}>
-                  {s.label.trim()}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
+      {/* Stage filter — a single multi-stage dropdown, grouped by pipeline. */}
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <StageFilterDropdown pipelines={pipelines} selected={stages} q={q} sortRaw={sortRaw} />
         {stages.length > 0 && <Link href="/deals" className="text-xs text-blue-700 hover:underline">clear filter</Link>}
       </div>
 

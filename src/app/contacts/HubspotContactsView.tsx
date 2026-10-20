@@ -8,6 +8,7 @@ import Link from "next/link";
 import { getCrm } from "@/lib/crm";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
+import { PageTabs, CRM_TABS } from "@/components/PageTabs";
 
 const SORT_COLS = ["full_name", "job_title", "email", "created_at"] as const;
 
@@ -28,9 +29,10 @@ export async function HubspotContactsView({
 
   return (
     <main className="px-8 py-6">
+      <PageTabs tabs={CRM_TABS} />
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <div className="flex items-baseline gap-2">
-          <h1 className="text-xl font-semibold">Contacts</h1>
+          <h2 className="text-lg font-semibold text-neutral-800">Contacts</h2>
           <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700" title="Reading live from HubSpot (CRM_BACKEND=hubspot)">HubSpot</span>
         </div>
         <span className="text-sm text-neutral-500">{page.total.toLocaleString()}{q ? " matches" : ""} · showing {page.records.length}</span>

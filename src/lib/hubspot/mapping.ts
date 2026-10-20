@@ -23,6 +23,7 @@ export const CONTACT_READ_PROPS = [
 export const COMPANY_READ_PROPS = [
   "name", "domain", "website", "industry",
   "tier", "is_partner", "icp", "context",
+  "company_number", // Companies House number (custom prop, group companyinformation)
   "createdate", "hs_lastmodifieddate",
 ] as const;
 
@@ -105,6 +106,7 @@ export function fromHubspotCompany(obj: HsObject): CompanyRecord {
     is_partner: (p.is_partner ?? "") === "true",
     icp: (p.icp ?? "") === "true",
     context: str(p.context),
+    company_number: str(p.company_number),
     created_at: str(p.createdate),
     updated_at: str(p.hs_lastmodifieddate),
     url: recordUrl("companies", id),

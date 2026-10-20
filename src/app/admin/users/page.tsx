@@ -11,6 +11,7 @@ import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { RowIconAction } from "@/components/RowIconAction";
 import { PendingButton } from "@/components/PendingButton";
 import { fmtDateTime } from "@/lib/format/datetime";
+import { PageTabs, SETTINGS_TABS } from "@/components/PageTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function UsersPage() {
 
   return (
     <main className="px-8 py-6">
+      <PageTabs tabs={SETTINGS_TABS} />
       <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Users</h1>
         <span className="text-sm text-neutral-500">{users.length}</span>

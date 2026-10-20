@@ -71,10 +71,10 @@ export async function middleware(req: NextRequest) {
     return withFrameHeaders(NextResponse.redirect(url), pathname);
   }
 
-  // Bounce a signed-in user off /login → /queue.
+  // Bounce a signed-in user off /login → Workflow (the outreach hub).
   if (user && pathname.startsWith("/login")) {
     const url = req.nextUrl.clone();
-    url.pathname = "/queue";
+    url.pathname = "/outreach";
     url.search = "";
     return withFrameHeaders(NextResponse.redirect(url), pathname);
   }

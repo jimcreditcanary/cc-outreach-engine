@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageTabs, RESEARCH_TABS } from "@/components/PageTabs";
 import { serviceClient } from "@/lib/db/client";
 import {
   saveLinkedInEdits,
@@ -208,6 +209,7 @@ export default async function LinkedInPage({ searchParams }: {
 
   return (
     <main className="px-8 py-6">
+      <PageTabs tabs={RESEARCH_TABS} />
       <header className="mb-4 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">LinkedIn — today</h1>
         <p className="mt-1 text-sm text-neutral-500">

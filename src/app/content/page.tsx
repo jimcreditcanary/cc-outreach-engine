@@ -5,6 +5,7 @@
 
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
+import { PageTabs, RESEARCH_TABS } from "@/components/PageTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,7 @@ export default async function ContentPage() {
 
   return (
     <main className="px-8 py-6">
+      <PageTabs tabs={RESEARCH_TABS} />
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Content</h1>
         <span className="text-sm text-neutral-500">{assets.length} pages · what to send, who to, and when</span>

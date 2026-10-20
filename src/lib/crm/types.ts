@@ -44,6 +44,8 @@ export interface CompanyRecord {
   icp: boolean;
   /** Continuously-updated insight (site + news) for the outreach drafter. */
   context: string | null;
+  /** Companies House registration number (HubSpot custom prop company_number). */
+  company_number: string | null;
   created_at: string | null;
   updated_at: string | null;
   url: string;

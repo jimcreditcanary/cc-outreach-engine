@@ -24,6 +24,7 @@ import { isConnected } from "@/lib/microsoft/oauth";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { fmtDateTime } from "@/lib/format/datetime";
+import { PageTabs, SETTINGS_TABS } from "@/components/PageTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -77,8 +78,9 @@ export default async function SettingsPage() {
 
   return (
     <main className="px-8 py-6">
+      <PageTabs tabs={SETTINGS_TABS} />
       <header className="mb-4 border-b border-neutral-200 pb-3">
-        <h1 className="text-xl font-semibold">Settings</h1>
+        <h1 className="text-xl font-semibold">Setup</h1>
         <p className="text-sm text-neutral-500">Signed in as {me.email}.</p>
       </header>
 
