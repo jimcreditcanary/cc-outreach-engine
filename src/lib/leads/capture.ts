@@ -161,7 +161,9 @@ export function leadNotificationEmail(f: LeadNotifyFields): { subject: string; t
     linkRows.map((r) => rowHtml(r, true)).join("") +
     `</table></div>`;
   const textBody = [...fieldRows, ...linkRows].map(([k, v]) => `${k}: ${v}`).join("\n");
-  return { subject: "New Lead Alert", textBody, htmlBody };
+  const fullName = [f.firstName, f.lastName].filter(Boolean).join(" ").trim();
+  const subject = `New Lead Alert${fullName ? ` — ${fullName}` : ""}${f.company ? ` (${f.company})` : ""}`;
+  return { subject, textBody, htmlBody };
 }
 
 /** "Jane Smith" → ["Jane","Smith"]; single token → first only. */
