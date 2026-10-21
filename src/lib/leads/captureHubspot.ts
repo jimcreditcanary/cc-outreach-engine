@@ -12,7 +12,7 @@
 
 import { serviceClient } from "../db/client";
 import { sendTransactional } from "../send/postmark";
-import { resolveInboundOwner, eventMessage, type LeadInput, type LeadResult } from "./capture";
+import { resolveInboundOwner, eventMessage, leadNotificationEmail, splitLeadName, type LeadInput, type LeadResult } from "./capture";
 import { recordUrl } from "../hubspot/client";
 import { hubspotRepo, findContactByEmail, findCompanyByName, createCompany, addContactNote } from "../hubspot/repo";
 import { enqueueInboundFollowup } from "../mailer/inbound";
@@ -112,32 +112,22 @@ export async function captureLeadHubspot(input: LeadInput): Promise<LeadResult> 
     )
     .then(({ error }) => error && console.error("lead alert:", error.message));
 
-  // ── Notify the owner (Postmark, unchanged) ────────────────────────
+  // ── Notify the owner (Postmark) — "New Lead Alert" field table ─────
   if (input.notify !== false) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";
-    const lines = [
-      `${name} <${email}>${createdContact ? " — new contact created" : " — already in the CRM"}`,
-      input.job_title?.trim() ? `Job title: ${input.job_title.trim()}` : null,
-      company ? `Company: ${company}${companyId ? " (linked)" : ""}` : null,
-      input.mobile?.trim() ? `Mobile: ${input.mobile.trim()}` : null,
-      input.asset ? `Resource: ${input.asset}` : null,
-      input.source ? `Source: ${input.source}` : null,
-      input.url ? `Page: ${input.url}` : null,
-      input.message?.trim() ? `Message: ${input.message.trim()}` : null,
-      `Contact (HubSpot): ${contactUrl}`,
-      `Triage: ${appUrl}/alerts`,
-    ].filter(Boolean);
-    await sendTransactional({
-      to: notifyEmail,
-      subject:
-        input.kind === "download"
-          ? `📄 ${name}${company ? ` (${company})` : ""} downloaded ${input.asset ?? "a resource"}`
-          : `📥 ${input.kind === "enquiry" ? "Inbound enquiry" : "New lead"}: ${name}${company ? ` (${company})` : ""}`,
-      textBody: lines.join("\n"),
-      htmlBody: `<p>${lines.join("<br/>")}</p>`,
-      ownerId,
-      tag: `lead-${input.kind}`,
-    }).catch(() => {});
+    const [firstName, lastName] = splitLeadName(name);
+    const { subject, textBody, htmlBody } = leadNotificationEmail({
+      firstName,
+      lastName,
+      email,
+      mobile: input.mobile?.trim() || null,
+      jobTitle: input.job_title?.trim() || null,
+      company,
+      itemSource: input.asset?.trim() || input.source?.trim() || null,
+      hubspotUrl: contactUrl,
+      veepUrl: `${appUrl}/contacts/${contactId}`,
+    });
+    await sendTransactional({ to: notifyEmail, subject, textBody, htmlBody, ownerId, tag: `lead-${input.kind}` }).catch(() => {});
   }
 
   // Enqueue a personalised inbound follow-up (fast marker; drafted by the

@@ -113,6 +113,63 @@ export function eventMessage(input: LeadInput): string {
   }
 }
 
+/** Fields rendered in the owner lead-alert email. */
+export interface LeadNotifyFields {
+  firstName: string;
+  lastName: string;
+  email: string;
+  mobile: string | null;
+  jobTitle: string | null;
+  company: string | null;
+  /** Item downloaded or form/source, e.g. "Browser Abandonment Form". */
+  itemSource: string | null;
+  /** The contact's record in HubSpot (null on the Supabase path). */
+  hubspotUrl: string | null;
+  /** The contact's page in VeepVeep. */
+  veepUrl: string;
+}
+
+const escHtml = (s: string): string =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** The owner lead-alert email: subject "New Lead Alert" + a clean field table
+ *  (First/Last/Email/Mobile/Job title/Company/Item or Source + HubSpot & VeepVeep
+ *  links). Shared by both capture paths so the format stays identical. */
+export function leadNotificationEmail(f: LeadNotifyFields): { subject: string; textBody: string; htmlBody: string } {
+  const fieldRows: [string, string][] = [
+    ["First name", f.firstName || "—"],
+    ["Last name", f.lastName || "—"],
+    ["Email", f.email],
+    ["Mobile", f.mobile || "—"],
+    ["Job title", f.jobTitle || "—"],
+    ["Company", f.company || "—"],
+    ["Item / Source", f.itemSource || "—"],
+  ];
+  const linkRows: [string, string][] = [];
+  if (f.hubspotUrl) linkRows.push(["Open in HubSpot", f.hubspotUrl]);
+  linkRows.push(["Open in VeepVeep", f.veepUrl]);
+
+  const cellK = 'style="padding:7px 14px;border:1px solid #e5e7eb;background:#f8fafc;font-weight:600;color:#475569;white-space:nowrap"';
+  const cellV = 'style="padding:7px 14px;border:1px solid #e5e7eb;color:#0f172a"';
+  const rowHtml = ([k, v]: [string, string], link = false) =>
+    `<tr><td ${cellK}>${escHtml(k)}</td><td ${cellV}>${link ? `<a href="${escHtml(v)}" style="color:#2563eb">${escHtml(v)}</a>` : escHtml(v)}</td></tr>`;
+  const htmlBody =
+    `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#0f172a">` +
+    `<h2 style="margin:0 0 12px;font-size:16px">New Lead Alert</h2>` +
+    `<table style="border-collapse:collapse;font-size:14px">` +
+    fieldRows.map((r) => rowHtml(r)).join("") +
+    linkRows.map((r) => rowHtml(r, true)).join("") +
+    `</table></div>`;
+  const textBody = [...fieldRows, ...linkRows].map(([k, v]) => `${k}: ${v}`).join("\n");
+  return { subject: "New Lead Alert", textBody, htmlBody };
+}
+
+/** "Jane Smith" → ["Jane","Smith"]; single token → first only. */
+export function splitLeadName(full: string): [string, string] {
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  return [parts[0] ?? full.trim(), parts.slice(1).join(" ")];
+}
+
 export async function captureLead(db: DB, input: LeadInput): Promise<LeadResult> {
   const email = (input.email ?? "").trim().toLowerCase();
   const name = (input.name ?? "").trim().slice(0, 120) || email.split("@")[0] || email;
@@ -229,32 +286,22 @@ export async function captureLead(db: DB, input: LeadInput): Promise<LeadResult>
     )
     .then(({ error }) => error && console.error("lead alert:", error.message));
 
-  // ── Notify the owner ──────────────────────────────────────────────
+  // ── Notify the owner — "New Lead Alert" field table ───────────────
   if (input.notify !== false) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";
-    const lines = [
-      `${name} <${email}>${createdContact ? " — new contact created" : " — already in the CRM"}`,
-      input.job_title?.trim() ? `Job title: ${input.job_title.trim()}` : null,
-      company ? `Company: ${company}${organisationId ? " (linked)" : ""}` : null,
-      input.mobile?.trim() ? `Mobile: ${input.mobile.trim()}` : null,
-      input.asset ? `Resource: ${input.asset}` : null,
-      input.source ? `Source: ${input.source}` : null,
-      input.url ? `Page: ${input.url}` : null,
-      input.message?.trim() ? `Message: ${input.message.trim()}` : null,
-      `Contact: ${appUrl}/contacts/${contactId}`,
-      `Triage: ${appUrl}/alerts`,
-    ].filter(Boolean);
-    await sendTransactional({
-      to: notifyEmail,
-      subject:
-        input.kind === "download"
-          ? `📄 ${name}${company ? ` (${company})` : ""} downloaded ${input.asset ?? "a resource"}`
-          : `📥 ${input.kind === "enquiry" ? "Inbound enquiry" : "New lead"}: ${name}${company ? ` (${company})` : ""}`,
-      textBody: lines.join("\n"),
-      htmlBody: `<p>${lines.join("<br/>")}</p>`,
-      ownerId,
-      tag: `lead-${input.kind}`,
-    }).catch(() => {});
+    const [firstName, lastName] = splitLeadName(name);
+    const { subject, textBody, htmlBody } = leadNotificationEmail({
+      firstName,
+      lastName,
+      email,
+      mobile: input.mobile?.trim() || null,
+      jobTitle: input.job_title?.trim() || null,
+      company,
+      itemSource: input.asset?.trim() || input.source?.trim() || null,
+      hubspotUrl: null,
+      veepUrl: `${appUrl}/contacts/${contactId}`,
+    });
+    await sendTransactional({ to: notifyEmail, subject, textBody, htmlBody, ownerId, tag: `lead-${input.kind}` }).catch(() => {});
   }
 
   return { ok: true, contact_id: contactId, organisation_id: organisationId, created_contact: createdContact, is_new_lead: isNewLead, booking_slug: bookingSlug };
