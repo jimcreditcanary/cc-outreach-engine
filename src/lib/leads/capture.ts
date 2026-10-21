@@ -257,18 +257,17 @@ export async function captureLead(db: DB, input: LeadInput): Promise<LeadResult>
     console.error("lead event:", evt.error.message);
   }
 
-  // ── Alert for triage (deduped per contact+asset+day) ──────────────
+  // ── Alert for triage — ONE per contact + source + day, so a form that
+  //    double-fires produces a single alert + a single owner email. ─────────
   const today = new Date().toISOString().slice(0, 10);
-  const dedupKey = input.kind === "download" && input.asset
-    ? `download:${contactId}:${slugify(input.asset)}:${today}`
-    : null;
+  const dedupKey = `sb:${contactId}:${slugify(input.asset || input.source || input.kind)}:${today}`;
   const alertTitle =
     input.kind === "download"
       ? `Whitepaper download: ${name}${company ? ` — ${company}` : ""}${existing ? " (existing contact)" : ""}`
       : input.kind === "enquiry"
         ? `Inbound enquiry: ${name}${company ? ` — ${company}` : ""}${existing ? " (existing contact)" : ""}`
         : `New lead: ${name}${company ? ` — ${company}` : ""}${existing ? " (existing contact)" : ""}`;
-  await db
+  const { data: alertRows, error: alertErr } = await db
     .from("alerts")
     .upsert(
       {
@@ -282,12 +281,16 @@ export async function captureLead(db: DB, input: LeadInput): Promise<LeadResult>
         source: input.source ?? input.kind,
         dedup_key: dedupKey,
       },
-      dedupKey ? { onConflict: "dedup_key", ignoreDuplicates: true } : undefined,
+      { onConflict: "dedup_key", ignoreDuplicates: true },
     )
-    .then(({ error }) => error && console.error("lead alert:", error.message));
+    .select("id");
+  if (alertErr) console.error("lead alert:", alertErr.message);
+  // No inserted row ⇒ already alerted for this contact+source today → suppress
+  // the repeat email. An error means we can't tell, so still notify.
+  const duplicate = !alertErr && (alertRows?.length ?? 0) === 0;
 
   // ── Notify the owner — "New Lead Alert" field table ───────────────
-  if (input.notify !== false) {
+  if (input.notify !== false && !duplicate) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";
     const [firstName, lastName] = splitLeadName(name);
     const { subject, textBody, htmlBody } = leadNotificationEmail({

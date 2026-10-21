@@ -83,18 +83,18 @@ export async function captureLeadHubspot(input: LeadInput): Promise<LeadResult> 
   // ── Timeline Note (best-effort — needs notes write scope) ─────────
   await addContactNote(contactId, eventMessage(input));
 
-  // ── Alert for triage (Supabase operational; points out to HubSpot) ─
+  // ── Alert for triage — ONE per contact + source + day. A website form that
+  //    double-fires (or a download that also posts a generic "lead") then
+  //    produces a single alert + a single owner email, not a burst of four. ──
   const today = new Date().toISOString().slice(0, 10);
-  const dedupKey = input.kind === "download" && input.asset
-    ? `download:hs:${contactId}:${slugify(input.asset)}:${today}`
-    : null;
+  const dedupKey = `hs:${contactId}:${slugify(input.asset || input.source || input.kind)}:${today}`;
   const alertTitle =
     input.kind === "download"
       ? `Whitepaper download: ${name}${company ? ` — ${company}` : ""}${existing ? " (existing contact)" : ""}`
       : input.kind === "enquiry"
         ? `Inbound enquiry: ${name}${company ? ` — ${company}` : ""}${existing ? " (existing contact)" : ""}`
         : `New lead: ${name}${company ? ` — ${company}` : ""}${existing ? " (existing contact)" : ""}`;
-  await db
+  const { data: alertRows, error: alertErr } = await db
     .from("alerts")
     .upsert(
       {
@@ -108,12 +108,17 @@ export async function captureLeadHubspot(input: LeadInput): Promise<LeadResult> 
         source: input.source ?? input.kind,
         dedup_key: dedupKey,
       },
-      dedupKey ? { onConflict: "dedup_key", ignoreDuplicates: true } : undefined,
+      { onConflict: "dedup_key", ignoreDuplicates: true },
     )
-    .then(({ error }) => error && console.error("lead alert:", error.message));
+    .select("id");
+  if (alertErr) console.error("lead alert:", alertErr.message);
+  // No inserted row ⇒ we've already alerted for this contact+source today, so
+  // suppress the repeat email + follow-up. An error means we can't tell, so we
+  // fall through and still notify (never silently drop a genuine lead).
+  const duplicate = !alertErr && (alertRows?.length ?? 0) === 0;
 
   // ── Notify the owner (Postmark) — "New Lead Alert" field table ─────
-  if (input.notify !== false) {
+  if (input.notify !== false && !duplicate) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";
     const [firstName, lastName] = splitLeadName(name);
     const { subject, textBody, htmlBody } = leadNotificationEmail({
@@ -131,8 +136,8 @@ export async function captureLeadHubspot(input: LeadInput): Promise<LeadResult> 
   }
 
   // Enqueue a personalised inbound follow-up (fast marker; drafted by the
-  // inbound-followups job so the API stays snappy).
-  await enqueueInboundFollowup(db, {
+  // inbound-followups job so the API stays snappy). Skipped on a duplicate burst.
+  if (!duplicate) await enqueueInboundFollowup(db, {
     hsContactId: contactId,
     kind: input.kind === "enquiry" ? "enquiry" : "download",
     asset: input.asset ?? null,
