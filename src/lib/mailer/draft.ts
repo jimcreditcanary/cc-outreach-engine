@@ -155,20 +155,54 @@ function buildUser(input: DraftInput): string {
   ].join("\n");
 }
 
+// ── URL grounding ───────────────────────────────────────────────────────
+// The model must link an EXACT page from the content map, never an invented
+// one. We parse the real URLs out of the map and reject any draft whose chosen
+// page (or any link in its body) isn't one of them — forcing a re-draft.
+const normUrl = (u: string): string =>
+  u.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/[.,;)\]]+$/, "").replace(/\/+$/, "");
+
+function mapUrls(): Set<string> {
+  const set = new Set<string>();
+  for (const m of siteMap().matchAll(/^- URL:\s*(\S+)/gm)) set.add(normUrl(m[1] ?? ""));
+  return set;
+}
+
+const extractUrls = (text: string): string[] =>
+  [...text.matchAll(/https?:\/\/[^\s)<>"']+/g)].map((m) => m[0]);
+
+/** Returns a problem string if the draft's links aren't grounded in the map,
+ *  else null. Skipped when the map is unavailable (can't validate). */
+function urlProblem(draft: DraftResult, valid: Set<string>): string | null {
+  if (valid.size === 0) return null;
+  const page = draft.page_url ? normUrl(draft.page_url) : "";
+  if (!page || !valid.has(page)) return `the chosen page_url "${draft.page_url || "(blank)"}" is not an exact URL from the content map`;
+  const bodyUrls = extractUrls(draft.body).map(normUrl);
+  const invented = bodyUrls.find((u) => !valid.has(u));
+  if (invented) return `the email body links "${invented}", which is not in the content map`;
+  if (!bodyUrls.includes(page)) return "the email body does not contain the chosen page URL as a link";
+  return null;
+}
+
 export async function draftEmail(input: DraftInput, config: DraftConfig = DEFAULT_DRAFT_CONFIG): Promise<DraftResult> {
   const system = buildSystem(config);
   const user = buildUser(input);
+  const valid = mapUrls();
 
   let draft = await generateStructured({ system, user, schema, effort: "high", maxTokens: 1500 });
-  let check = checkAnonymisation(`${draft.subject}\n${draft.body}`);
-  if (!check.clean) {
-    draft = await generateStructured({
-      system,
-      user: `${user}\n\nYour previous attempt named a client (${check.hits.join(", ")}). Rewrite WITHOUT naming any client — use an anonymised descriptor instead.`,
-      schema, effort: "high", maxTokens: 1500,
-    });
-    check = checkAnonymisation(`${draft.subject}\n${draft.body}`);
-    if (!check.clean) throw new Error(`Anonymisation leak persists: ${check.hits.join(", ")}`);
+  // One corrective retry covering BOTH guards: client-name leaks and ungrounded
+  // (invented / 404 / missing) links. If it still fails, throw rather than queue
+  // a bad email.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const anon = checkAnonymisation(`${draft.subject}\n${draft.body}`);
+    const urlErr = urlProblem(draft, valid);
+    if (anon.clean && !urlErr) return draft;
+    if (attempt === 2) throw new Error(`Draft failed validation: ${[anon.clean ? null : `client name leaked (${anon.hits.join(", ")})`, urlErr].filter(Boolean).join("; ")}`);
+    const notes = [
+      anon.clean ? null : `You named a client (${anon.hits.join(", ")}). Rewrite WITHOUT naming any client — use an anonymised descriptor instead.`,
+      urlErr ? `Link problem: ${urlErr}. Pick ONE page from the WEBSITE CONTENT MAP above and copy its URL EXACTLY — into both page_url and the email body. NEVER invent, shorten or guess a URL.` : null,
+    ].filter(Boolean).join(" ");
+    draft = await generateStructured({ system, user: `${user}\n\nYour previous attempt was rejected: ${notes}`, schema, effort: "high", maxTokens: 1500 });
   }
-  return draft;
+  throw new Error("unreachable");
 }
