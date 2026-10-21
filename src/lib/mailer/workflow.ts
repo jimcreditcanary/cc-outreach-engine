@@ -92,7 +92,8 @@ export async function runDraftWorkflow(db: DB, opts: WorkflowOpts): Promise<Work
       }, cfg);
 
       const status = autoSendHigh && confidence === "high" ? "approved" : "queued";
-      const meta = { contact_name: contact.full_name, confidence, page_url: draft.page_url, page_title: draft.page_title, angle: draft.angle };
+      // company_* let the send batch spread sends across companies (≤1/company/day).
+      const meta = { contact_name: contact.full_name, confidence, page_url: draft.page_url, page_title: draft.page_title, angle: draft.angle, company_id: contact.company_id ?? null, company_name: company?.name ?? contact.company_name ?? null };
       if (!opts.dry) await insertDraft(db, {
         hs_contact_id: contact.id, email: contact.email, campaign: opts.campaign,
         subject: draft.subject, body_text: draft.body, body_html: textToHtml(draft.body),

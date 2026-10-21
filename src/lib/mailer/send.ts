@@ -32,6 +32,7 @@ export interface HsSendBatchResult {
   failed: number;
 }
 
+interface DraftMeta { company_id?: string | null; company_name?: string | null }
 interface DraftRow {
   id: string;
   hs_contact_id: string;
@@ -41,6 +42,25 @@ interface DraftRow {
   body_text: string | null;
   owner_id: string | null;
   campaign: string | null;
+  meta: DraftMeta | null;
+}
+
+/** Stable per-company key so we can spread sends across companies. Falls back
+ *  to company name, then to the contact id (so a company-less draft is never
+ *  blocked by the cap — it's its own "company"). */
+function companyKey(meta: DraftMeta | null, contactId: string): string {
+  const m = meta ?? {};
+  if (m.company_id) return `co:${m.company_id}`;
+  if (m.company_name) return `cn:${m.company_name.toLowerCase().trim()}`;
+  return `ct:${contactId}`;
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
+  return arr;
 }
 
 export async function runHsSendBatch(db: DB, opts: { batch?: number; force?: boolean } = {}): Promise<HsSendBatchResult> {
@@ -77,26 +97,57 @@ export async function runHsSendBatch(db: DB, opts: { batch?: number; force?: boo
   const limit = dry ? batchSize : Math.min(remaining, batchSize);
   if (!dry && limit <= 0) return { ...nil, cap, sentToday: sentToday ?? 0, reason: `daily cap reached (${cap})` };
 
-  // 4. Approved rows (oldest first) + suppressions.
+  // 4. Build the batch. Pull a POOL of approved drafts (not just `limit`),
+  //    then select so we never send to the same company more than
+  //    SEND_COMPANY_DAILY_CAP times per day — counting companies already sent
+  //    to today — and shuffle so order isn't biased by company or age. Leftover
+  //    same-company drafts stay approved and go out on following days.
   const { data: supp } = await db.from("suppressions").select("email");
   const suppressed = new Set((supp ?? []).map((s) => String((s as { email: string }).email).toLowerCase()));
+  const companyCap = Math.max(1, Number(env("SEND_COMPANY_DAILY_CAP", "1")));
+
+  // Companies already emailed today (so a second rep/run can't double up).
+  const { data: sentTodayRows } = await db
+    .from("hs_sends")
+    .select("hs_contact_id, meta")
+    .eq("status", "sent")
+    .gte("sent_at", startOfUkDayUtc(now));
+  const usedByCompany = new Map<string, number>();
+  for (const s of (sentTodayRows ?? []) as unknown as { hs_contact_id: string; meta: DraftMeta | null }[]) {
+    const k = companyKey(s.meta, s.hs_contact_id);
+    usedByCompany.set(k, (usedByCompany.get(k) ?? 0) + 1);
+  }
+
+  const poolSize = Math.min(Math.max(limit * 10, 100), 500);
   const { data: drafts, error } = await db
     .from("hs_sends")
-    .select("id, hs_contact_id, email, subject, body_html, body_text, owner_id, campaign")
+    .select("id, hs_contact_id, email, subject, body_html, body_text, owner_id, campaign, meta")
     .eq("status", "approved")
     .order("ts", { ascending: true })
-    .limit(limit);
+    .limit(poolSize);
   if (error) throw error;
-  const rows = (drafts ?? []) as unknown as DraftRow[];
+  const pool = shuffle((drafts ?? []) as unknown as DraftRow[]);
 
   let sent = 0, skipped = 0, failed = 0;
-  for (const d of rows) {
+
+  // Selection: mark suppressed, cap per company, take up to `limit`. A deferred
+  // same-company draft simply stays approved for a later day.
+  const batch: DraftRow[] = [];
+  for (const d of pool) {
+    if (batch.length >= limit) break;
     const email = String(d.email).toLowerCase();
     if (suppressed.has(email)) {
       if (!dry) await db.from("hs_sends").update({ status: "suppressed" }).eq("id", d.id);
       skipped++;
       continue;
     }
+    const key = companyKey(d.meta, d.hs_contact_id);
+    if ((usedByCompany.get(key) ?? 0) >= companyCap) continue; // another contact at this company already going today
+    usedByCompany.set(key, (usedByCompany.get(key) ?? 0) + 1);
+    batch.push(d);
+  }
+
+  for (const d of batch) {
     if (dry) { sent++; continue; }
     try {
       // Tag CC links with UTM + per-contact id for GA4 attribution.
@@ -120,5 +171,5 @@ export async function runHsSendBatch(db: DB, opts: { batch?: number; force?: boo
     }
   }
 
-  return { ok: true, dry, cap, sentToday: sentToday ?? 0, attempted: rows.length, sent, skipped, failed };
+  return { ok: true, dry, cap, sentToday: sentToday ?? 0, attempted: batch.length, sent, skipped, failed };
 }
