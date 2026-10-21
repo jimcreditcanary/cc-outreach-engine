@@ -32,6 +32,7 @@
     "content-guidance": "tsx scripts/content-guidance.ts",
     "ga4-intent": "tsx scripts/ga4-intent.ts",
     "draft-sample": "tsx scripts/draft-sample.ts",
+    "find-lead": "tsx scripts/find-lead.ts",
     "enrich-context": "tsx scripts/enrich-context.ts",
     "workflow": "tsx scripts/workflow.ts",
     "nurture": "tsx scripts/nurture.ts",
