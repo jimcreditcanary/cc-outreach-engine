@@ -21,7 +21,7 @@ export default async function SignalsPage() {
   const signals = (data ?? []) as unknown as PressEvent[];
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <header className="mb-6 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Signals</h1>
         <p className="text-sm text-neutral-500">

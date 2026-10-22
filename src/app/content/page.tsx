@@ -49,7 +49,7 @@ export default async function ContentPage() {
   ];
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <PageTabs tabs={RESEARCH_TABS} />
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Content</h1>

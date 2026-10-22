@@ -28,7 +28,7 @@ export async function HubspotContactsView({
   const nextParams = new URLSearchParams({ ...hdrParams, ...(sortRaw ? { sort: sortRaw } : {}), ...(page.after ? { after: page.after } : {}) });
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <PageTabs tabs={CRM_TABS} />
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <div className="flex items-baseline gap-2">
@@ -48,7 +48,7 @@ export async function HubspotContactsView({
         {newOnly && <input type="hidden" name="status" value="new" />}
       </form>
 
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
           <tr>
             <SortableTh label="Name" col="full_name" sort={sort} basePath="/contacts" params={hdrParams} className="py-1" />
@@ -74,7 +74,7 @@ export async function HubspotContactsView({
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
 
       <div className="mt-4 flex items-center justify-between text-sm">
         {after ? <Link href={`/contacts?${new URLSearchParams(hdrParams)}${sortRaw ? `&sort=${sortRaw}` : ""}`} className="text-blue-700 hover:underline">⟲ Start</Link> : <span />}

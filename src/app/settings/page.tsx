@@ -77,7 +77,7 @@ export default async function SettingsPage() {
   const leadEndpoint = `${appUrl}/api/leads`;
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <PageTabs tabs={SETTINGS_TABS} />
       <header className="mb-4 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Setup</h1>

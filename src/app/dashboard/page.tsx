@@ -146,7 +146,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   );
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3 border-b border-neutral-200 pb-3">
         <div>
           <h1 className="text-xl font-semibold">Dashboard</h1>
@@ -173,7 +173,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {/* Pipeline by stage */}
       <section className="mb-8">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Pipeline by stage</h2>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
           <thead className="text-left text-xs uppercase text-neutral-400">
             <tr>
               <th className="py-1">Stage</th>
@@ -218,7 +218,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               <td className="text-right">{fmt(weightedArr)}</td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
         <p className="mt-2 text-xs text-neutral-400">
           Weighted = stage probability × deal size. Defaults: Identify 10% · Qualify 25% · Develop 50% · Commit 75% · Nurture 5%.
           Tweak in <code>src/lib/pipeline/stages.ts</code>.

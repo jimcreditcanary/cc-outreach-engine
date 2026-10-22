@@ -77,7 +77,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
   for (const a of attendees) byMatch[a.matched_via] = (byMatch[a.matched_via] ?? 0) + 1;
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <Link href="/events" className="text-sm text-blue-700 hover:underline">← Events</Link>
       <h1 className="mt-2 mb-4 text-xl font-semibold">{ev.name}</h1>
 
@@ -170,7 +170,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
         {attendees.length === 0 ? (
           <p className="text-sm text-neutral-400">No attendees yet — upload a list above.</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
             <thead className="text-left text-xs uppercase text-neutral-400">
               <tr><th className="py-1">Contact</th><th>Title</th><th>Company</th><th>Owner</th><th>Match</th><th></th></tr>
             </thead>
@@ -205,7 +205,7 @@ export default async function EventDetail({ params }: { params: Promise<{ id: st
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         )}
       </section>
     </main>

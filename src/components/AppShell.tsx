@@ -23,6 +23,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   LogOut,
+  Menu,
+  X,
 } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
 
@@ -100,81 +102,135 @@ export function AppShell({
     document.cookie = `sidebar=${collapsed ? "collapsed" : "expanded"}; path=/; max-age=31536000; samesite=lax`;
   }, [collapsed]);
 
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   const sideW = collapsed ? "w-16" : "w-56";
-  const mainOffset = collapsed ? "ml-16" : "ml-56";
+  const mainOffset = collapsed ? "md:ml-16" : "md:ml-56";
+
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   return (
     <div className="min-h-screen bg-neutral-50">
+      {/* Mobile top bar (hidden on md+) */}
+      <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-2 border-b border-neutral-200 bg-white px-3 md:hidden">
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open menu"
+          className="-ml-1 rounded-md p-1.5 text-neutral-600 hover:bg-neutral-100"
+        >
+          <Menu size={22} />
+        </button>
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-600 text-sm font-bold text-white">CC</div>
+        <span className="font-semibold text-neutral-800">Credit Canary</span>
+      </header>
+
+      {/* Desktop sidebar (hidden below md) */}
       <aside
-        className={`fixed inset-y-0 left-0 z-20 flex ${sideW} flex-col border-r border-neutral-200 bg-white shadow-sm transition-[width] duration-200`}
+        className={`fixed inset-y-0 left-0 z-20 hidden ${sideW} flex-col border-r border-neutral-200 bg-white shadow-sm transition-[width] duration-200 md:flex`}
       >
-        <div className={`flex h-14 items-center border-b border-neutral-100 px-3 ${collapsed ? "justify-center" : "gap-2"}`}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-600 text-sm font-bold text-white">
-            CC
-          </div>
-          {!collapsed && <span className="truncate font-semibold text-neutral-800">Credit Canary</span>}
-        </div>
+        <SidebarBody collapsed={collapsed} pathname={pathname} userEmail={userEmail} onToggleCollapse={() => setCollapsed((c) => !c)} />
+      </aside>
 
-        <nav className="flex-1 overflow-y-auto px-2 py-3">
-          {SECTIONS.map((section, i) => (
-            <div key={section.header} className={i > 0 ? "mt-4" : ""}>
-              {collapsed ? (
-                // No room for a label — a hairline divider keeps the grouping
-                // legible (skipped before the first section).
-                i > 0 && <div className="mx-1 mb-2 border-t border-neutral-100" />
-              ) : (
-                <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                  {section.header}
-                </div>
-              )}
-              <div className="space-y-0.5">
-                {section.items.map((leaf) => (
-                  <LeafLink key={leaf.href} leaf={leaf} active={isActive(pathname, leaf.href)} collapsed={collapsed} />
-                ))}
+      {/* Mobile drawer + backdrop */}
+      {mobileOpen && <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden />}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-neutral-200 bg-white shadow-xl transition-transform duration-200 md:hidden ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        aria-hidden={!mobileOpen}
+      >
+        <button
+          type="button"
+          onClick={() => setMobileOpen(false)}
+          aria-label="Close menu"
+          className="absolute right-2 top-3 z-10 rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100"
+        >
+          <X size={20} />
+        </button>
+        <SidebarBody collapsed={false} pathname={pathname} userEmail={userEmail} onNavigate={() => setMobileOpen(false)} />
+      </aside>
+
+      {/* Content — full width on mobile (below the top bar), offset on desktop */}
+      <div className={`pt-14 md:pt-0 ${mainOffset} transition-[margin-left] duration-200`}>{children}</div>
+    </div>
+  );
+}
+
+// Shared sidebar contents, used by both the desktop rail and the mobile drawer.
+function SidebarBody({
+  collapsed, pathname, userEmail, onNavigate, onToggleCollapse,
+}: {
+  collapsed: boolean;
+  pathname: string;
+  userEmail: string;
+  onNavigate?: () => void;
+  onToggleCollapse?: () => void;
+}) {
+  return (
+    <>
+      <div className={`flex h-14 items-center border-b border-neutral-100 px-3 ${collapsed ? "justify-center" : "gap-2"}`}>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-600 text-sm font-bold text-white">CC</div>
+        {!collapsed && <span className="truncate font-semibold text-neutral-800">Credit Canary</span>}
+      </div>
+
+      <nav className="flex-1 overflow-y-auto px-2 py-3">
+        {SECTIONS.map((section, i) => (
+          <div key={section.header} className={i > 0 ? "mt-4" : ""}>
+            {collapsed ? (
+              i > 0 && <div className="mx-1 mb-2 border-t border-neutral-100" />
+            ) : (
+              <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                {section.header}
               </div>
+            )}
+            <div className="space-y-0.5">
+              {section.items.map((leaf) => (
+                <LeafLink key={leaf.href} leaf={leaf} active={isActive(pathname, leaf.href)} collapsed={collapsed} onNavigate={onNavigate} />
+              ))}
             </div>
-          ))}
-        </nav>
+          </div>
+        ))}
+      </nav>
 
-        <div className="border-t border-neutral-100 p-2">
-          <form action={logoutAction}>
-            <button
-              type="submit"
-              className={`group relative flex w-full items-center rounded-md px-2 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 ${
-                collapsed ? "justify-center" : "gap-3"
-              }`}
-              title={collapsed ? `Log out (${userEmail})` : undefined}
-            >
-              <LogOut size={18} strokeWidth={1.75} className="shrink-0" />
-              {!collapsed && <span className="truncate text-xs">{userEmail}</span>}
-              {collapsed && (
-                <span className="pointer-events-none absolute left-full z-30 ml-2 hidden whitespace-nowrap rounded bg-neutral-800 px-2 py-1 text-xs text-white shadow-lg group-hover:block">
-                  Log out · {userEmail}
-                </span>
-              )}
-            </button>
-          </form>
+      <div className="border-t border-neutral-100 p-2">
+        <form action={logoutAction}>
+          <button
+            type="submit"
+            className={`group relative flex w-full items-center rounded-md px-2 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 ${
+              collapsed ? "justify-center" : "gap-3"
+            }`}
+            title={collapsed ? `Log out (${userEmail})` : undefined}
+          >
+            <LogOut size={18} strokeWidth={1.75} className="shrink-0" />
+            {!collapsed && <span className="truncate text-xs">{userEmail}</span>}
+            {collapsed && (
+              <span className="pointer-events-none absolute left-full z-30 ml-2 hidden whitespace-nowrap rounded bg-neutral-800 px-2 py-1 text-xs text-white shadow-lg group-hover:block">
+                Log out · {userEmail}
+              </span>
+            )}
+          </button>
+        </form>
+        {onToggleCollapse && (
           <button
             type="button"
-            onClick={() => setCollapsed((c) => !c)}
+            onClick={onToggleCollapse}
             className="mt-1 flex w-full items-center justify-center rounded-md px-2 py-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
           </button>
-        </div>
-      </aside>
-
-      <div className={`${mainOffset} transition-[margin-left] duration-200`}>{children}</div>
-    </div>
+        )}
+      </div>
+    </>
   );
 }
 
-function LeafLink({ leaf, active, collapsed }: { leaf: Leaf; active: boolean; collapsed: boolean }) {
+function LeafLink({ leaf, active, collapsed, onNavigate }: { leaf: Leaf; active: boolean; collapsed: boolean; onNavigate?: () => void }) {
   return (
     <Link
       href={leaf.href}
+      onClick={onNavigate}
       className={`group relative flex items-center rounded-md px-2 py-2 text-sm transition-colors ${
         active ? "bg-amber-50 font-medium text-amber-800" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
       } ${collapsed ? "justify-center" : "gap-3"}`}

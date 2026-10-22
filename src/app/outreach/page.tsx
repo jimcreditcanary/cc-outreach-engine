@@ -62,7 +62,7 @@ export default async function OutreachPage({ searchParams }: { searchParams: Pro
   ];
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
         <div className="flex items-baseline gap-2">
           <h1 className="text-xl font-semibold">Workflow</h1>
@@ -173,7 +173,7 @@ export default async function OutreachPage({ searchParams }: { searchParams: Pro
       {sent.length > 0 && (
         <>
           <h2 className="mb-2 text-sm font-semibold text-neutral-700">Recently sent</h2>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
             <tbody>
               {sent.map((r) => (
                 <tr key={r.id} className="border-t border-neutral-100">
@@ -183,7 +183,7 @@ export default async function OutreachPage({ searchParams }: { searchParams: Pro
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </>
       )}
     </main>

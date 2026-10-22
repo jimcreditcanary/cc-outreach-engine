@@ -117,7 +117,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   const hdrParams = { ...(q ? { q } : {}), ...(owner ? { owner } : {}), ...(newOnly ? { status: "new" } : {}) };
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Contacts</h1>
         <OwnerFilter current={owner} pathname="/contacts" extraParams={{ q, ...(newOnly ? { status: "new" } : {}) }} />
@@ -172,7 +172,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
           No new leads right now. Inbound leads from the website land here automatically.
         </p>
       ) : (
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
           <thead className="text-left text-xs uppercase text-neutral-400">
             <tr>
               <SortableTh label="Name" col="full_name" sort={sort} basePath="/contacts" params={hdrParams} className="py-1" />
@@ -223,7 +223,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       {lastPage > 1 && (

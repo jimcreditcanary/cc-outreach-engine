@@ -30,7 +30,7 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
   const targetText = co.target_group ? (targetOpts.find((o) => o.value === co.target_group)?.label ?? co.target_group) : null;
 
   return (
-    <main className="mx-auto max-w-3xl px-8 py-6">
+    <main className="mx-auto max-w-3xl px-4 py-6 md:px-8">
       <div className="mb-4 flex items-center justify-between">
         <Link href="/companies" className="text-sm text-blue-700 hover:underline">← Companies</Link>
         <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700">HubSpot</span>

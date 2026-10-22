@@ -106,7 +106,7 @@ ${unsubFooterHtml("recipient@example.com")}
 </div>`;
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <Link href="/newsletter" className="text-sm text-blue-700 hover:underline">← Newsletter</Link>
       <header className="mb-4 mt-2 flex flex-wrap items-baseline gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">{issue.subject}</h1>
@@ -179,7 +179,7 @@ ${unsubFooterHtml("recipient@example.com")}
           {recipients.length > 0 && (
             <details className="rounded border border-neutral-200 bg-white p-3">
               <summary className="cursor-pointer text-sm text-neutral-600">Per-recipient breakdown ({recipients.length})</summary>
-              <table className="mt-3 w-full text-sm">
+              <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
                 <thead className="text-left text-xs uppercase text-neutral-400">
                   <tr><th className="py-1">Contact</th><th>Email</th><th className="text-right">Opens</th><th className="text-right">Clicks</th><th className="text-right">Status</th></tr>
                 </thead>
@@ -199,7 +199,7 @@ ${unsubFooterHtml("recipient@example.com")}
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </details>
           )}
         </section>

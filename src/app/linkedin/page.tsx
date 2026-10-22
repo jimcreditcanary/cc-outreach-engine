@@ -208,7 +208,7 @@ export default async function LinkedInPage({ searchParams }: {
   const reqProgress   = Math.min(100, Math.round((requestsToday / DAILY_CAP_REQUESTS) * 100));
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <PageTabs tabs={RESEARCH_TABS} />
       <header className="mb-4 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">LinkedIn — today</h1>

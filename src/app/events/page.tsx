@@ -55,7 +55,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
   );
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <PageTabs tabs={RESEARCH_TABS} />
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <div>
@@ -74,7 +74,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
         <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Creating…">+ Add event</PendingButton>
       </form>
 
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
           <tr>
             <SortableTh label="Event" col="name" sort={sort} basePath="/events" params={hdrParams} className="py-1" />
@@ -110,7 +110,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
             <tr><td colSpan={5} className="py-6 text-center text-neutral-400">No events yet — add one above.</td></tr>
           )}
         </tbody>
-      </table>
+      </table></div>
     </main>
   );
 }

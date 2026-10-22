@@ -56,7 +56,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
   const hdrParams = { ...(q ? { q } : {}), ...(owner ? { owner } : {}) };
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Companies</h1>
         <OwnerFilter current={owner} pathname="/companies" extraParams={{ q }} />
@@ -81,7 +81,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
         <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Adding…">+ Add company</PendingButton>
       </form>
 
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
           <tr>
             <SortableTh label="Name" col="name" sort={sort} basePath="/companies" params={hdrParams} className="py-1" />
@@ -116,7 +116,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
 
       {lastPage > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm">

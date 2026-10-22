@@ -161,7 +161,7 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
   };
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <Link href="/sequences" className="text-sm text-blue-700 hover:underline">← Sequences</Link>
       <header className="mb-4 mt-2 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <div>
@@ -440,7 +440,7 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
         {contacts.length === 0 ? (
           <p className="text-sm text-neutral-400">Nobody added yet — search above.</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
             <thead className="text-left text-xs uppercase text-neutral-400">
               <tr><th className="py-1">Contact</th><th>Company</th><th>Status</th><th className="text-right">Step</th><th>Started</th><th></th></tr>
             </thead>
@@ -472,7 +472,7 @@ export default async function SequenceDetail({ params }: { params: Promise<{ id:
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         )}
       </section>
     </main>

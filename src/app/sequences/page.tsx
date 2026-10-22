@@ -83,7 +83,7 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
   });
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <div>
           <h1 className="text-xl font-semibold">Sequences</h1>
@@ -133,7 +133,7 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
         </PendingButton>
       </form>
 
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
           <tr>
             <SortableTh label="Sequence" col="name" sort={sort} basePath="/sequences" params={hdrParams} className="py-1" />
@@ -169,7 +169,7 @@ export default async function SequencesPage({ searchParams }: { searchParams: Pr
             <tr><td colSpan={7} className="py-6 text-center text-neutral-400">No sequences yet — create one above.</td></tr>
           )}
         </tbody>
-      </table>
+      </table></div>
     </main>
   );
 }

@@ -25,7 +25,7 @@ export default async function CampaignsPage() {
   const totalApproved = campaigns.reduce((n, c) => n + c.approved, 0);
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
         <div className="flex items-baseline gap-2">
           <h1 className="text-xl font-semibold">Campaigns</h1>
@@ -102,7 +102,7 @@ export default async function CampaignsPage() {
       {campaigns.length === 0 ? (
         <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-500">No campaigns yet. Queue one above.</p>
       ) : (
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
           <thead className="text-left text-xs uppercase text-neutral-400">
             <tr>
               <th className="py-1">Campaign</th>
@@ -142,7 +142,7 @@ export default async function CampaignsPage() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </main>
   );

@@ -30,7 +30,7 @@ export default async function NewsletterPage({ searchParams }: { searchParams: P
   const list = sortRows((issues ?? []) as Issue[], sort, (i, col) => (i as unknown as Record<string, unknown>)[col]);
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
         <div>
           <h1 className="text-xl font-semibold">Newsletter</h1>
@@ -47,7 +47,7 @@ export default async function NewsletterPage({ searchParams }: { searchParams: P
         <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Creating…">+ New issue</PendingButton>
       </form>
 
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
           <tr>
             <SortableTh label="Subject" col="subject" sort={sort} basePath="/newsletter" className="py-1" />
@@ -75,7 +75,7 @@ export default async function NewsletterPage({ searchParams }: { searchParams: P
             <tr><td colSpan={4} className="py-4 text-center text-neutral-400">No issues yet. Create one above.</td></tr>
           )}
         </tbody>
-      </table>
+      </table></div>
     </main>
   );
 }

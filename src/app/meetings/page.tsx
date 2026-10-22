@@ -79,7 +79,7 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
     .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime());
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 pb-3">
         <div>
           <h1 className="text-xl font-semibold">Meetings</h1>

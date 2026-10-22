@@ -47,7 +47,7 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
   const myEmails = emailAliases(meUser.email, myVisSettings);
   if (!canSeeMeeting(m as { owner_id: string | null; attendees: unknown }, meUser.id, myEmails)) {
     return (
-      <main className="px-8 py-6">
+      <main className="px-4 py-6 md:px-8">
         <Link href="/meetings" className="text-sm text-blue-700 hover:underline">← Meetings</Link>
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           🔒 This meeting is on another operator&apos;s calendar and you&apos;re not on the invite, so it isn&apos;t visible to you.
@@ -120,7 +120,7 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
   const end = m.end_at ? new Date(m.end_at) : null;
 
   return (
-    <main className="px-8 py-6">
+    <main className="px-4 py-6 md:px-8">
       <Link href="/meetings" className="text-sm text-blue-700 hover:underline">← Meetings</Link>
       {notMine && (
         <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
