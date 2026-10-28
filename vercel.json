@@ -39,6 +39,10 @@
     {
       "path": "/api/cron/hubspot-mirror",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/mirror-watchdog",
+      "schedule": "0 6 * * *"
     }
   ]
 }
