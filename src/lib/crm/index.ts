@@ -9,6 +9,8 @@
 
 import { hubspotEnabled } from "../hubspot/client";
 import { hubspotRepo } from "../hubspot/repo";
+import { mirrorRepo } from "../mirror/repo";
+import { withFailover } from "./failover";
 import type { CrmRepository } from "./types";
 
 export type CrmBackend = "hubspot" | "supabase";
@@ -22,7 +24,9 @@ export function activeBackend(): CrmBackend {
 export function getCrm(): CrmRepository {
   switch (activeBackend()) {
     case "hubspot":
-      return hubspotRepo;
+      // Live HubSpot, with automatic read failover to the Supabase mirror when
+      // HubSpot is unreachable. Disable with CRM_FAILOVER=off.
+      return process.env.CRM_FAILOVER === "off" ? hubspotRepo : withFailover(hubspotRepo, mirrorRepo);
     case "supabase":
       // TODO(P2): return supabaseRepo for dual-run parity checks.
       throw new Error("CRM_BACKEND=supabase: the Supabase CRM adapter isn't built yet (P2).");
