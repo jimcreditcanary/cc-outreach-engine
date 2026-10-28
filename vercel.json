@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/ga4-intent",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/hubspot-mirror",
+      "schedule": "0 3 * * *"
     }
   ]
 }
