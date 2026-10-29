@@ -9,12 +9,15 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/server";
+import { serviceClient } from "@/lib/db/client";
 import { hubspotEnabled } from "@/lib/hubspot/client";
 import { hubspotRepo, getDeal, dealContactIds, dealRecentNotes } from "@/lib/hubspot/repo";
 import { assessDealForWork, type DealContext } from "@/lib/mailer/dealWork";
+import { liveCaseForDeal } from "@/lib/onboarding/cases";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
 import { draftFromAnswersAction } from "../actions";
+import { startOnboardingAction } from "@/app/onboarding/actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -49,6 +52,7 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
   const deal = await getDeal(id);
   if (!deal) notFound();
 
+  const existingCase = await liveCaseForDeal(serviceClient(), id);
   const contactIds = await dealContactIds(id);
   const [contact, notes] = await Promise.all([
     contactIds[0] ? hubspotRepo.getContact(contactIds[0]) : Promise.resolve(null),
@@ -74,6 +78,20 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
           {" · "}last contacted {deal.last_contacted ? fmtDate(deal.last_contacted) : "never"}
           {contact && <> · {contact.full_name}{contact.job_title ? `, ${contact.job_title}` : ""}{company?.name ? ` (${company.name})` : ""}</>}
         </p>
+        <div className="mt-2">
+          {existingCase ? (
+            <Link href={`/onboarding/${existingCase.id}`} className="inline-flex rounded border border-amber-300 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50">
+              Continue onboarding →
+            </Link>
+          ) : (
+            <form action={startOnboardingAction}>
+              <input type="hidden" name="deal_id" value={deal.id} />
+              <PendingButton className="rounded border border-amber-300 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50" pendingLabel="Starting…">
+                Start onboarding →
+              </PendingButton>
+            </form>
+          )}
+        </div>
       </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">

@@ -16,6 +16,7 @@ import {
   Building2,
   Briefcase,
   CalendarClock,
+  ClipboardCheck,
   Flame,
   Mail,
   Reply,
@@ -53,10 +54,11 @@ const SECTIONS: Section[] = [
   {
     header: "Pipeline",
     items: [
-      { href: "/companies", label: "CRM",      Icon: Building2 },
-      { href: "/deals",     label: "Deals",    Icon: Briefcase },
-      { href: "/hot",       label: "Hot",      Icon: Flame },
-      { href: "/meetings",  label: "Meetings", Icon: CalendarClock },
+      { href: "/companies",  label: "CRM",        Icon: Building2 },
+      { href: "/deals",      label: "Deals",      Icon: Briefcase },
+      { href: "/hot",        label: "Hot",        Icon: Flame },
+      { href: "/meetings",   label: "Meetings",   Icon: CalendarClock },
+      { href: "/onboarding", label: "Onboarding", Icon: ClipboardCheck },
     ],
   },
   {

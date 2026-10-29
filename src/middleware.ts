@@ -11,6 +11,7 @@ const PUBLIC_PREFIXES = [
   "/api/cron",
   "/api/leads", // external lead capture — guarded by its own LEAD_API_KEY
   "/api/inbound", // inbound signals (abandonment) — guarded by LEAD_API_KEY
+  "/api/internal", // internal service hooks — guarded by CRON_SECRET bearer
   "/api/auth", // reserved for future OAuth callback if needed
   "/unsubscribe", // clicked from outreach emails — recipient isn't logged in
   "/book", // public booking pages — external visitors book meetings here

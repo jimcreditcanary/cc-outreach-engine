@@ -1,0 +1,162 @@
+"use server";
+
+// Server actions for the Phase 1 internal onboarding wizard. Each step writes to
+// the onboarding_cases / _stakeholders tables (migration 048) and logs an event,
+// then advances to the next step. Nothing here is customer-facing — the merchant
+// invite + public form are Phase 3.
+
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { currentUser } from "@/lib/auth/server";
+import { serviceClient } from "@/lib/db/client";
+import { flash } from "@/lib/flash";
+import { dealCompanyId } from "@/lib/hubspot/repo";
+import {
+  findOrCreateCaseForDeal, getCase, updateCase, setProductGroups,
+  addStakeholder, removeStakeholder, listStakeholders, logCaseEvent,
+  readyToComplete, isOnboardingRole,
+} from "@/lib/onboarding/cases";
+import { requestApiSandbox } from "@/lib/onboarding/notify";
+
+const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
+const actorOf = (u: { id: string; email?: string | null } | null) => ({ id: u?.id ?? null, email: u?.email ?? null });
+
+/** Start (or resume) onboarding for a deal — the "Start onboarding" trigger. */
+export async function startOnboardingAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const dealId = str(formData.get("deal_id"));
+  if (!dealId) {
+    await flash("error", "No deal given.");
+    return redirect("/onboarding");
+  }
+  const db = serviceClient();
+  const companyId = await dealCompanyId(dealId);
+  const { case: c, created } = await findOrCreateCaseForDeal(db, {
+    dealId, hubspotCompanyId: companyId, ownerUserId: me.id, actor: actorOf(me),
+  });
+  if (created) await flash("success", "Onboarding started.");
+  redirect(`/onboarding/${c.id}`);
+}
+
+/** Step 1 — confirm the company (picked from a Companies House search). */
+export async function saveCompanyAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  const companyNumber = str(formData.get("company_number"));
+  if (!id || !companyNumber) {
+    await flash("error", "Pick a company first.");
+    return redirect(`/onboarding/${id}?step=company`);
+  }
+  const db = serviceClient();
+  await updateCase(db, id, { company_number: companyNumber });
+  await logCaseEvent(db, id, "company_confirmed", actorOf(me), { company_number: companyNumber });
+  revalidatePath(`/onboarding/${id}`);
+  redirect(`/onboarding/${id}?step=products`);
+}
+
+/** Step 2 — product groups (auto-select + lock rules applied in setProductGroups). */
+export async function saveProductsAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const keys = formData.getAll("groups").map((v) => String(v));
+  if (keys.length === 0) {
+    await flash("error", "Select at least one product group.");
+    return redirect(`/onboarding/${id}?step=products`);
+  }
+  const db = serviceClient();
+  const normalized = await setProductGroups(db, id, keys);
+  await logCaseEvent(db, id, "products_set", actorOf(me), { product_groups: normalized });
+  revalidatePath(`/onboarding/${id}`);
+  redirect(`/onboarding/${id}?step=stakeholders`);
+}
+
+export async function addStakeholderAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  const contactId = str(formData.get("contact_id"));
+  const role = str(formData.get("role"));
+  if (!id) return redirect("/onboarding");
+  if (!contactId || !isOnboardingRole(role)) {
+    await flash("error", "Pick a contact and a role.");
+    return redirect(`/onboarding/${id}?step=stakeholders`);
+  }
+  const db = serviceClient();
+  await addStakeholder(db, id, contactId, role);
+  await logCaseEvent(db, id, "stakeholder_added", actorOf(me), { contact_id: contactId, role });
+  revalidatePath(`/onboarding/${id}`);
+  redirect(`/onboarding/${id}?step=stakeholders`);
+}
+
+export async function removeStakeholderAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  const sid = str(formData.get("stakeholder_id"));
+  if (id && sid) {
+    const db = serviceClient();
+    await removeStakeholder(db, sid);
+    await logCaseEvent(db, id, "stakeholder_removed", actorOf(me), { stakeholder_id: sid });
+    revalidatePath(`/onboarding/${id}`);
+  }
+  redirect(`/onboarding/${id}?step=stakeholders`);
+}
+
+export async function setSandboxAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const required = str(formData.get("api_sandbox_required")) === "on";
+  const db = serviceClient();
+  await updateCase(db, id, { api_sandbox_required: required });
+  await logCaseEvent(db, id, "sandbox_toggled", actorOf(me), { api_sandbox_required: required });
+  revalidatePath(`/onboarding/${id}?step=finish`);
+  redirect(`/onboarding/${id}?step=finish`);
+}
+
+/** Finish — mark the internal stage complete; fire the API-sandbox request if asked. */
+export async function completeInternalAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  const c = await getCase(db, id);
+  if (!c) { await flash("error", "Case not found."); return redirect("/onboarding"); }
+
+  const stakeholders = await listStakeholders(db, id);
+  if (!readyToComplete(c, stakeholders.length)) {
+    await flash("error", "Finish the company, products and stakeholders steps first.");
+    return redirect(`/onboarding/${id}`);
+  }
+
+  await updateCase(db, id, { status: "internal_complete" });
+  await logCaseEvent(db, id, "internal_complete", actorOf(me), { product_groups: c.product_groups });
+
+  if (c.api_sandbox_required) {
+    await requestApiSandbox(db, id).catch(() => {});
+    await logCaseEvent(db, id, "api_sandbox_requested", actorOf(me), {});
+  }
+
+  await flash("success", "Internal onboarding complete. Merchant invite comes in Phase 3.");
+  revalidatePath(`/onboarding/${id}`);
+  redirect(`/onboarding/${id}`);
+}
+
+export async function cancelCaseAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (id) {
+    const db = serviceClient();
+    await updateCase(db, id, { status: "cancelled" });
+    await logCaseEvent(db, id, "cancelled", actorOf(me), {});
+    await flash("success", "Onboarding cancelled.");
+  }
+  redirect("/onboarding");
+}

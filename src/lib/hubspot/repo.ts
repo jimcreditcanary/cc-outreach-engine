@@ -269,6 +269,20 @@ export async function dealContactIds(dealId: string): Promise<string[]> {
   }
 }
 
+/** The primary company associated with a deal (for the onboarding case's
+ *  hubspot_company_id). Best-effort: null on any failure. */
+export async function dealCompanyId(dealId: string): Promise<string | null> {
+  try {
+    const res = await hsFetch<{ results: { toObjectId: string | number }[] }>(
+      `/crm/v4/objects/deals/${dealId}/associations/companies?limit=1`, { cacheTtl: READ_TTL },
+    );
+    const first = (res.results ?? [])[0];
+    return first ? String(first.toObjectId) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** A single deal by id, with pipeline/stage resolved to labels. For the Hot
  *  "work this deal" view. */
 export async function getDeal(id: string): Promise<DealRecord | null> {
