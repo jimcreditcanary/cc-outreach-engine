@@ -78,6 +78,22 @@ export async function discardDraftAction(formData: FormData) {
   revalidatePath("/outreach");
 }
 
+/** "I'll send it myself" — the operator is sending this from their own inbox, so
+ *  mark it done WITHOUT the system sending it. Terminal 'sent' (tagged manual) so
+ *  the Postmark batch can never also send it — a double-send. The operator's
+ *  connected inbox handles the HubSpot logging / open-tracking. */
+export async function markSentManualAction(formData: FormData) {
+  const id = str(formData.get("id"));
+  if (id) {
+    await serviceClient()
+      .from("hs_sends")
+      .update({ status: "sent", sent_at: new Date().toISOString(), postmark_message_id: "manual" })
+      .eq("id", id)
+      .in("status", ["queued", "approved"]);
+  }
+  revalidatePath("/outreach");
+}
+
 export async function editDraftAction(formData: FormData) {
   const id = str(formData.get("id"));
   const subject = str(formData.get("subject"));

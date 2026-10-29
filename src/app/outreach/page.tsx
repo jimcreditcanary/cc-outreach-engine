@@ -13,7 +13,7 @@ import { hubspotSendEnabled } from "@/lib/hubspot/transactional";
 import { fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
 import { PageTabs } from "@/components/PageTabs";
-import { draftRunAction, nurtureRunAction, approveDraftAction, discardDraftAction, editDraftAction, sendBatchAction } from "./actions";
+import { draftRunAction, nurtureRunAction, approveDraftAction, discardDraftAction, markSentManualAction, editDraftAction, sendBatchAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // the in-app draft run researches + writes per contact
@@ -25,7 +25,7 @@ interface Meta { contact_name?: string; confidence?: string; page_url?: string; 
 interface Row {
   id: string; hs_contact_id: string; email: string; subject: string | null; body_text: string | null;
   campaign: string | null; status: string; meta: Meta | null; ts: string; sent_at: string | null;
-  clicked: boolean; replied: boolean; bounced: boolean;
+  clicked: boolean; replied: boolean; bounced: boolean; postmark_message_id: string | null;
 }
 
 function confBadge(c?: string) {
@@ -43,7 +43,7 @@ export default async function OutreachPage({ searchParams }: { searchParams: Pro
   const hsLists = tab === "outbound" && hubspotEnabled() ? await listContactLists() : [];
   const { data } = await db
     .from("hs_sends")
-    .select("id, hs_contact_id, email, subject, body_text, campaign, status, meta, ts, sent_at, clicked, replied, bounced")
+    .select("id, hs_contact_id, email, subject, body_text, campaign, status, meta, ts, sent_at, clicked, replied, bounced, postmark_message_id")
     .order("ts", { ascending: false })
     .limit(300);
   const rows = (data ?? []) as unknown as Row[];
@@ -181,7 +181,7 @@ export default async function OutreachPage({ searchParams }: { searchParams: Pro
                 <tr key={r.id} className="border-t border-neutral-100">
                   <td className="py-1.5 font-medium text-neutral-700">{r.meta?.contact_name ?? r.email}</td>
                   <td className="text-neutral-600">{r.subject}</td>
-                  <td className="text-right text-xs text-neutral-500">{r.clicked ? "clicked " : ""}{r.replied ? "replied " : ""}{r.bounced ? "bounced " : ""}{r.sent_at ? fmtDateTime(r.sent_at) : ""}</td>
+                  <td className="text-right text-xs text-neutral-500">{r.postmark_message_id === "manual" ? "sent by you " : ""}{r.clicked ? "clicked " : ""}{r.replied ? "replied " : ""}{r.bounced ? "bounced " : ""}{r.sent_at ? fmtDateTime(r.sent_at) : ""}</td>
                 </tr>
               ))}
             </tbody>
@@ -202,10 +202,15 @@ function DraftCard({ r, editable }: { r: Row; editable?: boolean }) {
         {confBadge(r.meta?.confidence)}
         {r.meta?.kind === "deal-nurture" && <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-purple-700" title={r.meta.deal_name ?? undefined}>deal{r.meta.stage ? ` · ${r.meta.stage}` : ""}</span>}
         {r.status === "approved" && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-blue-700">approved</span>}
-        <div className="ml-auto flex gap-1">
+        <div className="ml-auto flex flex-wrap gap-1">
           {r.status === "queued" && (
             <form action={approveDraftAction}><input type="hidden" name="id" value={r.id} />
-              <PendingButton className="rounded border border-emerald-300 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="…">✓ Approve</PendingButton>
+              <PendingButton className="rounded border border-emerald-300 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="…" title="Approve — it goes out via Postmark on the next send batch">✓ Approve · send via Postmark</PendingButton>
+            </form>
+          )}
+          {(r.status === "queued" || r.status === "approved") && (
+            <form action={markSentManualAction}><input type="hidden" name="id" value={r.id} />
+              <PendingButton className="rounded border border-blue-300 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50" pendingLabel="…" title="You'll send this from your own inbox — marks it done; the system won't send it">I'll send it myself</PendingButton>
             </form>
           )}
           <form action={discardDraftAction}><input type="hidden" name="id" value={r.id} />
