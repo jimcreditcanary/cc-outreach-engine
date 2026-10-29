@@ -1,15 +1,23 @@
-// HubSpot mailer send runner — sends APPROVED hs_sends via Postmark, with the
-// same guardrails as the Supabase mailer (reused pure helpers): bounce/
-// complaint auto-pause, UK business-hours window, warm-up ramp + daily cap,
-// email-keyed suppression. On send it logs to hs_sends and mirrors a Note to
-// the HubSpot contact timeline (best-effort). Dry-run when POSTMARK token unset.
+// HubSpot mailer send runner — sends APPROVED hs_sends, with the same guardrails
+// as the Supabase mailer (reused pure helpers): bounce/complaint auto-pause, UK
+// business-hours window, warm-up ramp + daily cap, email-keyed suppression.
+//
+// Two send channels (HS_SEND_CHANNEL):
+//   • postmark (default) — send via Postmark, then mirror an email activity to
+//     the HubSpot timeline (best-effort). Dry-run when POSTMARK token unset.
+//   • hubspot — send THROUGH HubSpot's transactional Single-Send API so HubSpot
+//     applies native open/click tracking and logs the send to the timeline
+//     itself. Always live (no dry-run).
+// Both channels sign off with Jim's signature (src/lib/send/signature.ts).
 
 import { serviceClient } from "../db/client";
 import { isWithinSendingWindow } from "../send/window";
 import { parseRamp, dailyCap, daysSince } from "../send/warmup";
 import { shouldAutoPause } from "../send/autopause";
-import { sendBroadcast, isDryRun } from "../send/postmark";
+import { sendBroadcast, isDryRun, resolveSenderIdentity } from "../send/postmark";
+import { appendSignatureHtml, appendSignatureText } from "../send/signature";
 import { logEmailActivity } from "../hubspot/repo";
+import { hubspotSendEnabled, sendHubspotTransactional } from "../hubspot/transactional";
 import { tagLinks } from "./tracking";
 
 type DB = ReturnType<typeof serviceClient>;
@@ -64,7 +72,10 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export async function runHsSendBatch(db: DB, opts: { batch?: number; force?: boolean } = {}): Promise<HsSendBatchResult> {
-  const dry = isDryRun();
+  const channel: "hubspot" | "postmark" = hubspotSendEnabled() ? "hubspot" : "postmark";
+  // HubSpot sends are always live when the channel is on; Postmark keeps its
+  // token-gated dry-run (no token = simulate the whole pipeline, mutate nothing).
+  const dry = channel === "postmark" ? isDryRun() : false;
   const now = new Date();
   const nil: HsSendBatchResult = { ok: true, dry, cap: 0, sentToday: 0, attempted: 0, sent: 0, skipped: 0, failed: 0 };
 
@@ -149,21 +160,45 @@ export async function runHsSendBatch(db: DB, opts: { batch?: number; force?: boo
 
   for (const d of batch) {
     if (dry) { sent++; continue; }
+    // Tag CC links with UTM + per-contact id for GA4 attribution (both channels;
+    // HubSpot additionally wraps links for its own click tracking), then sign
+    // off with Jim's signature. Tag only the body's links — leave the
+    // signature's own links clean.
+    const tagOpts = { cid: d.hs_contact_id, campaign: d.campaign ?? undefined };
+    const html = appendSignatureHtml(tagLinks(d.body_html ?? "", tagOpts));
+    const text = appendSignatureText(tagLinks(d.body_text ?? "", tagOpts));
     try {
-      // Tag CC links with UTM + per-contact id for GA4 attribution.
-      const tagOpts = { cid: d.hs_contact_id, campaign: d.campaign ?? undefined };
-      const res = await sendBroadcast({
-        to: d.email,
-        subject: d.subject ?? "",
-        htmlBody: tagLinks(d.body_html ?? "", tagOpts),
-        textBody: tagLinks(d.body_text ?? "", tagOpts),
-        tag: `hs-${d.campaign ?? "campaign"}`,
-        ownerId: d.owner_id ?? null,
-      });
-      await db.from("hs_sends").update({ status: "sent", postmark_message_id: res.messageId, sent_at: new Date().toISOString() }).eq("id", d.id);
-      // Log as a HubSpot email activity (best-effort) so the send shows on the
-      // contact timeline and feeds "last contacted" / deal engagement.
-      await logEmailActivity(d.hs_contact_id, { subject: d.subject ?? "", text: d.body_text ?? "" });
+      if (channel === "hubspot") {
+        // Send THROUGH HubSpot (Single-Send) → native open/click tracking +
+        // timeline logging. From = the owner's assigned address; sign off with
+        // Jim's signature. sendId = the draft id (HubSpot de-dupes retries).
+        const { from, replyTo } = await resolveSenderIdentity(d.owner_id);
+        const res = await sendHubspotTransactional({
+          to: d.email,
+          from,
+          replyTo,
+          subject: d.subject ?? "",
+          html,
+          text,
+          sendId: d.id,
+        });
+        await db.from("hs_sends").update({ status: "sent", postmark_message_id: `hs:${res.messageId}`, sent_at: new Date().toISOString() }).eq("id", d.id);
+        // HubSpot logs the transactional send to the timeline itself — no
+        // separate email-activity write (that would double it up).
+      } else {
+        const res = await sendBroadcast({
+          to: d.email,
+          subject: d.subject ?? "",
+          htmlBody: html,
+          textBody: text,
+          tag: `hs-${d.campaign ?? "campaign"}`,
+          ownerId: d.owner_id ?? null,
+        });
+        await db.from("hs_sends").update({ status: "sent", postmark_message_id: res.messageId, sent_at: new Date().toISOString() }).eq("id", d.id);
+        // Log as a HubSpot email activity (best-effort) so the send shows on the
+        // contact timeline and feeds "last contacted" / deal engagement.
+        await logEmailActivity(d.hs_contact_id, { subject: d.subject ?? "", text: d.body_text ?? "" });
+      }
       sent++;
     } catch (e) {
       await db.from("hs_sends").update({ status: "failed", error: String((e as Error)?.message ?? e) }).eq("id", d.id);

@@ -37,8 +37,10 @@ export function isDryRun(): boolean {
   return !process.env.POSTMARK_SERVER_TOKEN;
 }
 
-/** Resolve the From / Reply-To pair for a given owner. */
-async function resolveSenderIdentity(ownerId: string | null | undefined): Promise<{ from: string; replyTo: string }> {
+/** Resolve the From / Reply-To pair for a given owner. Exported so non-Postmark
+ *  senders (e.g. the HubSpot transactional channel) send from the same per-user
+ *  identity — "the email I've got assigned to it". */
+export async function resolveSenderIdentity(ownerId: string | null | undefined): Promise<{ from: string; replyTo: string }> {
   const envFrom = process.env.POSTMARK_FROM ?? "Jim Fell <jim@mail.creditcanary.co.uk>";
   const envReply = process.env.POSTMARK_REPLY_TO ?? "jimfell@creditcanary.co.uk";
   if (!ownerId) return { from: envFrom, replyTo: envReply };

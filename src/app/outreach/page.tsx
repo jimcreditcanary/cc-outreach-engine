@@ -9,6 +9,7 @@ import { serviceClient } from "@/lib/db/client";
 import { hubspotEnabled } from "@/lib/hubspot/client";
 import { listContactLists } from "@/lib/hubspot/repo";
 import { isDryRun } from "@/lib/send/postmark";
+import { hubspotSendEnabled } from "@/lib/hubspot/transactional";
 import { fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
 import { PageTabs } from "@/components/PageTabs";
@@ -37,7 +38,8 @@ const isNurture = (r: Row) => r.meta?.kind === "deal-nurture";
 export default async function OutreachPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const tab = (await searchParams).tab === "nurture" ? "nurture" : "outbound";
   const db = serviceClient();
-  const dry = isDryRun();
+  const viaHubspot = hubspotSendEnabled();
+  const dry = viaHubspot ? false : isDryRun();
   const hsLists = tab === "outbound" && hubspotEnabled() ? await listContactLists() : [];
   const { data } = await db
     .from("hs_sends")
@@ -68,8 +70,8 @@ export default async function OutreachPage({ searchParams }: { searchParams: Pro
           <h1 className="text-xl font-semibold">Workflow</h1>
           <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700">HubSpot</span>
         </div>
-        <span className={`rounded px-2 py-0.5 text-xs font-medium ${dry ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
-          {dry ? "Dry run — sends are simulated" : "Live sending enabled"}
+        <span className={`rounded px-2 py-0.5 text-xs font-medium ${dry ? "bg-amber-100 text-amber-800" : viaHubspot ? "bg-orange-100 text-orange-800" : "bg-emerald-100 text-emerald-800"}`}>
+          {dry ? "Dry run — sends are simulated" : viaHubspot ? "Sending via HubSpot — opens tracked" : "Live sending enabled"}
         </span>
       </header>
 
