@@ -15,6 +15,8 @@ import { usePathname } from "next/navigation";
 import {
   Building2,
   Briefcase,
+  CalendarClock,
+  Flame,
   Mail,
   Reply,
   Telescope,
@@ -51,8 +53,10 @@ const SECTIONS: Section[] = [
   {
     header: "Pipeline",
     items: [
-      { href: "/companies", label: "CRM",   Icon: Building2 },
-      { href: "/deals",     label: "Deals", Icon: Briefcase },
+      { href: "/companies", label: "CRM",      Icon: Building2 },
+      { href: "/deals",     label: "Deals",    Icon: Briefcase },
+      { href: "/hot",       label: "Hot",      Icon: Flame },
+      { href: "/meetings",  label: "Meetings", Icon: CalendarClock },
     ],
   },
   {

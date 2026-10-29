@@ -1,153 +1,182 @@
-// VP-sales beast mode: for every live deal (open + proposal), surface ONE
-// MEDDICC gap-closing question. Jim types the answer, we re-seed MEDDICC and
-// the next gap surfaces. One-click ✨ Draft follow-up button drops a fresh
-// email into the queue for the deal's primary contact.
+// Hot — the deal re-engagement radar. Every OPEN deal in the operator's name,
+// scored against a 2-week engagement rule: anything not contacted in ≥14 days
+// (or never) is "due for a touch". One click drafts a tailored next-step nudge
+// (the same MEDDICC-appraise + draft engine as Outreach › Nurture) into the
+// review queue — nothing sends from here.
+//
+// Deals with an upcoming meeting already booked are treated as handled and
+// drop to the bottom (no nudge needed — you're seeing them soon).
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
-import { answerMeddiccGap, generateDraftForContact, reseedDealMeddicc } from "../actions";
+import { hubspotEnabled } from "@/lib/hubspot/client";
+import { listOwnerOpenDeals } from "@/lib/hubspot/repo";
+import { resolveHubspotOwner } from "@/lib/hubspot/owner";
+import { fmtDate } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
+import { draftDealNudgeAction } from "./actions";
 
 export const dynamic = "force-dynamic";
-// answerMeddiccGap + ✨ Draft follow-up run Claude (sometimes both back-to-back).
+// The ✨ Draft nudge button appraises + drafts via Claude (can take ~15s).
 export const maxDuration = 60;
 
-const MEDDICC: { key: string; label: string }[] = [
-  { key: "metrics", label: "Metrics" },
-  { key: "economic_buyer", label: "Econ. buyer" },
-  { key: "decision_criteria", label: "Criteria" },
-  { key: "decision_process", label: "Process" },
-  { key: "identified_pain", label: "Pain" },
-  { key: "champion", label: "Champion" },
-  { key: "competition", label: "Competition" },
-];
+const DUE_DAYS = 14; // the "engage every 2 weeks" rule
 
-type DealRow = Record<string, unknown> & {
-  id: string;
-  title: string | null;
-  value: number | null;
-  primary_contact_id: string | null;
-  next_best_action: string | null;
-  organisation: { id: string; name: string | null; sector: string | null; tier: number | null } | null;
-};
-
-/** next_best_action is stored as `[gap: KEY] ACTION\n\nAsk: "QUESTION"` */
-function parseNextBest(raw: string | null): { gap: string | null; action: string | null; question: string | null } {
-  if (!raw) return { gap: null, action: null, question: null };
-  const m = raw.match(/^\[gap:\s*([\w_]+)\]\s*([\s\S]+?)\n\nAsk:\s*"([\s\S]+)"\s*$/);
-  if (!m) return { gap: null, action: raw, question: null };
-  return { gap: m[1] ?? null, action: m[2]?.trim() ?? null, question: m[3]?.trim() ?? null };
+function money(amount: number | null, currency: string | null): string {
+  if (amount == null) return "—";
+  try {
+    return new Intl.NumberFormat("en-GB", { style: "currency", currency: currency || "GBP", maximumFractionDigits: 0 }).format(amount);
+  } catch {
+    return `${currency ?? ""} ${amount.toLocaleString()}`.trim();
+  }
 }
 
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
+}
+
+interface DraftRef { id: string; subject: string | null; status: string }
+
 export default async function HotPage() {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+
+  if (!hubspotEnabled()) {
+    return (
+      <main className="px-4 py-6 md:px-8">
+        <header className="mb-4 border-b border-neutral-200 pb-3">
+          <h1 className="text-xl font-semibold">Hot</h1>
+        </header>
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Deals read live from HubSpot. Set <code>HUBSPOT_TOKEN</code> to use this view.
+        </p>
+      </main>
+    );
+  }
+
   const db = serviceClient();
-  const meddiccCols = MEDDICC.map((m) => `meddicc_${m.key}_filled`).join(", ");
-  const { data } = await db
-    .from("deals")
-    .select(`id, title, value, primary_contact_id, next_best_action, ${meddiccCols}, organisation:organisations(id, name, sector, tier)`)
-    .eq("status", "open")
-    .eq("proposal_exists", true)
-    .order("value", { ascending: false, nullsFirst: false });
-  const deals = (data ?? []) as unknown as DealRow[];
+  const ownerId = await resolveHubspotOwner(db, me.id);
+
+  // The operator's open deals + any deal-nurture drafts already in flight, so a
+  // deal that's already been drafted shows "review in queue" not another button.
+  const [deals, { data: sendsData }] = await Promise.all([
+    listOwnerOpenDeals(ownerId, 100),
+    db
+      .from("hs_sends")
+      .select("id, subject, status, meta, ts")
+      .in("status", ["queued", "approved", "sent"])
+      .order("ts", { ascending: false })
+      .limit(400),
+  ]);
+
+  // Most-recent deal-nurture draft per deal id.
+  const draftByDeal = new Map<string, DraftRef>();
+  for (const row of (sendsData ?? []) as { id: string; subject: string | null; status: string; meta: Record<string, unknown> | null }[]) {
+    const meta = row.meta ?? {};
+    if (meta["kind"] !== "deal-nurture") continue;
+    const dealId = meta["deal_id"] ? String(meta["deal_id"]) : "";
+    if (!dealId || draftByDeal.has(dealId)) continue;
+    draftByDeal.set(dealId, { id: row.id, subject: row.subject, status: row.status });
+  }
+
+  const now = Date.now();
+  const hasUpcomingMeeting = (iso: string | null) => !!iso && new Date(iso).getTime() >= now;
+
+  // Split: deals with a booked meeting are "handled" (bottom); the rest are the
+  // working list, most-overdue first (never-contacted sorts to the very top).
+  const scheduled = deals.filter((d) => hasUpcomingMeeting(d.next_meeting_at));
+  const working = deals
+    .filter((d) => !hasUpcomingMeeting(d.next_meeting_at))
+    .sort((a, b) => (daysSince(b.last_contacted) ?? 1e9) - (daysSince(a.last_contacted) ?? 1e9));
+
+  const isDue = (iso: string | null) => {
+    const d = daysSince(iso);
+    return d == null || d >= DUE_DAYS;
+  };
+  const dueCount = working.filter((d) => isDue(d.last_contacted)).length;
 
   return (
     <main className="px-4 py-6 md:px-8">
-      <header className="mb-6 border-b border-neutral-200 pb-3">
-        <h1 className="text-xl font-semibold">Hot — VP sales beast mode</h1>
-        <p className="text-sm text-neutral-500">
-          One MEDDICC gap-closing question per live deal. Answer it, AI updates the deal &amp; surfaces the next move.
-          Click <span className="font-medium">✨ Draft follow-up</span> to push a fresh email into the queue for the primary contact.
-        </p>
+      <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-neutral-200 pb-3">
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-xl font-semibold">Hot</h1>
+          <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700" title="Open deals read live from HubSpot">HubSpot</span>
+        </div>
+        <span className="text-sm text-neutral-500">
+          {deals.length} open · <span className={dueCount ? "font-medium text-red-600" : ""}>{dueCount} due a touch</span>
+        </span>
       </header>
 
-      {deals.length === 0 ? (
-        <p className="text-neutral-500">
-          No live deals (open + proposal). Upload proposals on the Deals tab and MEDDICC auto-seeds — they&apos;ll appear here.
-        </p>
+      <p className="mb-5 text-sm text-neutral-500">
+        Your open deals, worst-neglected first. Anything not contacted in {DUE_DAYS}+ days is <span className="font-medium text-red-600">due</span> — hit
+        <span className="font-medium"> ✨ Draft nudge</span> to drop a tailored next-step email into the <Link href="/outreach?tab=nurture" className="text-blue-700 hover:underline">review queue</Link>. Nothing sends until you approve it.
+      </p>
+
+      {working.length === 0 && scheduled.length === 0 ? (
+        <p className="text-neutral-500">No open deals in your name right now.</p>
       ) : (
-        <ul className="space-y-5">
-          {deals.map((d) => {
-            const { gap, action, question } = parseNextBest(d.next_best_action);
-            const filledCount = MEDDICC.filter((m) => d[`meddicc_${m.key}_filled`]).length;
+        <ul className="space-y-2">
+          {working.map((d) => {
+            const days = daysSince(d.last_contacted);
+            const due = isDue(d.last_contacted);
+            const daysCls = days == null ? "bg-red-100 text-red-700" : days >= DUE_DAYS ? "bg-red-100 text-red-700" : days >= 7 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800";
+            const draft = draftByDeal.get(d.id);
             return (
-              <li key={d.id} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-                <div className="mb-2 flex flex-wrap items-baseline gap-x-2 text-sm">
-                  <Link href={`/companies/${d.organisation?.id}`} className="font-medium text-blue-700 hover:underline">{d.organisation?.name}</Link>
-                  <Link href={`/deals/${d.id}`} className="text-neutral-500 hover:underline">{d.title}</Link>
-                  {typeof d.value === "number" && <span className="text-neutral-400">£{d.value.toLocaleString()}</span>}
-                  {d.organisation?.tier && <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-800">T{d.organisation.tier}</span>}
-                  <span className="ml-auto text-xs text-neutral-400">{filledCount}/{MEDDICC.length} qualified</span>
+              <li key={d.id} className={`rounded-lg border p-3 shadow-sm ${due ? "border-red-200 bg-red-50/30" : "border-neutral-200 bg-white"}`}>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                  <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-700 hover:underline">{d.name || "(untitled deal)"}</a>
+                  {d.stage && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">{d.stage}</span>}
+                  <span className="text-neutral-500">{money(d.amount, d.currency)}</span>
+                  <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${daysCls}`}>
+                    {days == null ? "never contacted" : `${days}d ago`}
+                  </span>
+                  <span className="ml-auto">
+                    {draft ? (
+                      <Link href="/outreach?tab=nurture" className="rounded border border-purple-300 px-2 py-1 text-xs font-medium text-purple-700 hover:bg-purple-50">
+                        {draft.status === "sent" ? "nudge sent — view" : `draft ${draft.status} — review`}
+                      </Link>
+                    ) : (
+                      <form action={draftDealNudgeAction}>
+                        <input type="hidden" name="deal_id" value={d.id} />
+                        <PendingButton
+                          className="rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                          pendingLabel="Appraising + drafting…"
+                        >
+                          ✨ Draft nudge
+                        </PendingButton>
+                      </form>
+                    )}
+                  </span>
                 </div>
-
-                <div className="mb-3 flex flex-wrap gap-1">
-                  {MEDDICC.map((m) => {
-                    const filled = d[`meddicc_${m.key}_filled`] as boolean;
-                    const isGap = m.key === gap;
-                    return (
-                      <span
-                        key={m.key}
-                        className={`rounded px-1.5 py-0.5 text-xs ${
-                          isGap ? "bg-amber-200 text-amber-900 ring-1 ring-amber-400" :
-                          filled ? "bg-emerald-100 text-emerald-800" :
-                          "bg-neutral-100 text-neutral-400"
-                        }`}
-                      >
-                        {m.label}{isGap ? " ←" : ""}
-                      </span>
-                    );
-                  })}
-                </div>
-
-                {question ? (
-                  <form action={answerMeddiccGap} className="space-y-2">
-                    <input type="hidden" name="deal_id" value={d.id} />
-                    <input type="hidden" name="question" value={question} />
-                    <p className="text-sm font-medium text-amber-900">{question}</p>
-                    {action && <p className="text-xs text-neutral-500">Recommended action: {action}</p>}
-                    <textarea
-                      name="answer"
-                      rows={3}
-                      placeholder="Your answer…"
-                      required
-                      className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <PendingButton
-                        className="rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800"
-                        pendingLabel="Re-qualifying…"
-                      >
-                        Submit answer → re-qualify
-                      </PendingButton>
-                    </div>
-                  </form>
-                ) : (
-                  <form action={reseedDealMeddicc} className="text-sm">
-                    <input type="hidden" name="deal_id" value={d.id} />
-                    <p className="mb-2 text-neutral-500">No MEDDICC question yet — re-seed to generate one.</p>
-                    <PendingButton
-                      className="rounded border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
-                      pendingLabel="Seeding MEDDICC…"
-                    >
-                      Re-seed MEDDICC
-                    </PendingButton>
-                  </form>
-                )}
-
-                {d.primary_contact_id && (
-                  <form action={generateDraftForContact} className="mt-3 border-t border-neutral-100 pt-3">
-                    <input type="hidden" name="contact_id" value={d.primary_contact_id} />
-                    <PendingButton
-                      className="rounded border border-amber-300 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50"
-                      pendingLabel="Drafting follow-up…"
-                    >
-                      ✨ Draft follow-up email to primary contact
-                    </PendingButton>
-                  </form>
-                )}
+                {d.next_step && <p className="mt-1 text-xs text-neutral-500">Next step: {d.next_step}</p>}
+                {draft?.subject && <p className="mt-1 text-xs text-neutral-400 italic">↳ {draft.subject}</p>}
               </li>
             );
           })}
         </ul>
+      )}
+
+      {scheduled.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Meeting booked ({scheduled.length})</h2>
+          <ul className="space-y-2">
+            {scheduled.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-emerald-200 bg-emerald-50/30 p-3 text-sm shadow-sm">
+                <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-700 hover:underline">{d.name || "(untitled deal)"}</a>
+                {d.stage && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">{d.stage}</span>}
+                <span className="text-neutral-500">{money(d.amount, d.currency)}</span>
+                <span className="ml-auto rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800" title={d.next_meeting_name ?? undefined}>
+                  📅 {d.next_meeting_at ? fmtDate(d.next_meeting_at) : "upcoming"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </main>
   );

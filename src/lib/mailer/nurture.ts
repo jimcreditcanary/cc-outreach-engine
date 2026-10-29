@@ -98,6 +98,10 @@ export interface NurtureOpts {
   ownerId?: string | null;   // supabase operator
   limit?: number;
   cooldownDays?: number;     // skip deals contacted within this window (default 7)
+  /** Draft only these deals (e.g. the per-deal "✨ Draft nudge" button on /hot).
+   *  When set, the recent-contact cooldown is bypassed — the operator asked for
+   *  this specific deal — but the "already has a live draft" skip still applies. */
+  dealIds?: string[];
   campaign?: string;
   config?: DraftConfig;
   dry?: boolean;
@@ -115,7 +119,14 @@ export async function runDealNurture(db: DB, opts: NurtureOpts): Promise<Nurture
   const campaign = opts.campaign ?? `deal-nurture-${new Date().toISOString().slice(0, 10)}`;
   const log = opts.onProgress ?? (() => {});
 
-  const deals = await listOwnerOpenDeals(opts.ownerHubspotId, Math.max(limit * 2, 50));
+  const targeted = (opts.dealIds ?? []).filter(Boolean);
+  // When targeting specific deals, pull a wide page so the picks are present
+  // (they may not be in the top-by-amount slice); then narrow to the asked ids.
+  let deals = await listOwnerOpenDeals(opts.ownerHubspotId, targeted.length ? 200 : Math.max(limit * 2, 50));
+  if (targeted.length) {
+    const want = new Set(targeted);
+    deals = deals.filter((d) => want.has(d.id));
+  }
   const cutoff = Date.now() - cooldownDays * 86_400_000;
 
   const { data: active } = await db.from("hs_sends").select("hs_contact_id").in("status", ["queued", "approved"]);
@@ -125,8 +136,9 @@ export async function runDealNurture(db: DB, opts: NurtureOpts): Promise<Nurture
 
   for (const deal of deals) {
     if (res.processed >= limit) break;
-    // Already in comms this week → let the rep "pass" automatically.
-    if (deal.last_contacted && new Date(deal.last_contacted).getTime() > cutoff) { res.skippedRecent++; continue; }
+    // Already in comms this week → let the rep "pass" automatically. Skipped
+    // when the operator explicitly targeted this deal (dealIds).
+    if (!targeted.length && deal.last_contacted && new Date(deal.last_contacted).getTime() > cutoff) { res.skippedRecent++; continue; }
     try {
       const ids = await dealContactIds(deal.id);
       const contact = ids[0] ? await hubspotRepo.getContact(ids[0]) : null;
