@@ -18,3 +18,5 @@ inputs/**
 !inputs/**/
 !inputs/**/.gitkeep
 !inputs/**/*.template.md
+.env*
+!.env.example

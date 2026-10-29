@@ -16,6 +16,7 @@ import { resolveInboundOwner, eventMessage, leadNotificationEmail, splitLeadName
 import { recordUrl } from "../hubspot/client";
 import { hubspotRepo, findContactByEmail, findCompanyByName, createCompany, addContactNote } from "../hubspot/repo";
 import { enqueueInboundFollowup } from "../mailer/inbound";
+import { startLeadInvite, inviteEnabled } from "./invite";
 import type { ContactWrite } from "../crm/types";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -135,15 +136,32 @@ export async function captureLeadHubspot(input: LeadInput): Promise<LeadResult> 
     await sendTransactional({ to: notifyEmail, subject, textBody, htmlBody, ownerId, tag: `lead-${input.kind}` }).catch(() => {});
   }
 
-  // Enqueue a personalised inbound follow-up (fast marker; drafted by the
-  // inbound-followups job so the API stays snappy). Skipped on a duplicate burst.
-  if (!duplicate) await enqueueInboundFollowup(db, {
-    hsContactId: contactId,
-    kind: input.kind === "enquiry" ? "enquiry" : "download",
-    asset: input.asset ?? null,
-    page: input.url ?? null,
-    ownerId,
-  });
+  // Follow-up on a genuine (non-duplicate) lead. Once the instant lead-invite is
+  // live (LEAD_INVITE_ENABLED), it replaces the auto-drafted inbound follow-up:
+  // the lead gets one automatic call-invite + sandbox option, instead of a draft
+  // landing in the review queue. Until then, keep the legacy auto-draft so there's
+  // no gap. The swap is atomic on the flag.
+  if (!duplicate) {
+    if (inviteEnabled()) {
+      await startLeadInvite(db, {
+        email,
+        name,
+        company,
+        hsContactId: contactId,
+        ownerId,
+        source: input.source ?? input.kind,
+        asset: input.asset ?? null,
+      });
+    } else {
+      await enqueueInboundFollowup(db, {
+        hsContactId: contactId,
+        kind: input.kind === "enquiry" ? "enquiry" : "download",
+        asset: input.asset ?? null,
+        page: input.url ?? null,
+        ownerId,
+      });
+    }
+  }
 
   return {
     ok: true,
