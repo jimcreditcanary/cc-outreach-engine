@@ -47,6 +47,10 @@
     {
       "path": "/api/cron/lead-chases",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/onboarding-autostart",
+      "schedule": "0 7 * * *"
     }
   ]
 }

@@ -130,6 +130,13 @@ export interface CreateCaseInput {
   actor: { id?: string | null; email?: string | null };
 }
 
+/** True if ANY case exists for the deal (including cancelled) — so the
+ *  closedwon auto-create cron never recreates a case the operator cancelled. */
+export async function anyCaseForDeal(db: DB, dealId: string): Promise<boolean> {
+  const { data } = await db.from("onboarding_cases").select("id").eq("hubspot_deal_id", dealId).limit(1);
+  return (data ?? []).length > 0;
+}
+
 /** Find the live case for a deal or create one. Returns the case + whether it
  *  was just created. */
 export async function findOrCreateCaseForDeal(db: DB, input: CreateCaseInput): Promise<{ case: OnboardingCase; created: boolean }> {

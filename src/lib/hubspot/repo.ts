@@ -257,6 +257,38 @@ export async function listOwnerOpenDeals(ownerId: string, limit = 50): Promise<D
   );
 }
 
+/** Deals closed-won since `sinceMs` (epoch ms), newest first — for the
+ *  onboarding auto-create cron. Filters on hs_is_closed_won + closedate. */
+export async function listRecentlyWonDeals(sinceMs: number, limit = 50): Promise<DealRecord[]> {
+  const labels = await dealLabels();
+  const res = await search("deals", {
+    properties: [...DEAL_READ_PROPS],
+    limit: Math.min(limit, 100),
+    filterGroups: [{ filters: [
+      { propertyName: "hs_is_closed_won", operator: "EQ", value: "true" },
+      { propertyName: "closedate", operator: "GTE", value: String(Math.floor(sinceMs)) },
+    ] }],
+    sorts: [{ propertyName: "closedate", direction: "DESCENDING" }],
+  });
+  return (res.results ?? []).map((d) =>
+    fromHubspotDeal(d, labels.pipelines.get(d.properties.pipeline ?? "") ?? null, labels.stages.get(d.properties.dealstage ?? "") ?? null),
+  );
+}
+
+/** Best-effort: reflect an onboarding case's status onto the deal's
+ *  `onboarding_status` property, so it's visible in HubSpot. No-ops (returns
+ *  false) unless the property exists AND the token has deals-write scope — run
+ *  scripts/onboarding-setup-props.ts and add crm.objects.deals.write to enable. */
+export async function syncDealOnboardingStatus(dealId: string, status: string): Promise<boolean> {
+  try {
+    await hsFetch(`/crm/v3/objects/deals/${dealId}`, { method: "PATCH", body: { properties: { onboarding_status: status } } });
+    invalidateCache();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The contact ids associated with a deal (primary first, best-effort). */
 export async function dealContactIds(dealId: string): Promise<string[]> {
   try {

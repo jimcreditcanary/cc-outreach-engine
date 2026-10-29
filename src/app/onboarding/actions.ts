@@ -10,7 +10,7 @@ import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
-import { dealCompanyId } from "@/lib/hubspot/repo";
+import { dealCompanyId, syncDealOnboardingStatus } from "@/lib/hubspot/repo";
 import {
   findOrCreateCaseForDeal, getCase, updateCase, setProductGroups,
   addStakeholder, removeStakeholder, listStakeholders, logCaseEvent,
@@ -35,7 +35,10 @@ export async function startOnboardingAction(formData: FormData) {
   const { case: c, created } = await findOrCreateCaseForDeal(db, {
     dealId, hubspotCompanyId: companyId, ownerUserId: me.id, actor: actorOf(me),
   });
-  if (created) await flash("success", "Onboarding started.");
+  if (created) {
+    await syncDealOnboardingStatus(dealId, "started").catch(() => {});
+    await flash("success", "Onboarding started.");
+  }
   redirect(`/onboarding/${c.id}`);
 }
 
@@ -137,6 +140,7 @@ export async function completeInternalAction(formData: FormData) {
 
   await updateCase(db, id, { status: "internal_complete" });
   await logCaseEvent(db, id, "internal_complete", actorOf(me), { product_groups: c.product_groups });
+  if (c.hubspot_deal_id) await syncDealOnboardingStatus(c.hubspot_deal_id, "internal_complete").catch(() => {});
 
   if (c.api_sandbox_required) {
     await requestApiSandbox(db, id).catch(() => {});
@@ -154,8 +158,10 @@ export async function cancelCaseAction(formData: FormData) {
   const id = str(formData.get("case_id"));
   if (id) {
     const db = serviceClient();
+    const c = await getCase(db, id);
     await updateCase(db, id, { status: "cancelled" });
     await logCaseEvent(db, id, "cancelled", actorOf(me), {});
+    if (c?.hubspot_deal_id) await syncDealOnboardingStatus(c.hubspot_deal_id, "cancelled").catch(() => {});
     await flash("success", "Onboarding cancelled.");
   }
   redirect("/onboarding");
