@@ -15,8 +15,6 @@ import { hubspotEnabled } from "@/lib/hubspot/client";
 import { listOwnerOpenDeals } from "@/lib/hubspot/repo";
 import { resolveHubspotOwner } from "@/lib/hubspot/owner";
 import { fmtDate } from "@/lib/format/datetime";
-import { PendingButton } from "@/components/PendingButton";
-import { draftDealNudgeAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 // The ✨ Draft nudge button appraises + drafts via Claude (can take ~15s).
@@ -114,7 +112,7 @@ export default async function HotPage() {
 
       <p className="mb-5 text-sm text-neutral-500">
         Your open deals, worst-neglected first. Anything not contacted in {DUE_DAYS}+ days is <span className="font-medium text-red-600">due</span> — hit
-        <span className="font-medium"> ✨ Draft nudge</span> to drop a tailored next-step email into the <Link href="/outreach?tab=nurture" className="text-blue-700 hover:underline">review queue</Link>. Nothing sends until you approve it.
+        <span className="font-medium"> Work deal</span> to pull the latest, answer a couple of MEDDICC-style questions, and draft a tailored next-step email into the <Link href="/outreach?tab=nurture" className="text-blue-700 hover:underline">review queue</Link>. Nothing sends until you approve it.
       </p>
 
       {working.length === 0 && scheduled.length === 0 ? (
@@ -141,15 +139,12 @@ export default async function HotPage() {
                         {draft.status === "sent" ? "nudge sent — view" : `draft ${draft.status} — review`}
                       </Link>
                     ) : (
-                      <form action={draftDealNudgeAction}>
-                        <input type="hidden" name="deal_id" value={d.id} />
-                        <PendingButton
-                          className="rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                          pendingLabel="Appraising + drafting…"
-                        >
-                          ✨ Draft nudge
-                        </PendingButton>
-                      </form>
+                      <Link
+                        href={`/hot/${d.id}`}
+                        className="rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                      >
+                        Work deal →
+                      </Link>
                     )}
                   </span>
                 </div>

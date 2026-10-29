@@ -269,6 +269,54 @@ export async function dealContactIds(dealId: string): Promise<string[]> {
   }
 }
 
+/** A single deal by id, with pipeline/stage resolved to labels. For the Hot
+ *  "work this deal" view. */
+export async function getDeal(id: string): Promise<DealRecord | null> {
+  try {
+    const [obj, labels] = await Promise.all([
+      hsFetch<HsObj>(`/crm/v3/objects/deals/${id}?properties=${[...DEAL_READ_PROPS].join(",")}`, { cacheTtl: READ_TTL }),
+      dealLabels(),
+    ]);
+    return fromHubspotDeal(
+      obj,
+      labels.pipelines.get(obj.properties.pipeline ?? "") ?? null,
+      labels.stages.get(obj.properties.dealstage ?? "") ?? null,
+    );
+  } catch (e) {
+    if (isNotFound(e)) return null;
+    throw e;
+  }
+}
+
+const stripNoteHtml = (s: string): string =>
+  s.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+
+/** Recent notes on a deal (newest first, HTML stripped) — the "latest update"
+ *  context for the Hot work-this-deal flow. Best-effort: [] on any failure. */
+export async function dealRecentNotes(dealId: string, limit = 5): Promise<{ ts: string | null; body: string }[]> {
+  try {
+    const assoc = await hsFetch<{ results: { toObjectId: string | number }[] }>(
+      `/crm/v4/objects/deals/${dealId}/associations/notes?limit=${Math.min(limit * 2, 50)}`, { cacheTtl: READ_TTL },
+    );
+    const ids = (assoc.results ?? []).map((r) => String(r.toObjectId));
+    if (ids.length === 0) return [];
+    const read = await hsFetch<{ results: HsObj[] }>(
+      `/crm/v3/objects/notes/batch/read`,
+      { method: "POST", body: { properties: ["hs_note_body", "hs_timestamp"], inputs: ids.map((id) => ({ id })) }, cacheTtl: READ_TTL },
+    );
+    const notes = (read.results ?? [])
+      .map((o) => ({
+        ts: o.properties.hs_timestamp ? new Date(Number(o.properties.hs_timestamp)).toISOString() : null,
+        body: stripNoteHtml(String(o.properties.hs_note_body ?? "")),
+      }))
+      .filter((n) => n.body);
+    notes.sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""));
+    return notes.slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
 const DEAL_SORT: Record<string, string> = {
   name: "dealname", amount: "amount", close_date: "closedate",
   created_at: "createdate", last_contacted: "notes_last_contacted",
