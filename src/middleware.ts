@@ -17,6 +17,7 @@ const PUBLIC_PREFIXES = [
   "/book", // public booking pages — external visitors book meetings here
   "/enquire", // public inbound-lead landing page
   "/demo", // public branded prospect demo pages
+  "/m", // public merchant onboarding form — guarded by its unguessable token
 ];
 
 // Pages allowed inside an <iframe> — the embeddable lead/booking forms.

@@ -26,8 +26,9 @@ import {
 } from "@/lib/onboarding/productGroups";
 import {
   saveCompanyAction, saveProductsAction, addStakeholderAction, removeStakeholderAction,
-  setSandboxAction, completeInternalAction, cancelCaseAction,
+  setSandboxAction, completeInternalAction, cancelCaseAction, inviteMerchantAction,
 } from "../actions";
+import { merchantFormUrl } from "@/lib/onboarding/merchantForm";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -329,7 +330,7 @@ function FinishStep({ c, stakeholders, locked }: { c: OnboardingCase; stakeholde
 
       {alreadyComplete ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-sm text-emerald-800">
-          ✓ Internal onboarding marked <strong>{c.status.replace(/_/g, " ")}</strong>. The merchant invite + public form are Phase 3.
+          ✓ Internal onboarding marked <strong>{c.status.replace(/_/g, " ")}</strong>.
         </div>
       ) : (
         <form action={completeInternalAction}>
@@ -343,6 +344,35 @@ function FinishStep({ c, stakeholders, locked }: { c: OnboardingCase; stakeholde
           </PendingButton>
           {!ready && <p className="mt-1 text-xs text-neutral-500">Finish the company, products and stakeholders steps first.</p>}
         </form>
+      )}
+
+      {(c.status === "internal_complete" || c.status.startsWith("merchant")) && (
+        <section className="rounded-lg border border-neutral-200 bg-white p-4">
+          <h3 className="mb-1 font-semibold text-neutral-800">Merchant form</h3>
+          {c.status === "internal_complete" ? (
+            <>
+              <p className="mb-2 text-sm text-neutral-500">Invite the merchant to confirm their business details + ownership. Goes to the authorised signatory, or enter an email.</p>
+              <form action={inviteMerchantAction} className="flex flex-wrap items-end gap-2">
+                <input type="hidden" name="case_id" value={c.id} />
+                <input name="email" type="email" placeholder="merchant@company.com (optional)" className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" />
+                <PendingButton className="rounded bg-[#003566] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#002a52]" pendingLabel="Sending…">Invite merchant →</PendingButton>
+              </form>
+            </>
+          ) : (
+            <div className="text-sm">
+              <p className="text-neutral-700">Status: <strong>{c.status.replace(/_/g, " ")}</strong></p>
+              <p className="mt-1 break-all text-xs text-neutral-500">
+                Form link: <a href={merchantFormUrl(c.merchant_form_token)} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">{merchantFormUrl(c.merchant_form_token)}</a>
+              </p>
+              {(c.status === "merchant_invited" || c.status === "merchant_in_progress") && (
+                <form action={inviteMerchantAction} className="mt-2">
+                  <input type="hidden" name="case_id" value={c.id} />
+                  <PendingButton className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100" pendingLabel="…">Resend invite</PendingButton>
+                </form>
+              )}
+            </div>
+          )}
+        </section>
       )}
 
       {!locked && (

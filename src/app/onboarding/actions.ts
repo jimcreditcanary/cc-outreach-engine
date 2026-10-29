@@ -10,13 +10,13 @@ import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
-import { dealCompanyId, syncDealOnboardingStatus } from "@/lib/hubspot/repo";
+import { dealCompanyId, syncDealOnboardingStatus, hubspotRepo } from "@/lib/hubspot/repo";
 import {
   findOrCreateCaseForDeal, getCase, updateCase, setProductGroups,
   addStakeholder, removeStakeholder, listStakeholders, logCaseEvent,
   readyToComplete, isOnboardingRole,
 } from "@/lib/onboarding/cases";
-import { requestApiSandbox } from "@/lib/onboarding/notify";
+import { requestApiSandbox, sendMerchantInvite } from "@/lib/onboarding/notify";
 import { enrichCompanyForCase } from "@/lib/onboarding/enrich";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
@@ -149,6 +149,48 @@ export async function completeInternalAction(formData: FormData) {
   }
 
   await flash("success", "Internal onboarding complete. Merchant invite comes in Phase 3.");
+  revalidatePath(`/onboarding/${id}`);
+  redirect(`/onboarding/${id}`);
+}
+
+/** Phase 3 — invite the merchant to complete the public onboarding form. */
+export async function inviteMerchantAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const emailOverride = str(formData.get("email")).toLowerCase();
+  const db = serviceClient();
+  const c = await getCase(db, id);
+  if (!c) { await flash("error", "Case not found."); return redirect("/onboarding"); }
+
+  // Merchant email: explicit override, else the authorised-signatory
+  // stakeholder's contact email, else the first stakeholder's.
+  let toEmail = emailOverride;
+  let firstName: string | null = null;
+  if (!toEmail) {
+    const stakeholders = await listStakeholders(db, id);
+    const sig = stakeholders.find((s) => s.role === "authorised_signatory") ?? stakeholders[0];
+    if (sig) {
+      const ct = await hubspotRepo.getContact(sig.hubspot_contact_id).catch(() => null);
+      toEmail = (ct?.email ?? "").toLowerCase();
+      firstName = ct?.full_name ? ct.full_name.split(/\s+/)[0]! : null;
+    }
+  }
+  if (!toEmail) {
+    await flash("error", "No merchant email — add an authorised signatory (step 3) or enter an email.");
+    return redirect(`/onboarding/${id}?step=finish`);
+  }
+
+  try {
+    await sendMerchantInvite(db, { token: c.merchant_form_token, toEmail, firstName });
+    await updateCase(db, id, { status: "merchant_invited" });
+    await logCaseEvent(db, id, "merchant_invited", actorOf(me), { to: toEmail });
+    if (c.hubspot_deal_id) await syncDealOnboardingStatus(c.hubspot_deal_id, "merchant_invited").catch(() => {});
+    await flash("success", `Merchant invite sent to ${toEmail}.`);
+  } catch (e) {
+    await flash("error", `Invite failed: ${(e as Error).message}`);
+  }
   revalidatePath(`/onboarding/${id}`);
   redirect(`/onboarding/${id}`);
 }
