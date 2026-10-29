@@ -73,10 +73,64 @@ export interface ChCompanyProfile {
   raw: unknown;
 }
 
+export interface ChDob { month?: number; year?: number }
+
+export interface ChOfficer {
+  /** links.self — stable appointment id, our dedupe key. */
+  appointment_id: string | null;
+  name: string;
+  officer_role: string | null;
+  appointed_on: string | null;
+  /** Null for a current officer. */
+  resigned_on: string | null;
+  nationality: string | null;
+  occupation: string | null;
+  country_of_residence: string | null;
+  date_of_birth: ChDob | null;
+  address: ChAddress | null;
+  raw: unknown;
+}
+
+export interface ChPsc {
+  /** individual-…/corporate-entity-…/legal-person-… or a "…-statement". */
+  kind: string;
+  name: string | null;
+  natures_of_control: string[];
+  notified_on: string | null;
+  ceased_on: string | null;
+  nationality: string | null;
+  country_of_residence: string | null;
+  date_of_birth: ChDob | null;
+  address: ChAddress | null;
+  /** Corporate PSC registration detail (company number, place registered, …). */
+  identification: Record<string, unknown> | null;
+  raw: unknown;
+}
+
+export interface ChChargesSummary { total: number; outstanding: number }
+export interface ChInsolvencySummary { cases: number; raw: unknown }
+
+export interface ChDisqualifiedMatch {
+  name: string;
+  /** links.self of the disqualified-officer record (for human verification). */
+  officer_id: string | null;
+  description: string | null;
+  raw: unknown;
+}
+
 export interface CompaniesHouseClient {
   searchCompanies(query: string, limit?: number): Promise<ChCompanySearchResult[]>;
   /** Null when CH has no company with that number (404). */
   getProfile(companyNumber: string): Promise<ChCompanyProfile | null>;
+  /** All officers (caller filters current + resigned ≤12mo). */
+  getOfficers(companyNumber: string): Promise<ChOfficer[]>;
+  /** Persons with significant control (direct — caller recurses corporates). */
+  getPscs(companyNumber: string): Promise<ChPsc[]>;
+  getCharges(companyNumber: string): Promise<ChChargesSummary>;
+  /** Null when CH has no insolvency record (404). */
+  getInsolvency(companyNumber: string): Promise<ChInsolvencySummary | null>;
+  /** Fuzzy name search of the disqualified-officers register. */
+  searchDisqualified(name: string): Promise<ChDisqualifiedMatch[]>;
 }
 
 // ─── live client ──────────────────────────────────────────────────────────────
@@ -149,6 +203,44 @@ function mapProfile(j: Record<string, unknown>): ChCompanyProfile {
   };
 }
 
+function mapDob(v: unknown): ChDob | null {
+  const d = v as { month?: number; year?: number } | undefined;
+  return d && (d.month || d.year) ? { month: d.month, year: d.year } : null;
+}
+
+function mapOfficer(it: Record<string, unknown>): ChOfficer {
+  const links = it.links as { self?: string } | undefined;
+  return {
+    appointment_id: links?.self ?? null,
+    name: String(it.name ?? ""),
+    officer_role: (it.officer_role as string) ?? null,
+    appointed_on: (it.appointed_on as string) ?? null,
+    resigned_on: (it.resigned_on as string) ?? null,
+    nationality: (it.nationality as string) ?? null,
+    occupation: (it.occupation as string) ?? null,
+    country_of_residence: (it.country_of_residence as string) ?? null,
+    date_of_birth: mapDob(it.date_of_birth),
+    address: (it.address as ChAddress) ?? null,
+    raw: it,
+  };
+}
+
+function mapPsc(it: Record<string, unknown>): ChPsc {
+  return {
+    kind: String(it.kind ?? ""),
+    name: (it.name as string) ?? null,
+    natures_of_control: Array.isArray(it.natures_of_control) ? (it.natures_of_control as string[]) : [],
+    notified_on: (it.notified_on as string) ?? null,
+    ceased_on: (it.ceased_on as string) ?? null,
+    nationality: (it.nationality as string) ?? null,
+    country_of_residence: (it.country_of_residence as string) ?? null,
+    date_of_birth: mapDob(it.date_of_birth),
+    address: (it.address as ChAddress) ?? null,
+    identification: (it.identification as Record<string, unknown>) ?? null,
+    raw: it,
+  };
+}
+
 function liveClient(key: string): CompaniesHouseClient {
   return {
     async searchCompanies(query, limit = 20) {
@@ -169,6 +261,47 @@ function liveClient(key: string): CompaniesHouseClient {
       if (res.status === 404) return null;
       if (!res.ok) throw new CompaniesHouseError(`profile failed: ${res.status}`, res.status);
       return mapProfile((await res.json()) as Record<string, unknown>);
+    },
+    async getOfficers(companyNumber) {
+      const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/officers?items_per_page=100`, key);
+      if (res.status === 404) return [];
+      if (!res.ok) throw new CompaniesHouseError(`officers failed: ${res.status}`, res.status);
+      const j = (await res.json()) as { items?: Record<string, unknown>[] };
+      return (j.items ?? []).map(mapOfficer);
+    },
+    async getPscs(companyNumber) {
+      const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/persons-with-significant-control?items_per_page=100`, key);
+      if (res.status === 404) return [];
+      if (!res.ok) throw new CompaniesHouseError(`psc failed: ${res.status}`, res.status);
+      const j = (await res.json()) as { items?: Record<string, unknown>[] };
+      return (j.items ?? []).map(mapPsc);
+    },
+    async getCharges(companyNumber) {
+      const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/charges?items_per_page=100`, key);
+      if (res.status === 404) return { total: 0, outstanding: 0 };
+      if (!res.ok) throw new CompaniesHouseError(`charges failed: ${res.status}`, res.status);
+      const j = (await res.json()) as { total_count?: number; items?: { status?: string }[] };
+      const items = j.items ?? [];
+      return { total: j.total_count ?? items.length, outstanding: items.filter((i) => i.status === "outstanding").length };
+    },
+    async getInsolvency(companyNumber) {
+      const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/insolvency`, key);
+      if (res.status === 404) return null;
+      if (!res.ok) throw new CompaniesHouseError(`insolvency failed: ${res.status}`, res.status);
+      const j = (await res.json()) as { cases?: unknown[] };
+      return { cases: Array.isArray(j.cases) ? j.cases.length : 0, raw: j };
+    },
+    async searchDisqualified(name) {
+      // Best-effort — never fail the enrichment on a register search.
+      const res = await chFetch(`/search/disqualified-officers?q=${encodeURIComponent(name)}&items_per_page=20`, key);
+      if (!res.ok) return [];
+      const j = (await res.json()) as { items?: Record<string, unknown>[] };
+      return (j.items ?? []).map((it) => ({
+        name: String(it.title ?? name),
+        officer_id: ((it.links as { self?: string } | undefined)?.self) ?? null,
+        description: (it.description as string) ?? null,
+        raw: it,
+      }));
     },
   };
 }
@@ -226,6 +359,39 @@ function mockClient(): CompaniesHouseClient {
       // Dev convenience: return the fixture for any number so the wizard runs.
       return { ...MOCK_PROFILE, company_number: companyNumber.trim() || MOCK_PROFILE.company_number };
     },
+    async getOfficers() {
+      return [
+        {
+          appointment_id: "/officers/mock-active/appointments", name: "SMITH, Jane",
+          officer_role: "director", appointed_on: "2015-04-01", resigned_on: null,
+          nationality: "British", occupation: "Director", country_of_residence: "England",
+          date_of_birth: { month: 6, year: 1980 },
+          address: { address_line_1: "One Canada Square", locality: "London", postal_code: "E14 5AB", country: "England" },
+          raw: { mock: true },
+        },
+        {
+          appointment_id: "/officers/mock-resigned/appointments", name: "JONES, Robert",
+          officer_role: "director", appointed_on: "2016-01-10", resigned_on: "2026-06-30",
+          nationality: "British", occupation: "Director", country_of_residence: "England",
+          date_of_birth: { month: 3, year: 1975 }, address: null, raw: { mock: true },
+        },
+      ];
+    },
+    async getPscs() {
+      return [
+        {
+          kind: "individual-person-with-significant-control", name: "SMITH, Jane",
+          natures_of_control: ["ownership-of-shares-75-to-100-percent", "voting-rights-75-to-100-percent"],
+          notified_on: "2016-04-06", ceased_on: null, nationality: "British",
+          country_of_residence: "England", date_of_birth: { month: 6, year: 1980 },
+          address: { locality: "London", postal_code: "E14 5AB", country: "England" },
+          identification: null, raw: { mock: true },
+        },
+      ];
+    },
+    async getCharges() { return { total: 0, outstanding: 0 }; },
+    async getInsolvency() { return null; },
+    async searchDisqualified() { return []; },
   };
 }
 

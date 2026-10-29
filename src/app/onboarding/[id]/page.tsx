@@ -134,9 +134,10 @@ async function CompanyStep({ c, deal, q }: { c: OnboardingCase; deal: { name: st
       <p className="mb-3 text-sm text-neutral-500">Search Companies House and pick the legal entity behind this deal. Deep enrichment (officers, PSCs, accounts) comes in the next phase.</p>
 
       {c.company_number && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-sm">
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-sm">
           <span className="text-emerald-800">✓ Confirmed: company number <strong>{c.company_number}</strong></span>
-          <Link href={`/onboarding/${c.id}?step=products`} className="ml-auto text-blue-700 hover:underline">Next: products →</Link>
+          <Link href={`/onboarding/${c.id}/enrichment`} className="ml-auto text-blue-700 hover:underline">Companies House enrichment →</Link>
+          <Link href={`/onboarding/${c.id}?step=products`} className="text-blue-700 hover:underline">Next: products →</Link>
         </div>
       )}
 

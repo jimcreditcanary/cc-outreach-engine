@@ -17,6 +17,7 @@ import {
   readyToComplete, isOnboardingRole,
 } from "@/lib/onboarding/cases";
 import { requestApiSandbox } from "@/lib/onboarding/notify";
+import { enrichCompanyForCase } from "@/lib/onboarding/enrich";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 const actorOf = (u: { id: string; email?: string | null } | null) => ({ id: u?.id ?? null, email: u?.email ?? null });
@@ -150,6 +151,27 @@ export async function completeInternalAction(formData: FormData) {
   await flash("success", "Internal onboarding complete. Merchant invite comes in Phase 3.");
   revalidatePath(`/onboarding/${id}`);
   redirect(`/onboarding/${id}`);
+}
+
+/** Phase 2 — run (or re-run) Companies House deep enrichment for a case. */
+export async function enrichCaseAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  try {
+    const r = await enrichCompanyForCase(db, id, actorOf(me));
+    await flash(
+      "success",
+      `Enriched: ${r.officers} officer(s), ${r.ubos} PSC/UBO node(s).` +
+        (r.disqualifiedFound ? " ⚠ Possible disqualified-officer match — verify." : ""),
+    );
+  } catch (e) {
+    await flash("error", `Enrichment failed: ${(e as Error).message}`);
+  }
+  revalidatePath(`/onboarding/${id}/enrichment`);
+  redirect(`/onboarding/${id}/enrichment`);
 }
 
 export async function cancelCaseAction(formData: FormData) {
