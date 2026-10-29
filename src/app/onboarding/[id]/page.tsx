@@ -364,6 +364,7 @@ function FinishStep({ c, stakeholders, locked }: { c: OnboardingCase; stakeholde
               <p className="mt-1 break-all text-xs text-neutral-500">
                 Form link: <a href={merchantFormUrl(c.merchant_form_token)} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">{merchantFormUrl(c.merchant_form_token)}</a>
               </p>
+              <Link href={`/onboarding/${c.id}/review`} className="mt-1 inline-block text-blue-700 hover:underline">Review submission →</Link>
               {(c.status === "merchant_invited" || c.status === "merchant_in_progress") && (
                 <form action={inviteMerchantAction} className="mt-2">
                   <input type="hidden" name="case_id" value={c.id} />

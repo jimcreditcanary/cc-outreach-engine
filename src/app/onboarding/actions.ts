@@ -18,6 +18,8 @@ import {
 } from "@/lib/onboarding/cases";
 import { requestApiSandbox, sendMerchantInvite } from "@/lib/onboarding/notify";
 import { enrichCompanyForCase } from "@/lib/onboarding/enrich";
+import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
+import { extractUpload } from "@/lib/onboarding/uploads";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 const actorOf = (u: { id: string; email?: string | null } | null) => ({ id: u?.id ?? null, email: u?.email ?? null });
@@ -214,6 +216,36 @@ export async function enrichCaseAction(formData: FormData) {
   }
   revalidatePath(`/onboarding/${id}/enrichment`);
   redirect(`/onboarding/${id}/enrichment`);
+}
+
+/** Phase 3c — fetch + AI-assess the merchant's privacy policy. */
+export async function assessPrivacyPolicyAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  try {
+    const r = await assessPrivacyPolicy(db, id, actorOf(me));
+    await flash("success", `Privacy policy assessed: ${r.overall.replace(/_/g, " ")}.`);
+  } catch (e) {
+    await flash("error", `Assessment failed: ${(e as Error).message}`);
+  }
+  revalidatePath(`/onboarding/${id}/review`);
+  redirect(`/onboarding/${id}/review`);
+}
+
+/** Phase 3c — AI-extract one uploaded document. */
+export async function extractUploadAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  const uploadId = str(formData.get("upload_id"));
+  if (id && uploadId) {
+    await extractUpload(serviceClient(), uploadId).catch(() => {});
+    revalidatePath(`/onboarding/${id}/review`);
+  }
+  redirect(`/onboarding/${id}/review`);
 }
 
 export async function cancelCaseAction(formData: FormData) {

@@ -8,7 +8,8 @@ import type { ReactNode } from "react";
 import { serviceClient } from "@/lib/db/client";
 import { getCaseByToken, loadMerchantForm, markFormOpened } from "@/lib/onboarding/merchantForm";
 import { loadEnrichment } from "@/lib/onboarding/enrich";
-import { requiresFcaFrn, requiresPayments, requiresDirectDebit } from "@/lib/onboarding/productGroups";
+import { requiresFcaFrn, requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
+import { loadUploads } from "@/lib/onboarding/uploads";
 import { PendingButton } from "@/components/PendingButton";
 import { AddressLookup } from "@/components/AddressLookup";
 import { submitMerchantFormAction } from "./actions";
@@ -77,6 +78,8 @@ export default async function MerchantFormPage({
   const needsPrincipalOffice = c.product_groups.includes("tu_credit");
   const showPayments = requiresPayments(c.product_groups);
   const showDD = requiresDirectDebit(c.product_groups);
+  const showInfosec = requiresTuSection(c.product_groups);
+  const uploads = showInfosec ? await loadUploads(db, c.id) : [];
   const b = form?.business ?? {};
   const comp = form?.compliance ?? {};
   const sig = form?.signatory ?? {};
@@ -245,6 +248,18 @@ export default async function MerchantFormPage({
             })}
           </div>
         </fieldset>
+
+        {/* Information security */}
+        {showInfosec && (
+          <fieldset className="rounded-lg border border-neutral-200 bg-white p-4">
+            <legend className="px-1 text-sm font-semibold text-[#003566]">Information security</legend>
+            <p className="mt-1 text-sm text-neutral-500">
+              Upload any security certifications, policies or penetration-test summaries (PDF, Word, or text). Optional, but it speeds up review.
+              {uploads.length > 0 && ` ${uploads.length} already uploaded.`}
+            </p>
+            <input type="file" name="infosec_files" multiple accept=".pdf,.doc,.docx,.txt,.md" className="mt-2 block w-full text-sm text-neutral-700 file:mr-3 file:rounded file:border-0 file:bg-[#003566] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-[#002a52]" />
+          </fieldset>
+        )}
 
         <PendingButton className="rounded bg-[#003566] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#002a52]" pendingLabel="Submitting…">
           Submit onboarding details

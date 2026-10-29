@@ -7,6 +7,7 @@
 import { redirect } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { getCaseByToken, saveMerchantForm, type MerchantFormData, type UboKycInput, type BankAccountInput } from "@/lib/onboarding/merchantForm";
+import { saveUpload } from "@/lib/onboarding/uploads";
 import { notifyMerchantSubmitted } from "@/lib/onboarding/notify";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
@@ -92,6 +93,15 @@ export async function submitMerchantFormAction(formData: FormData) {
   const data: MerchantFormData = { business, compliance, signatory, uboKyc, bankAccounts, directDebit };
   try {
     await saveMerchantForm(db, c.id, data);
+    // Infosec uploads — best-effort; never fail the submit on an upload error.
+    const files = formData.getAll("infosec_files").filter((f): f is File => f instanceof File && f.size > 0);
+    for (const f of files.slice(0, 10)) {
+      if (f.size > 20 * 1024 * 1024) continue;
+      try {
+        const bytes = new Uint8Array(await f.arrayBuffer());
+        await saveUpload(db, c.id, { name: f.name, type: f.type, bytes });
+      } catch { /* best-effort */ }
+    }
     await notifyMerchantSubmitted(db, c.id).catch(() => {});
   } catch {
     redirect(`${back}?error=save`);
