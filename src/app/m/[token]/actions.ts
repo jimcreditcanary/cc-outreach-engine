@@ -6,7 +6,7 @@
 
 import { redirect } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { getCaseByToken, saveMerchantForm, type MerchantFormData, type UboKycInput } from "@/lib/onboarding/merchantForm";
+import { getCaseByToken, saveMerchantForm, type MerchantFormData, type UboKycInput, type BankAccountInput } from "@/lib/onboarding/merchantForm";
 import { notifyMerchantSubmitted } from "@/lib/onboarding/notify";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
@@ -62,7 +62,34 @@ export async function submitMerchantFormAction(formData: FormData) {
     });
   }
 
-  const data: MerchantFormData = { business, compliance, signatory, uboKyc };
+  // Bank accounts (only included when the merchant filled an account number).
+  const bankAccounts: BankAccountInput[] = [];
+  const settlement: BankAccountInput = {
+    purpose: "settlement",
+    account_name: str(formData.get("settle_account_name")),
+    bank_name: str(formData.get("settle_bank_name")),
+    sort_code: str(formData.get("settle_sort_code")),
+    account_number: str(formData.get("settle_account_number")),
+  };
+  if (settlement.account_number) bankAccounts.push(settlement);
+  const ddAccount: BankAccountInput = {
+    purpose: "direct_debit",
+    account_name: str(formData.get("dd_account_name")),
+    bank_name: str(formData.get("dd_bank_name")),
+    sort_code: str(formData.get("dd_sort_code")),
+    account_number: str(formData.get("dd_account_number")),
+  };
+  if (ddAccount.account_number) bankAccounts.push(ddAccount);
+
+  const directDebit = {
+    collects_dd: str(formData.get("dd_collects")),
+    existing_sun: str(formData.get("dd_existing_sun")),
+    payment_description: str(formData.get("dd_payment_description")),
+    expected_monthly_volume: str(formData.get("dd_expected_volume")),
+    average_value: str(formData.get("dd_average_value")),
+  };
+
+  const data: MerchantFormData = { business, compliance, signatory, uboKyc, bankAccounts, directDebit };
   try {
     await saveMerchantForm(db, c.id, data);
     await notifyMerchantSubmitted(db, c.id).catch(() => {});

@@ -8,8 +8,9 @@ import type { ReactNode } from "react";
 import { serviceClient } from "@/lib/db/client";
 import { getCaseByToken, loadMerchantForm, markFormOpened } from "@/lib/onboarding/merchantForm";
 import { loadEnrichment } from "@/lib/onboarding/enrich";
-import { requiresFcaFrn } from "@/lib/onboarding/productGroups";
+import { requiresFcaFrn, requiresPayments, requiresDirectDebit } from "@/lib/onboarding/productGroups";
 import { PendingButton } from "@/components/PendingButton";
+import { AddressLookup } from "@/components/AddressLookup";
 import { submitMerchantFormAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,7 @@ export default async function MerchantFormPage({
   }
 
   await markFormOpened(db, c.id, c.status);
-  const [enrichment, { form, kyc }] = await Promise.all([
+  const [enrichment, { form, kyc, bankAccounts, directDebit }] = await Promise.all([
     loadEnrichment(db, c.id),
     loadMerchantForm(db, c.id),
   ]);
@@ -74,9 +75,14 @@ export default async function MerchantFormPage({
   const kycByUbo = new Map(kyc.map((k) => [k.ubo_id ?? k.ubo_name, k]));
   const fcaRequired = requiresFcaFrn(c.product_groups);
   const needsPrincipalOffice = c.product_groups.includes("tu_credit");
+  const showPayments = requiresPayments(c.product_groups);
+  const showDD = requiresDirectDebit(c.product_groups);
   const b = form?.business ?? {};
   const comp = form?.compliance ?? {};
   const sig = form?.signatory ?? {};
+  const dd = directDebit ?? {};
+  const settleTail = bankAccounts.find((a) => a.purpose === "settlement")?.account_tail;
+  const ddTail = bankAccounts.find((a) => a.purpose === "direct_debit")?.account_tail;
 
   return (
     <Shell>
@@ -149,6 +155,50 @@ export default async function MerchantFormPage({
           </div>
         </fieldset>
 
+        {/* Settlement account */}
+        {showPayments && (
+          <fieldset className="rounded-lg border border-neutral-200 bg-white p-4">
+            <legend className="px-1 text-sm font-semibold text-[#003566]">Settlement account</legend>
+            <p className="mt-1 text-xs text-neutral-500">
+              The business bank account we&apos;ll settle funds to. Stored encrypted and verified with Confirmation of Payee.
+              {settleTail ? ` On file: ••••${settleTail} — re-enter to change.` : ""}
+            </p>
+            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div><label htmlFor="settle_account_name" className={lbl}>Account name</label><input id="settle_account_name" name="settle_account_name" className={field} /></div>
+              <div><label htmlFor="settle_bank_name" className={lbl}>Bank</label><input id="settle_bank_name" name="settle_bank_name" className={field} /></div>
+              <div><label htmlFor="settle_sort_code" className={lbl}>Sort code</label><input id="settle_sort_code" name="settle_sort_code" inputMode="numeric" placeholder="00-00-00" className={field} /></div>
+              <div><label htmlFor="settle_account_number" className={lbl}>Account number</label><input id="settle_account_number" name="settle_account_number" inputMode="numeric" placeholder="8 digits" className={field} /></div>
+            </div>
+          </fieldset>
+        )}
+
+        {/* Direct Debit */}
+        {showDD && (
+          <fieldset className="rounded-lg border border-neutral-200 bg-white p-4">
+            <legend className="px-1 text-sm font-semibold text-[#003566]">Direct Debit</legend>
+            <p className="mt-1 text-xs text-neutral-500">Details for collecting Direct Debits through Credit Canary.</p>
+            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="dd_collects" className={lbl}>Do you currently collect Direct Debits?</label>
+                <select id="dd_collects" name="dd_collects" defaultValue={dd.collects_dd ?? ""} className={field}>
+                  <option value="">—</option><option value="yes">Yes</option><option value="no">No</option>
+                </select>
+              </div>
+              <div><label htmlFor="dd_existing_sun" className={lbl}>Existing Service User Number (if any)</label><input id="dd_existing_sun" name="dd_existing_sun" defaultValue={dd.existing_sun ?? ""} className={field} /></div>
+              <div className="sm:col-span-2"><label htmlFor="dd_payment_description" className={lbl}>What are you collecting payments for?</label><input id="dd_payment_description" name="dd_payment_description" defaultValue={dd.payment_description ?? ""} className={field} /></div>
+              <div><label htmlFor="dd_expected_volume" className={lbl}>Expected monthly volume</label><input id="dd_expected_volume" name="dd_expected_volume" defaultValue={dd.expected_monthly_volume ?? ""} className={field} /></div>
+              <div><label htmlFor="dd_average_value" className={lbl}>Average collection value</label><input id="dd_average_value" name="dd_average_value" defaultValue={dd.average_value ?? ""} className={field} /></div>
+            </div>
+            <p className="mt-3 text-sm font-medium text-neutral-700">Collection bank account{ddTail ? ` (on file: ••••${ddTail})` : ""}</p>
+            <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div><label htmlFor="dd_account_name" className={lbl}>Account name</label><input id="dd_account_name" name="dd_account_name" className={field} /></div>
+              <div><label htmlFor="dd_bank_name" className={lbl}>Bank</label><input id="dd_bank_name" name="dd_bank_name" className={field} /></div>
+              <div><label htmlFor="dd_sort_code" className={lbl}>Sort code</label><input id="dd_sort_code" name="dd_sort_code" inputMode="numeric" placeholder="00-00-00" className={field} /></div>
+              <div><label htmlFor="dd_account_number" className={lbl}>Account number</label><input id="dd_account_number" name="dd_account_number" inputMode="numeric" placeholder="8 digits" className={field} /></div>
+            </div>
+          </fieldset>
+        )}
+
         {/* Beneficial owners */}
         <fieldset className="rounded-lg border border-neutral-200 bg-white p-4">
           <legend className="px-1 text-sm font-semibold text-[#003566]">Beneficial owners</legend>
@@ -172,13 +222,11 @@ export default async function MerchantFormPage({
                   </div>
                   <div className="mt-3">
                     <span className={lbl}>Residential address</span>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <input name={`ubo_addr1_${i}`} defaultValue={addr.line1 ?? ""} placeholder="Address line 1" className={field} />
-                      <input name={`ubo_addr2_${i}`} defaultValue={addr.line2 ?? ""} placeholder="Address line 2" className={field} />
-                      <input name={`ubo_city_${i}`} defaultValue={addr.city ?? ""} placeholder="Town / city" className={field} />
-                      <input name={`ubo_postcode_${i}`} defaultValue={addr.postcode ?? ""} placeholder="Postcode" className={field} />
-                      <input name={`ubo_country_${i}`} defaultValue={addr.country ?? ""} placeholder="Country" className={field} />
-                    </div>
+                    <AddressLookup
+                      line1Name={`ubo_addr1_${i}`} line2Name={`ubo_addr2_${i}`}
+                      cityName={`ubo_city_${i}`} postcodeName={`ubo_postcode_${i}`} countryName={`ubo_country_${i}`}
+                      defaults={{ line1: addr.line1, line2: addr.line2, city: addr.city, postcode: addr.postcode, country: addr.country }}
+                    />
                   </div>
                   <div className="mt-3">
                     <span className={lbl}>Politically exposed person (PEP)?</span>

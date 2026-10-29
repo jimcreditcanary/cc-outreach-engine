@@ -5,6 +5,8 @@
 
 import type { serviceClient } from "../db/client";
 import { logCaseEvent } from "./cases";
+import { encryptField, maskTail, encryptionConfigured } from "./crypto";
+import { getCop } from "../integrations/cop";
 
 type DB = ReturnType<typeof serviceClient>;
 
@@ -44,11 +46,40 @@ export interface UboKycInput {
   consent_given: boolean;
 }
 
+export type BankPurpose = "settlement" | "disbursal" | "direct_debit";
+export interface BankAccountInput {
+  purpose: BankPurpose;
+  account_name?: string;
+  bank_name?: string;
+  sort_code?: string;        // plaintext in → encrypted at rest
+  account_number?: string;   // plaintext in → encrypted at rest
+}
+export interface DirectDebitDetails {
+  collects_dd?: string;
+  existing_sun?: string;
+  payment_description?: string;
+  expected_monthly_volume?: string;
+  average_value?: string;
+}
+
 export interface MerchantFormData {
   business: MerchantBusiness;
   compliance: MerchantCompliance;
   signatory: MerchantSignatory;
   uboKyc: UboKycInput[];
+  bankAccounts?: BankAccountInput[];
+  directDebit?: DirectDebitDetails;
+}
+
+/** Safe (no plaintext numbers) bank-account view for internal display. */
+export interface BankAccountSafe {
+  id: string;
+  purpose: BankPurpose;
+  account_name: string | null;
+  bank_name: string | null;
+  account_tail: string | null;
+  cop_result: string | null;
+  cop_matched_name: string | null;
 }
 
 export interface StoredMerchantForm {
@@ -72,20 +103,30 @@ export async function getCaseByToken(db: DB, token: string): Promise<TokenCase |
   return (data as TokenCase | null) ?? null;
 }
 
-/** Load a case's saved merchant form + per-UBO KYC. Degrades to empty (not
- *  throws) before migration 051 is run. */
-export async function loadMerchantForm(db: DB, caseId: string): Promise<{ form: StoredMerchantForm | null; kyc: StoredUboKyc[] }> {
+/** Load a case's saved merchant form + per-UBO KYC + (safe) bank accounts +
+ *  DD details. Degrades to empty (not throws) before the migrations are run.
+ *  Never returns plaintext account numbers — only the masked tail. */
+export async function loadMerchantForm(db: DB, caseId: string): Promise<{
+  form: StoredMerchantForm | null;
+  kyc: StoredUboKyc[];
+  bankAccounts: BankAccountSafe[];
+  directDebit: DirectDebitDetails | null;
+}> {
   try {
-    const [f, k] = await Promise.all([
+    const [f, k, banks, dd] = await Promise.all([
       db.from("onboarding_merchant_form").select("business, compliance, signatory, status, submitted_at").eq("case_id", caseId).maybeSingle(),
       db.from("onboarding_ubo_kyc").select("id, ubo_id, ubo_name, exact_ownership_percent, residential_address, is_pep, pep_detail, consent_given").eq("case_id", caseId),
+      db.from("onboarding_bank_accounts").select("id, purpose, account_name, bank_name, account_tail, cop_result, cop_matched_name").eq("case_id", caseId),
+      db.from("onboarding_direct_debit").select("details").eq("case_id", caseId).maybeSingle(),
     ]);
     return {
       form: (f.data as StoredMerchantForm | null) ?? null,
       kyc: (k.data as StoredUboKyc[] | null) ?? [],
+      bankAccounts: (banks.data as BankAccountSafe[] | null) ?? [],
+      directDebit: ((dd.data as { details: DirectDebitDetails } | null)?.details) ?? null,
     };
   } catch {
-    return { form: null, kyc: [] };
+    return { form: null, kyc: [], bankAccounts: [], directDebit: null };
   }
 }
 
@@ -117,8 +158,49 @@ export async function saveMerchantForm(db: DB, caseId: string, data: MerchantFor
     if (ins.error) throw ins.error;
   }
 
+  // Bank accounts — sort code + number encrypted at rest; CoP per account
+  // (best-effort → "unavailable" if the PSP isn't wired yet). Replace on resubmit.
+  const accounts = (data.bankAccounts ?? []).filter((a) => (a.account_number ?? "").trim());
+  await db.from("onboarding_bank_accounts").delete().eq("case_id", caseId);
+  if (accounts.length) {
+    if (!encryptionConfigured()) throw new Error("Payment capture isn't configured yet — please contact us to complete this.");
+    const cop = getCop();
+    for (const a of accounts) {
+      const sort = (a.sort_code ?? "").trim();
+      const num = (a.account_number ?? "").trim();
+      let cop_result: string | null = null;
+      let cop_matched_name: string | null = null;
+      try {
+        const r = await cop.check({ sortCode: sort, accountNumber: num, name: a.account_name ?? "", accountType: "business" });
+        cop_result = r.result;
+        cop_matched_name = r.matchedName;
+      } catch {
+        cop_result = "unavailable";
+      }
+      const ins = await db.from("onboarding_bank_accounts").insert({
+        case_id: caseId,
+        purpose: a.purpose,
+        account_name: a.account_name ?? null,
+        bank_name: a.bank_name ?? null,
+        sort_code_enc: encryptField(sort),
+        account_number_enc: encryptField(num),
+        account_tail: num.replace(/\D/g, "").slice(-4) || null,
+        cop_result,
+        cop_matched_name,
+        cop_checked_at: new Date().toISOString(),
+      });
+      if (ins.error) throw ins.error;
+    }
+  }
+
+  // Direct Debit sub-form (non-sensitive questionnaire fields).
+  if (data.directDebit && Object.values(data.directDebit).some((v) => (v ?? "").trim())) {
+    const ddUp = await db.from("onboarding_direct_debit").upsert({ case_id: caseId, details: data.directDebit }, { onConflict: "case_id" });
+    if (ddUp.error) throw ddUp.error;
+  }
+
   await db.from("onboarding_cases").update({ status: "merchant_submitted" }).eq("id", caseId);
-  await logCaseEvent(db, caseId, "merchant_submitted", { email: "merchant" }, { ubos: data.uboKyc.length });
+  await logCaseEvent(db, caseId, "merchant_submitted", { email: "merchant" }, { ubos: data.uboKyc.length, bankAccounts: accounts.length });
 }
 
 /** Mark the case merchant_in_progress the first time the merchant opens the
