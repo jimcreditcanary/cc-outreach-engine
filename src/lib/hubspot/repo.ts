@@ -372,6 +372,51 @@ export async function getDeal(id: string): Promise<DealRecord | null> {
   }
 }
 
+export interface DealLineItem {
+  id: string;
+  name: string | null;
+  sku: string | null;
+  quantity: number | null;
+  price: number | null;
+  amount: number | null;
+  term: string | null;
+  properties: Record<string, string | null>;
+}
+
+/** HubSpot line items associated with a deal, read-only (for the billing
+ *  mirror). Best-effort: [] on any failure (e.g. the token lacks the
+ *  e-commerce / line-items read scope). */
+export async function getDealLineItems(dealId: string): Promise<DealLineItem[]> {
+  try {
+    const assoc = await hsFetch<{ results?: { toObjectId?: string | number; id?: string | number }[] }>(
+      `/crm/v4/objects/deals/${dealId}/associations/line_items?limit=100`,
+    );
+    const ids = (assoc.results ?? []).map((r) => String(r.toObjectId ?? r.id ?? "")).filter(Boolean);
+    if (!ids.length) return [];
+    const props = ["name", "quantity", "price", "amount", "hs_sku", "hs_term_in_months", "recurringbillingfrequency"];
+    const batch = await hsFetch<{ results?: HsObj[] }>(`/crm/v3/objects/line_items/batch/read`, {
+      method: "POST",
+      body: { properties: props, inputs: ids.map((id) => ({ id })) },
+    });
+    const num = (v: string | undefined) => (v != null && v !== "" ? Number(v) : null);
+    return (batch.results ?? []).map((o) => {
+      const p = (o.properties ?? {}) as Record<string, string | undefined>;
+      return {
+        id: String(o.id),
+        name: p.name ?? null,
+        sku: p.hs_sku ?? null,
+        quantity: num(p.quantity),
+        price: num(p.price),
+        amount: num(p.amount),
+        term: p.hs_term_in_months ?? p.recurringbillingfrequency ?? null,
+        properties: p as Record<string, string | null>,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 const stripNoteHtml = (s: string): string =>
   s.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 

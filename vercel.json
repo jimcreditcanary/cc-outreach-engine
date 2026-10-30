@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/onboarding-autostart",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/billing-reconcile",
+      "schedule": "30 7 * * *"
     }
   ]
 }

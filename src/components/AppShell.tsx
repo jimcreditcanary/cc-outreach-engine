@@ -22,6 +22,8 @@ import {
   Reply,
   Telescope,
   Megaphone,
+  Receipt,
+  Tags,
   Settings as SettingsIcon,
   ChevronsLeft,
   ChevronsRight,
@@ -59,6 +61,7 @@ const SECTIONS: Section[] = [
       { href: "/hot",        label: "Hot",        Icon: Flame },
       { href: "/meetings",   label: "Meetings",   Icon: CalendarClock },
       { href: "/onboarding", label: "Onboarding", Icon: ClipboardCheck },
+      { href: "/billing",    label: "Billing",    Icon: Receipt },
     ],
   },
   {
@@ -74,6 +77,7 @@ const SECTIONS: Section[] = [
     header: "Admin",
     items: [
       { href: "/settings", label: "Settings", Icon: SettingsIcon },
+      { href: "/admin/pricing", label: "Pricing", Icon: Tags },
     ],
   },
 ];

@@ -24,6 +24,7 @@ import { runUboChecks } from "@/lib/onboarding/uboChecks";
 import { generateDocsForCase } from "@/lib/onboarding/docgen";
 import { fileCaseToDrive } from "@/lib/onboarding/driveFiling";
 import { parseAccountsForCase } from "@/lib/onboarding/accounts";
+import { ensureBillingForCase } from "@/lib/billing/provision";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 const actorOf = (u: { id: string; email?: string | null } | null) => ({ id: u?.id ?? null, email: u?.email ?? null });
@@ -315,6 +316,9 @@ export async function approveCaseAction(formData: FormData) {
   await db.from("onboarding_cases").update({ status: "onboarded", approver_user_id: me.id, approved_at: new Date().toISOString() }).eq("id", id);
   await logCaseEvent(db, id, "approved", actorOf(me), {});
   if (c.hubspot_deal_id) await syncDealOnboardingStatus(c.hubspot_deal_id, "onboarded").catch(() => {});
+  // Kick off billing: create the billing account + mirror line items + email the
+  // deal owner. Best-effort inline; the daily reconcile cron backfills any miss.
+  await ensureBillingForCase(db, c).catch((e) => console.error(`[billing] provision failed for case ${id}:`, e));
   await flash("success", "Onboarding approved — marked onboarded.");
   revalidatePath(`/onboarding/${id}/review`);
   redirect(`/onboarding/${id}/review`);
