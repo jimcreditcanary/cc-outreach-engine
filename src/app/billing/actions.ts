@@ -5,10 +5,13 @@
 // case (normally auto-created on approval; this covers the manual/edge case).
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
+import { isSuperAdmin } from "@/lib/auth/role";
 import { ensureBillingForCase } from "@/lib/billing/provision";
+import { getBillingItemById, setBillingItemOverride, logBillingAudit } from "@/lib/billing/repo";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 
@@ -40,4 +43,37 @@ export async function setUpBillingAction(formData: FormData) {
     return redirect(`/companies/${companyId}`);
   }
   redirect(`/billing/${accountId}`);
+}
+
+/** Super-admin override of a billing item's price/band. Mandatory reason; logged.
+ *  override JSON blank/"{}" clears the override. */
+export async function setItemOverrideAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const itemId = str(formData.get("item_id"));
+  const accountId = str(formData.get("account_id"));
+  const back = accountId ? `/billing/${accountId}` : "/billing";
+  if (!(await isSuperAdmin())) { await flash("error", "Overrides are super-admin only."); return redirect(back); }
+  const reason = str(formData.get("reason"));
+  if (!reason) { await flash("error", "An override reason is required."); return redirect(back); }
+
+  const raw = str(formData.get("override"));
+  let override: Record<string, unknown> | null = null;
+  if (raw && raw !== "{}") {
+    try { override = JSON.parse(raw) as Record<string, unknown>; }
+    catch { await flash("error", "Override must be valid JSON (e.g. {\"amount_pence\":9000})."); return redirect(back); }
+  }
+
+  const db = serviceClient();
+  const item = await getBillingItemById(db, itemId);
+  if (!item) { await flash("error", "Item not found."); return redirect(back); }
+  try {
+    await setBillingItemOverride(db, itemId, override, me.id, reason);
+    await logBillingAudit(db, { account_id: item.account_id, billing_item_id: itemId, actor_user_id: me.id, actor_email: me.email ?? null, action: "item_override", reason, payload: { override } });
+    await flash("success", override ? "Override applied." : "Override cleared.");
+  } catch (e) {
+    await flash("error", `Override failed: ${(e as Error).message}`);
+  }
+  revalidatePath(back);
+  redirect(back);
 }

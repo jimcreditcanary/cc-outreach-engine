@@ -47,6 +47,7 @@ export interface BillingAccount {
   status: AccountStatus;
   finance_contact_id: string | null;
   deal_owner_user_id: string | null;
+  po_number: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -55,7 +56,7 @@ const TABLE_COLS =
   "id, item_type, name, product_group, metric, config, vat_treatment, is_placeholder, version, effective_from, effective_to, created_at, updated_at";
 const BAND_COLS = "id, pricing_table_id, from_units, to_units, unit_price_pence, minimum_type, minimum_pence, sort_order";
 const ACCT_COLS =
-  "id, onboarding_case_id, hubspot_company_id, hubspot_deal_id, xero_contact_id, contract_start_date, contract_signed_at, notice_period_days, contract_end_date, status, finance_contact_id, deal_owner_user_id, created_at, updated_at";
+  "id, onboarding_case_id, hubspot_company_id, hubspot_deal_id, xero_contact_id, contract_start_date, contract_signed_at, notice_period_days, contract_end_date, status, finance_contact_id, deal_owner_user_id, po_number, created_at, updated_at";
 
 // ─── pricing tables ───────────────────────────────────────────────────────────
 
@@ -190,4 +191,108 @@ export async function logContractStatusEvent(
   payload?: Record<string, unknown>,
 ): Promise<void> {
   await db.from("billing_contract_status_events").insert({ account_id: accountId, status, source, payload: payload ?? null });
+}
+
+export type AccountPatch = Partial<
+  Pick<BillingAccount, "contract_start_date" | "contract_signed_at" | "notice_period_days" | "contract_end_date" | "status" | "finance_contact_id" | "xero_contact_id">
+> & { po_number?: string | null };
+
+export async function updateBillingAccount(db: DB, id: string, patch: AccountPatch): Promise<void> {
+  const { error } = await db.from("billing_accounts").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+// ─── billing items (Phase 2 setup) ────────────────────────────────────────────
+
+export interface BillingItem {
+  id: string;
+  account_id: string;
+  pricing_table_id: string | null;
+  item_type: string;
+  config: Record<string, unknown>;
+  vat_treatment: string | null;
+  override: Record<string, unknown> | null;
+  override_by: string | null;
+  override_reason: string | null;
+  usage_api_key_hash: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+const ITEM_COLS =
+  "id, account_id, pricing_table_id, item_type, config, vat_treatment, override, override_by, override_reason, usage_api_key_hash, active, created_at, updated_at";
+
+export async function listBillingItems(db: DB, accountId: string): Promise<BillingItem[]> {
+  const { data, error } = await db.from("billing_items").select(ITEM_COLS).eq("account_id", accountId).order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as BillingItem[];
+}
+
+export async function getBillingItemById(db: DB, id: string): Promise<BillingItem | null> {
+  const { data, error } = await db.from("billing_items").select(ITEM_COLS).eq("id", id).maybeSingle();
+  if (error) throw error;
+  return (data as BillingItem | null) ?? null;
+}
+
+export interface BillingItemInput {
+  pricing_table_id: string | null;
+  item_type: string;
+  config: Record<string, unknown>;
+  vat_treatment: string | null;
+  usage_api_key_hash: string | null;
+}
+
+/** Replace all items for an account (clean re-submit of the wizard). */
+export async function replaceBillingItems(db: DB, accountId: string, items: BillingItemInput[]): Promise<void> {
+  const del = await db.from("billing_items").delete().eq("account_id", accountId);
+  if (del.error) throw del.error;
+  if (!items.length) return;
+  const ins = await db.from("billing_items").insert(items.map((it) => ({ ...it, account_id: accountId, active: true })));
+  if (ins.error) throw ins.error;
+}
+
+export async function setBillingItemOverride(
+  db: DB,
+  itemId: string,
+  override: Record<string, unknown> | null,
+  byUserId: string | null,
+  reason: string,
+): Promise<void> {
+  const { error } = await db.from("billing_items").update({ override, override_by: byUserId, override_reason: reason }).eq("id", itemId);
+  if (error) throw error;
+}
+
+/** The current effective pricing table for each item_type (latest version whose
+ *  effective window covers today), keyed by item_type. */
+export async function currentPricingByItemType(db: DB): Promise<Map<string, PricingTable>> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data, error } = await db
+    .from("billing_pricing_tables")
+    .select(TABLE_COLS)
+    .lte("effective_from", today)
+    .order("effective_from", { ascending: false })
+    .order("version", { ascending: false });
+  if (error) throw error;
+  const map = new Map<string, PricingTable>();
+  for (const t of (data ?? []) as PricingTable[]) {
+    if (t.effective_to && t.effective_to <= today) continue; // closed version
+    if (!map.has(t.item_type)) map.set(t.item_type, t); // first = newest effective
+  }
+  return map;
+}
+
+export async function logBillingAudit(
+  db: DB,
+  input: { account_id: string | null; billing_item_id?: string | null; actor_user_id?: string | null; actor_email?: string | null; action: string; reason?: string | null; payload?: Record<string, unknown> | null },
+): Promise<void> {
+  await db.from("billing_audit_log").insert({
+    account_id: input.account_id,
+    billing_item_id: input.billing_item_id ?? null,
+    actor_user_id: input.actor_user_id ?? null,
+    actor_email: input.actor_email ?? null,
+    action: input.action,
+    reason: input.reason ?? null,
+    payload: input.payload ?? null,
+  });
 }
