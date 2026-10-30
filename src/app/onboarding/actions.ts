@@ -21,6 +21,7 @@ import { enrichCompanyForCase } from "@/lib/onboarding/enrich";
 import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
 import { extractUpload } from "@/lib/onboarding/uploads";
 import { runUboChecks } from "@/lib/onboarding/uboChecks";
+import { generateDocsForCase } from "@/lib/onboarding/docgen";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 const actorOf = (u: { id: string; email?: string | null } | null) => ({ id: u?.id ?? null, email: u?.email ?? null });
@@ -231,6 +232,23 @@ export async function assessPrivacyPolicyAction(formData: FormData) {
     await flash("success", `Privacy policy assessed: ${r.overall.replace(/_/g, " ")}.`);
   } catch (e) {
     await flash("error", `Assessment failed: ${(e as Error).message}`);
+  }
+  revalidatePath(`/onboarding/${id}/review`);
+  redirect(`/onboarding/${id}/review`);
+}
+
+/** Phase 5 — generate the onboarding documents from the branded templates. */
+export async function generateDocsAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  try {
+    const r = await generateDocsForCase(db, id, actorOf(me));
+    await flash("success", `Generated ${r.generated} document${r.generated === 1 ? "" : "s"}.`);
+  } catch (e) {
+    await flash("error", `Document generation failed: ${(e as Error).message}`);
   }
   revalidatePath(`/onboarding/${id}/review`);
   redirect(`/onboarding/${id}/review`);

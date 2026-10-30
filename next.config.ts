@@ -15,13 +15,19 @@ const nextConfig: NextConfig = {
   // than try to bundle them. node-ical is in the same boat: its rrule-temporal
   // dependency ships a Temporal/BigInt polyfill Turbopack's runtime mangles
   // ("s.BigInt is not a function" at build-time page collection).
-  serverExternalPackages: ["unpdf", "mammoth", "node-ical"],
+  serverExternalPackages: ["unpdf", "mammoth", "node-ical", "docxtemplater", "pizzip"],
   // Proposal uploads are PDF/DOCX — easily larger than the default 1MB
   // server-action limit. Bump to 25MB.
   experimental: {
     serverActions: {
       bodySizeLimit: "25mb",
     },
+  },
+  // The onboarding doc-generation templates are read from disk at runtime, so
+  // they must be traced into the serverless function bundle (they aren't code,
+  // so Next won't include them automatically).
+  outputFileTracingIncludes: {
+    "/onboarding/**": ["./src/lib/onboarding/templates/**"],
   },
 };
 

@@ -12,9 +12,10 @@ import { loadMerchantForm } from "@/lib/onboarding/merchantForm";
 import { loadPrivacyAssessment } from "@/lib/onboarding/privacyAssessment";
 import { loadUploads } from "@/lib/onboarding/uploads";
 import { loadUboChecks } from "@/lib/onboarding/uboChecks";
+import { loadGeneratedDocs } from "@/lib/onboarding/docgen";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
-import { assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction } from "../../actions";
+import { assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction, generateDocsAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -38,11 +39,12 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const c = await getCase(db, id);
   if (!c) notFound();
 
-  const [{ form, kyc, bankAccounts, directDebit }, privacy, uploads, uboChecks] = await Promise.all([
+  const [{ form, kyc, bankAccounts, directDebit }, privacy, uploads, uboChecks, generatedDocs] = await Promise.all([
     loadMerchantForm(db, id),
     loadPrivacyAssessment(db, id),
     loadUploads(db, id),
     loadUboChecks(db, id),
+    loadGeneratedDocs(db, id),
   ]);
 
   const b = form?.business ?? {};
@@ -65,6 +67,31 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         <p className="text-neutral-500">The merchant hasn&apos;t submitted the form yet.</p>
       ) : (
         <div className="space-y-6">
+          {/* Documents (P5) */}
+          <section className="rounded-lg border border-neutral-200 bg-white p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Documents</h2>
+              <form action={generateDocsAction}>
+                <input type="hidden" name="case_id" value={id} />
+                <PendingButton className="rounded bg-[#003566] px-3 py-1 text-xs font-medium text-white hover:bg-[#002a52]" pendingLabel="Generating…">
+                  {generatedDocs.length ? "Regenerate" : "✨ Generate documents"}
+                </PendingButton>
+              </form>
+            </div>
+            {generatedDocs.length === 0 ? (
+              <p className="mt-2 text-sm text-neutral-400">Not generated yet — fills the branded templates for this product selection with the case data.</p>
+            ) : (
+              <ul className="mt-2 space-y-1">
+                {generatedDocs.map((d) => (
+                  <li key={d.id} className="flex flex-wrap items-center gap-2 text-sm">
+                    <a href={`/onboarding/${id}/doc/${d.id}`} className="font-medium text-blue-700 hover:underline">⬇ {d.filename}</a>
+                    <span className="text-xs text-neutral-400">{fmtDateTime(d.generated_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
           {/* Business + compliance + signatory */}
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Cell label="Trading name">{b.trading_name}</Cell>
