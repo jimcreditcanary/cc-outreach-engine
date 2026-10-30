@@ -1,7 +1,7 @@
 // Phase 2 — Companies House enrichment view for a case. Shows the stored
-// snapshot (company + risk flags), officers (current + resigned ≤12mo) and the
-// PSC/UBO chain, with an Enrich / Re-enrich button. Deep accounts (iXBRL
-// financial figures) are a later sub-step (P2b).
+// snapshot (company + risk flags), officers (current + resigned ≤12mo), the
+// PSC/UBO chain, and (P2b) the latest filed accounts' headline figures, each
+// with its own Enrich / Parse button.
 
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -10,15 +10,17 @@ import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { getCase } from "@/lib/onboarding/cases";
 import { loadEnrichment, type UboRow } from "@/lib/onboarding/enrich";
+import { loadAccounts } from "@/lib/onboarding/accounts";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
-import { enrichCaseAction } from "../../actions";
+import { enrichCaseAction, parseAccountsAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const pretty = (s: string) => s.replace(/-/g, " ");
 const dob = (m: number | null, y: number | null) => (m || y ? `${m ?? "?"}/${y ?? "?"}` : "—");
+const money = (n: number | null) => (n == null ? "—" : new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(n));
 
 function addressLine(a: Record<string, string | undefined> | null): string {
   if (!a) return "—";
@@ -43,6 +45,7 @@ export default async function EnrichmentPage({ params }: { params: Promise<{ id:
   const c = await getCase(db, id);
   if (!c) notFound();
   const { snapshot, officers, ubos } = await loadEnrichment(db, id);
+  const accounts = c.company_number ? await loadAccounts(db, id) : null;
 
   return (
     <main className="px-4 py-6 md:px-8">
@@ -67,6 +70,32 @@ export default async function EnrichmentPage({ params }: { params: Promise<{ id:
           <Link href={`/onboarding/${id}?step=company`} className="rounded border border-amber-300 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50">Confirm company first →</Link>
         )}
       </header>
+
+      {c.company_number && (
+        <section className="mb-6 rounded-lg border border-neutral-200 bg-white p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Accounts (latest filed)</h2>
+            <form action={parseAccountsAction}>
+              <input type="hidden" name="case_id" value={id} />
+              <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Parsing…">
+                {accounts ? "Re-parse" : "✨ Parse accounts"}
+              </PendingButton>
+            </form>
+            {accounts?.parsed_at && <span className="text-xs text-neutral-400">{accounts.period_end ? `to ${fmtDate(accounts.period_end)} · ` : ""}{fmtDateTime(accounts.parsed_at)}</span>}
+          </div>
+          {!accounts ? (
+            <p className="mt-2 text-sm text-neutral-400">Not parsed yet — pulls the headline figures from the latest filed iXBRL accounts (Companies House Document API).</p>
+          ) : (
+            <dl className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <div><dt className="text-xs text-neutral-400">Turnover</dt><dd className="text-sm text-neutral-800">{money(accounts.turnover)}</dd></div>
+              <div><dt className="text-xs text-neutral-400">Profit / loss</dt><dd className="text-sm text-neutral-800">{money(accounts.profit_loss)}</dd></div>
+              <div><dt className="text-xs text-neutral-400">Net assets</dt><dd className="text-sm text-neutral-800">{money(accounts.net_assets)}</dd></div>
+              <div><dt className="text-xs text-neutral-400">Cash</dt><dd className="text-sm text-neutral-800">{money(accounts.cash)}</dd></div>
+              <div><dt className="text-xs text-neutral-400">Employees</dt><dd className="text-sm text-neutral-800">{accounts.employees ?? "—"}</dd></div>
+            </dl>
+          )}
+        </section>
+      )}
 
       {!snapshot ? (
         <p className="text-neutral-500">

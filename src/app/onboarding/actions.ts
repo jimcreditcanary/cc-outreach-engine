@@ -23,6 +23,7 @@ import { extractUpload } from "@/lib/onboarding/uploads";
 import { runUboChecks } from "@/lib/onboarding/uboChecks";
 import { generateDocsForCase } from "@/lib/onboarding/docgen";
 import { fileCaseToDrive } from "@/lib/onboarding/driveFiling";
+import { parseAccountsForCase } from "@/lib/onboarding/accounts";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 const actorOf = (u: { id: string; email?: string | null } | null) => ({ id: u?.id ?? null, email: u?.email ?? null });
@@ -198,6 +199,23 @@ export async function inviteMerchantAction(formData: FormData) {
   }
   revalidatePath(`/onboarding/${id}`);
   redirect(`/onboarding/${id}`);
+}
+
+/** Phase 2b — fetch + parse the latest filed iXBRL accounts for a case. */
+export async function parseAccountsAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  try {
+    const r = await parseAccountsForCase(db, id, actorOf(me));
+    await flash("success", `Accounts parsed${r.period_end ? ` (to ${r.period_end})` : ""}.`);
+  } catch (e) {
+    await flash("error", (e as Error).message);
+  }
+  revalidatePath(`/onboarding/${id}/enrichment`);
+  redirect(`/onboarding/${id}/enrichment`);
 }
 
 /** Phase 2 — run (or re-run) Companies House deep enrichment for a case. */

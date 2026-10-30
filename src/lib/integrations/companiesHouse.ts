@@ -118,10 +118,20 @@ export interface ChDisqualifiedMatch {
   raw: unknown;
 }
 
+export interface ChAccountsDocument {
+  /** The iXBRL (XHTML) document text. */
+  ixbrl: string;
+  /** The accounts made-up-to / filing date, if known. */
+  madeUpTo: string | null;
+}
+
 export interface CompaniesHouseClient {
   searchCompanies(query: string, limit?: number): Promise<ChCompanySearchResult[]>;
   /** Null when CH has no company with that number (404). */
   getProfile(companyNumber: string): Promise<ChCompanyProfile | null>;
+  /** Latest filed accounts as iXBRL (via filing history → Document API). Null
+   *  when there are no iXBRL accounts (P2b). */
+  getAccountsDocument(companyNumber: string): Promise<ChAccountsDocument | null>;
   /** All officers (caller filters current + resigned ≤12mo). */
   getOfficers(companyNumber: string): Promise<ChOfficer[]>;
   /** Persons with significant control (direct — caller recurses corporates). */
@@ -161,6 +171,26 @@ async function chFetch(path: string, key: string): Promise<Response> {
         await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
         continue;
       }
+    }
+  }
+  throw new CompaniesHouseError(`network error: ${(lastErr as Error)?.message ?? "unknown"}`, 0);
+}
+
+/** Fetch an absolute CH URL (the Document API lives on another host) with Basic
+ *  auth + the same retry. accept drives the representation (iXBRL vs metadata). */
+async function chFetchUrl(url: string, key: string, accept = "application/json"): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(url, { headers: { Authorization: authHeader(key), Accept: accept } });
+      if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      return res;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < 2) { await new Promise((r) => setTimeout(r, 500 * (attempt + 1))); continue; }
     }
   }
   throw new CompaniesHouseError(`network error: ${(lastErr as Error)?.message ?? "unknown"}`, 0);
@@ -262,6 +292,24 @@ function liveClient(key: string): CompaniesHouseClient {
       if (!res.ok) throw new CompaniesHouseError(`profile failed: ${res.status}`, res.status);
       return mapProfile((await res.json()) as Record<string, unknown>);
     },
+    async getAccountsDocument(companyNumber) {
+      // filing history → latest accounts filing → Document API metadata → iXBRL content.
+      const hist = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/filing-history?category=accounts&items_per_page=10`, key);
+      if (!hist.ok) return null;
+      const j = (await hist.json()) as { items?: { date?: string; action_date?: string; links?: { document_metadata?: string } }[] };
+      const item = (j.items ?? []).find((it) => it.links?.document_metadata);
+      const metaUrl = item?.links?.document_metadata;
+      if (!metaUrl) return null;
+      const metaRes = await chFetchUrl(metaUrl, key);
+      if (!metaRes.ok) return null;
+      const meta = (await metaRes.json()) as { resources?: Record<string, unknown> };
+      if (!meta.resources || !meta.resources["application/xhtml+xml"]) return null; // no iXBRL (e.g. micro-entity PDF only)
+      const contentRes = await chFetchUrl(`${metaUrl}/content`, key, "application/xhtml+xml");
+      if (!contentRes.ok) return null;
+      const ixbrl = await contentRes.text();
+      if (!ixbrl || ixbrl.length < 200) return null;
+      return { ixbrl, madeUpTo: item!.action_date ?? item!.date ?? null };
+    },
     async getOfficers(companyNumber) {
       const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/officers?items_per_page=100`, key);
       if (res.status === 404) return [];
@@ -334,6 +382,19 @@ const MOCK_PROFILE: ChCompanyProfile = {
   raw: { mock: true },
 };
 
+// Compact iXBRL fixture so the P2b accounts flow runs end-to-end on the mock.
+const MOCK_IXBRL = `<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" xmlns:xbrli="http://www.xbrl.org/2003/instance">
+<ix:header><ix:resources>
+<xbrli:context id="dur"><xbrli:period><xbrli:startDate>2024-04-01</xbrli:startDate><xbrli:endDate>2025-03-31</xbrli:endDate></xbrli:period></xbrli:context>
+<xbrli:context id="inst"><xbrli:period><xbrli:instant>2025-03-31</xbrli:instant></xbrli:period></xbrli:context>
+</ix:resources></ix:header><body>
+<ix:nonFraction name="core:TurnoverRevenue" contextRef="dur" unitRef="GBP" scale="0">4820000</ix:nonFraction>
+<ix:nonFraction name="core:ProfitLoss" contextRef="dur" unitRef="GBP" scale="0">612000</ix:nonFraction>
+<ix:nonFraction name="core:NetAssetsLiabilities" contextRef="inst" unitRef="GBP" scale="0">1890000</ix:nonFraction>
+<ix:nonFraction name="core:CashBankOnHand" contextRef="inst" unitRef="GBP" scale="0">540000</ix:nonFraction>
+<ix:nonFraction name="core:AverageNumberEmployeesDuringPeriod" contextRef="dur" unitRef="pure">38</ix:nonFraction>
+</body></html>`;
+
 function mockClient(): CompaniesHouseClient {
   return {
     async searchCompanies(query) {
@@ -358,6 +419,9 @@ function mockClient(): CompaniesHouseClient {
     async getProfile(companyNumber) {
       // Dev convenience: return the fixture for any number so the wizard runs.
       return { ...MOCK_PROFILE, company_number: companyNumber.trim() || MOCK_PROFILE.company_number };
+    },
+    async getAccountsDocument() {
+      return { ixbrl: MOCK_IXBRL, madeUpTo: "2025-03-31" };
     },
     async getOfficers() {
       return [
