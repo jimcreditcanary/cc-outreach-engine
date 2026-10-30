@@ -39,6 +39,7 @@ export interface MerchantSignatory { name?: string; title?: string; email?: stri
 export interface UboKycInput {
   ubo_id: string | null;
   ubo_name: string;
+  date_of_birth?: string;    // YYYY-MM-DD — for Phase 4 ID&V
   exact_ownership_percent?: string;
   residential_address?: Record<string, string>;
   is_pep: boolean;
@@ -115,7 +116,7 @@ export async function loadMerchantForm(db: DB, caseId: string): Promise<{
   try {
     const [f, k, banks, dd] = await Promise.all([
       db.from("onboarding_merchant_form").select("business, compliance, signatory, status, submitted_at").eq("case_id", caseId).maybeSingle(),
-      db.from("onboarding_ubo_kyc").select("id, ubo_id, ubo_name, exact_ownership_percent, residential_address, is_pep, pep_detail, consent_given").eq("case_id", caseId),
+      db.from("onboarding_ubo_kyc").select("id, ubo_id, ubo_name, date_of_birth, exact_ownership_percent, residential_address, is_pep, pep_detail, consent_given").eq("case_id", caseId),
       db.from("onboarding_bank_accounts").select("id, purpose, account_name, bank_name, account_tail, cop_result, cop_matched_name").eq("case_id", caseId),
       db.from("onboarding_direct_debit").select("details").eq("case_id", caseId).maybeSingle(),
     ]);
@@ -148,6 +149,7 @@ export async function saveMerchantForm(db: DB, caseId: string, data: MerchantFor
         case_id: caseId,
         ubo_id: u.ubo_id,
         ubo_name: u.ubo_name,
+        date_of_birth: u.date_of_birth || null,
         exact_ownership_percent: u.exact_ownership_percent ?? null,
         residential_address: u.residential_address ?? null,
         is_pep: u.is_pep,

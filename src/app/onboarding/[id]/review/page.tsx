@@ -11,9 +11,10 @@ import { getCase } from "@/lib/onboarding/cases";
 import { loadMerchantForm } from "@/lib/onboarding/merchantForm";
 import { loadPrivacyAssessment } from "@/lib/onboarding/privacyAssessment";
 import { loadUploads } from "@/lib/onboarding/uploads";
+import { loadUboChecks } from "@/lib/onboarding/uboChecks";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
-import { assessPrivacyPolicyAction, extractUploadAction } from "../../actions";
+import { assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -37,10 +38,11 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const c = await getCase(db, id);
   if (!c) notFound();
 
-  const [{ form, kyc, bankAccounts, directDebit }, privacy, uploads] = await Promise.all([
+  const [{ form, kyc, bankAccounts, directDebit }, privacy, uploads, uboChecks] = await Promise.all([
     loadMerchantForm(db, id),
     loadPrivacyAssessment(db, id),
     loadUploads(db, id),
+    loadUboChecks(db, id),
   ]);
 
   const b = form?.business ?? {};
@@ -100,6 +102,42 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                     </li>
                   );
                 })}
+              </ul>
+            )}
+          </section>
+
+          {/* Identity & screening (P4) */}
+          <section>
+            <div className="mb-2 flex items-center gap-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Identity &amp; screening</h2>
+              <form action={runUboChecksAction}>
+                <input type="hidden" name="case_id" value={id} />
+                <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Running…">
+                  {uboChecks.length ? "Re-run" : "✨ Run UBO checks"}
+                </PendingButton>
+              </form>
+            </div>
+            {uboChecks.length === 0 ? (
+              <p className="text-sm text-neutral-400">Not run yet. Verifies each owner&apos;s identity and screens for PEP / sanctions (Call Validate).</p>
+            ) : (
+              <ul className="space-y-2">
+                {uboChecks.map((ch) => (
+                  <li key={ch.id} className="rounded-lg border border-neutral-200 bg-white p-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-neutral-800">{ch.ubo_name}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${ch.idv_band === "pass" ? "bg-emerald-100 text-emerald-800" : ch.idv_band === "refer" ? "bg-amber-100 text-amber-800" : ch.idv_band === "fail" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-500"}`}>
+                        ID&amp;V: {ch.idv_band ?? "—"}{ch.idv_score != null ? ` (${ch.idv_score})` : ""}
+                      </span>
+                      {ch.pep_match && <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">PEP</span>}
+                      {ch.sanctions_match && <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">Sanctions</span>}
+                    </div>
+                    {ch.screening_detail?.matches && ch.screening_detail.matches.length > 0 && (
+                      <ul className="mt-1 text-xs text-red-700">
+                        {ch.screening_detail.matches.map((m, i) => <li key={i}>{m.type}: {m.name}{m.detail ? ` — ${m.detail}` : ""}</li>)}
+                      </ul>
+                    )}
+                  </li>
+                ))}
               </ul>
             )}
           </section>

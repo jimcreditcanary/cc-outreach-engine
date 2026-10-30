@@ -20,6 +20,7 @@ import { requestApiSandbox, sendMerchantInvite } from "@/lib/onboarding/notify";
 import { enrichCompanyForCase } from "@/lib/onboarding/enrich";
 import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
 import { extractUpload } from "@/lib/onboarding/uploads";
+import { runUboChecks } from "@/lib/onboarding/uboChecks";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 const actorOf = (u: { id: string; email?: string | null } | null) => ({ id: u?.id ?? null, email: u?.email ?? null });
@@ -230,6 +231,24 @@ export async function assessPrivacyPolicyAction(formData: FormData) {
     await flash("success", `Privacy policy assessed: ${r.overall.replace(/_/g, " ")}.`);
   } catch (e) {
     await flash("error", `Assessment failed: ${(e as Error).message}`);
+  }
+  revalidatePath(`/onboarding/${id}/review`);
+  redirect(`/onboarding/${id}/review`);
+}
+
+/** Phase 4 — run ID&V + PEP/sanctions screening for each beneficial owner. */
+export async function runUboChecksAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  try {
+    const r = await runUboChecks(db, id, actorOf(me));
+    const extra = [r.pepMatches ? `${r.pepMatches} PEP` : "", r.sanctionsMatches ? `${r.sanctionsMatches} sanctions` : ""].filter(Boolean).join(", ");
+    await flash("success", `UBO checks: ${r.verified}/${r.checked} ID-verified${extra ? ` · ${extra} — verify the hit(s)` : ""}.`);
+  } catch (e) {
+    await flash("error", `UBO checks failed: ${(e as Error).message}`);
   }
   revalidatePath(`/onboarding/${id}/review`);
   redirect(`/onboarding/${id}/review`);

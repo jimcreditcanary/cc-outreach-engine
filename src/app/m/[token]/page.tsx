@@ -221,6 +221,7 @@ export default async function MerchantFormPage({
                   <input type="hidden" name={`ubo_name_${i}`} value={u.name ?? ""} />
                   <div className="mb-2 font-medium text-neutral-800">{u.name}</div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div><label className={lbl}>Date of birth</label><input type="date" name={`ubo_dob_${i}`} defaultValue={k?.date_of_birth ?? ""} className={field} /></div>
                     <div><label className={lbl}>Exact ownership %</label><input name={`ubo_pct_${i}`} defaultValue={k?.exact_ownership_percent ?? ""} placeholder="e.g. 60%" className={field} /></div>
                   </div>
                   <div className="mt-3">

@@ -49,6 +49,7 @@ export async function submitMerchantFormAction(formData: FormData) {
     uboKyc.push({
       ubo_id: str(formData.get(`ubo_id_${i}`)) || null,
       ubo_name,
+      date_of_birth: str(formData.get(`ubo_dob_${i}`)),
       exact_ownership_percent: str(formData.get(`ubo_pct_${i}`)),
       residential_address: {
         line1: str(formData.get(`ubo_addr1_${i}`)),
