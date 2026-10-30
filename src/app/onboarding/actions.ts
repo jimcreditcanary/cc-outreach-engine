@@ -254,6 +254,29 @@ export async function generateDocsAction(formData: FormData) {
   redirect(`/onboarding/${id}/review`);
 }
 
+/** Phase 5b — approve the onboarding (sign-off) → status onboarded. */
+const APPROVABLE = new Set(["merchant_submitted", "ubo_checks", "docs_generated", "awaiting_approval"]);
+export async function approveCaseAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  const c = await getCase(db, id);
+  if (!c) { await flash("error", "Case not found."); return redirect("/onboarding"); }
+  if (c.status === "onboarded") { await flash("success", "Already onboarded."); return redirect(`/onboarding/${id}/review`); }
+  if (!APPROVABLE.has(c.status)) {
+    await flash("error", "The merchant form (and checks) need to be complete before approval.");
+    return redirect(`/onboarding/${id}/review`);
+  }
+  await db.from("onboarding_cases").update({ status: "onboarded", approver_user_id: me.id, approved_at: new Date().toISOString() }).eq("id", id);
+  await logCaseEvent(db, id, "approved", actorOf(me), {});
+  if (c.hubspot_deal_id) await syncDealOnboardingStatus(c.hubspot_deal_id, "onboarded").catch(() => {});
+  await flash("success", "Onboarding approved — marked onboarded.");
+  revalidatePath(`/onboarding/${id}/review`);
+  redirect(`/onboarding/${id}/review`);
+}
+
 /** Phase 4 — run ID&V + PEP/sanctions screening for each beneficial owner. */
 export async function runUboChecksAction(formData: FormData) {
   const me = await currentUser();

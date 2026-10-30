@@ -15,7 +15,7 @@ import { loadUboChecks } from "@/lib/onboarding/uboChecks";
 import { loadGeneratedDocs } from "@/lib/onboarding/docgen";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
-import { assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction, generateDocsAction } from "../../actions";
+import { assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction, generateDocsAction, approveCaseAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -55,12 +55,24 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   return (
     <main className="px-4 py-6 md:px-8">
       <Link href={`/onboarding/${id}`} className="text-sm text-blue-700 hover:underline">← Case</Link>
-      <header className="mb-4 mt-2 border-b border-neutral-200 pb-3">
-        <h1 className="text-xl font-semibold">Merchant submission</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          {c.company_number ? `Company ${c.company_number}` : "—"} · status {c.status.replace(/_/g, " ")}
-          {form?.submitted_at && ` · submitted ${fmtDateTime(form.submitted_at)}`}
-        </p>
+      <header className="mb-4 mt-2 flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 pb-3">
+        <div>
+          <h1 className="text-xl font-semibold">Merchant submission</h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            {c.company_number ? `Company ${c.company_number}` : "—"} · status {c.status.replace(/_/g, " ")}
+            {form?.submitted_at && ` · submitted ${fmtDateTime(form.submitted_at)}`}
+          </p>
+        </div>
+        {c.status === "onboarded" ? (
+          <span className="rounded bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800">✓ Onboarded</span>
+        ) : (
+          <form action={approveCaseAction}>
+            <input type="hidden" name="case_id" value={id} />
+            <PendingButton className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700" pendingLabel="Approving…">
+              ✓ Approve onboarding
+            </PendingButton>
+          </form>
+        )}
       </header>
 
       {!form ? (
