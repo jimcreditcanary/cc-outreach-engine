@@ -104,7 +104,8 @@ export async function submitMerchantFormAction(formData: FormData) {
       } catch { /* best-effort */ }
     }
     await notifyMerchantSubmitted(db, c.id).catch(() => {});
-  } catch {
+  } catch (e) {
+    console.error(`[merchant-submit] save failed for case ${c.id}:`, e);
     redirect(`${back}?error=save`);
   }
   redirect(`${back}?done=1`);
