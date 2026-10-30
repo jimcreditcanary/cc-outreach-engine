@@ -43,6 +43,22 @@ function withFrameHeaders(res: NextResponse, pathname: string): NextResponse {
 }
 
 export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  // Branded merchant-form host (onboarding.creditcanary.co.uk, set via
+  // ONBOARDING_FORM_HOST once its DNS is live). It serves ONLY the public
+  // merchant form (/m/*) — the internal app is never exposed there. Everything
+  // else on that host bounces to the main site. No session handling here (the
+  // form is public). Inert until the env var is set.
+  const brandedHost = process.env.ONBOARDING_FORM_HOST?.trim().toLowerCase();
+  if (brandedHost) {
+    const host = req.headers.get("host")?.split(":")[0]?.toLowerCase();
+    if (host === brandedHost) {
+      if (pathname.startsWith("/m")) return withFrameHeaders(NextResponse.next({ request: req }), pathname);
+      return NextResponse.redirect("https://www.creditcanary.co.uk/");
+    }
+  }
+
   let response = NextResponse.next({ request: req });
 
   const supabase = createServerClient(
@@ -63,7 +79,6 @@ export async function middleware(req: NextRequest) {
   // Refresh the JWT cookie if it expired; gives us the current user (or null).
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { pathname } = req.nextUrl;
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 
   if (!user && !isPublic) {
