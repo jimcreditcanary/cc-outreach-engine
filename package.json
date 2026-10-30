@@ -27,6 +27,7 @@
     "hubspot-smoke": "tsx scripts/hubspot-smoke.ts",
     "hubspot-setup-props": "tsx scripts/hubspot-setup-props.ts",
     "onboarding-setup-props": "tsx scripts/onboarding-setup-props.ts",
+    "onboarding-setup-associations": "tsx scripts/onboarding-setup-associations.ts",
     "hs-mailer": "tsx scripts/hs-mailer.ts",
     "backfill-suppressions": "tsx scripts/backfill-suppressions.ts",
     "site-markdown": "tsx scripts/site-markdown.ts",

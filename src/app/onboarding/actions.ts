@@ -10,11 +10,11 @@ import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
-import { dealCompanyId, syncDealOnboardingStatus, hubspotRepo } from "@/lib/hubspot/repo";
+import { dealCompanyId, syncDealOnboardingStatus, associateDealContactRole, hubspotRepo } from "@/lib/hubspot/repo";
 import {
   findOrCreateCaseForDeal, getCase, updateCase, setProductGroups,
   addStakeholder, removeStakeholder, listStakeholders, logCaseEvent,
-  readyToComplete, isOnboardingRole,
+  readyToComplete, isOnboardingRole, ONBOARDING_ROLES,
 } from "@/lib/onboarding/cases";
 import { requestApiSandbox, sendMerchantInvite } from "@/lib/onboarding/notify";
 import { enrichCompanyForCase } from "@/lib/onboarding/enrich";
@@ -43,7 +43,7 @@ export async function startOnboardingAction(formData: FormData) {
     dealId, hubspotCompanyId: companyId, ownerUserId: me.id, actor: actorOf(me),
   });
   if (created) {
-    await syncDealOnboardingStatus(dealId, "started").catch(() => {});
+    await syncDealOnboardingStatus(dealId, "started", c.id).catch(() => {});
     await flash("success", "Onboarding started.");
   }
   redirect(`/onboarding/${c.id}`);
@@ -97,6 +97,13 @@ export async function addStakeholderAction(formData: FormData) {
   }
   const db = serviceClient();
   await addStakeholder(db, id, contactId, role);
+  // Mirror the role to HubSpot as a labeled deal↔contact association (best-effort;
+  // no-ops until the labels + association-write scope are set up).
+  const c = await getCase(db, id);
+  if (c?.hubspot_deal_id) {
+    const label = ONBOARDING_ROLES.find((r) => r.key === role)?.label ?? role;
+    await associateDealContactRole(c.hubspot_deal_id, contactId, label).catch(() => {});
+  }
   await logCaseEvent(db, id, "stakeholder_added", actorOf(me), { contact_id: contactId, role });
   revalidatePath(`/onboarding/${id}`);
   redirect(`/onboarding/${id}?step=stakeholders`);

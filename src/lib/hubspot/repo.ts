@@ -279,9 +279,47 @@ export async function listRecentlyWonDeals(sinceMs: number, limit = 50): Promise
  *  `onboarding_status` property, so it's visible in HubSpot. No-ops (returns
  *  false) unless the property exists AND the token has deals-write scope — run
  *  scripts/onboarding-setup-props.ts and add crm.objects.deals.write to enable. */
-export async function syncDealOnboardingStatus(dealId: string, status: string): Promise<boolean> {
+export async function syncDealOnboardingStatus(dealId: string, status: string, caseId?: string): Promise<boolean> {
   try {
-    await hsFetch(`/crm/v3/objects/deals/${dealId}`, { method: "PATCH", body: { properties: { onboarding_status: status } } });
+    const properties: Record<string, string> = { onboarding_status: status };
+    if (caseId) properties.onboarding_case_id = caseId;
+    await hsFetch(`/crm/v3/objects/deals/${dealId}`, { method: "PATCH", body: { properties } });
+    invalidateCache();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Deal↔contact association-label (role) support (onboarding stakeholders). The
+// label TYPES are created once by scripts/onboarding-setup-associations.ts;
+// here we resolve a role's label to its typeId and apply it. All best-effort —
+// no-ops until the labels exist + the token has crm.associations write scope.
+let _roleLabelCache: { at: number; map: Map<string, number> } | null = null;
+
+async function dealContactRoleLabels(): Promise<Map<string, number>> {
+  if (_roleLabelCache && Date.now() - _roleLabelCache.at < 300_000) return _roleLabelCache.map;
+  const res = await hsFetch<{ results: { category: string; typeId: number; label: string | null }[] }>(
+    `/crm/v4/associations/deals/contacts/labels`, { cacheTtl: 300_000 },
+  );
+  const map = new Map<string, number>();
+  for (const r of res.results ?? []) {
+    if (r.category === "USER_DEFINED" && r.label) map.set(r.label.toLowerCase(), r.typeId);
+  }
+  _roleLabelCache = { at: Date.now(), map };
+  return map;
+}
+
+/** Apply a labeled deal↔contact association for a stakeholder role. Best-effort:
+ *  false if the label isn't set up or the write scope is missing. */
+export async function associateDealContactRole(dealId: string, contactId: string, roleLabel: string): Promise<boolean> {
+  try {
+    const typeId = (await dealContactRoleLabels()).get(roleLabel.toLowerCase());
+    if (typeId == null) return false;
+    await hsFetch(`/crm/v4/objects/deals/${dealId}/associations/contacts/${contactId}`, {
+      method: "PUT",
+      body: [{ associationCategory: "USER_DEFINED", associationTypeId: typeId }],
+    });
     invalidateCache();
     return true;
   } catch {
