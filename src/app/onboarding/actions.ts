@@ -22,6 +22,7 @@ import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
 import { extractUpload } from "@/lib/onboarding/uploads";
 import { runUboChecks } from "@/lib/onboarding/uboChecks";
 import { generateDocsForCase } from "@/lib/onboarding/docgen";
+import { fileCaseToDrive } from "@/lib/onboarding/driveFiling";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 const actorOf = (u: { id: string; email?: string | null } | null) => ({ id: u?.id ?? null, email: u?.email ?? null });
@@ -249,6 +250,23 @@ export async function generateDocsAction(formData: FormData) {
     await flash("success", `Generated ${r.generated} document${r.generated === 1 ? "" : "s"}.`);
   } catch (e) {
     await flash("error", `Document generation failed: ${(e as Error).message}`);
+  }
+  revalidatePath(`/onboarding/${id}/review`);
+  redirect(`/onboarding/${id}/review`);
+}
+
+/** Phase 5c — file the case's documents + uploads into Google Drive. */
+export async function fileToDriveAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  try {
+    const r = await fileCaseToDrive(db, id, actorOf(me));
+    await flash("success", `Filed ${r.filed} file${r.filed === 1 ? "" : "s"} to Drive${r.createdFolders ? " (folder created)" : ""}.`);
+  } catch (e) {
+    await flash("error", `Drive filing failed: ${(e as Error).message}`);
   }
   revalidatePath(`/onboarding/${id}/review`);
   redirect(`/onboarding/${id}/review`);

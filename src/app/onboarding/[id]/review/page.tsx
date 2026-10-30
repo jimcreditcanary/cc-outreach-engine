@@ -13,9 +13,10 @@ import { loadPrivacyAssessment } from "@/lib/onboarding/privacyAssessment";
 import { loadUploads } from "@/lib/onboarding/uploads";
 import { loadUboChecks } from "@/lib/onboarding/uboChecks";
 import { loadGeneratedDocs } from "@/lib/onboarding/docgen";
+import { caseDriveFolderUrl } from "@/lib/onboarding/driveFiling";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
-import { assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction, generateDocsAction, approveCaseAction } from "../../actions";
+import { assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction, generateDocsAction, approveCaseAction, fileToDriveAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -46,6 +47,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     loadUboChecks(db, id),
     loadGeneratedDocs(db, id),
   ]);
+  const driveUrl = await caseDriveFolderUrl(db, id);
 
   const b = form?.business ?? {};
   const comp = form?.compliance ?? {};
@@ -89,6 +91,15 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                   {generatedDocs.length ? "Regenerate" : "✨ Generate documents"}
                 </PendingButton>
               </form>
+              {generatedDocs.length > 0 && (
+                <form action={fileToDriveAction}>
+                  <input type="hidden" name="case_id" value={id} />
+                  <PendingButton className="rounded border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Filing…">
+                    📁 File to Drive
+                  </PendingButton>
+                </form>
+              )}
+              {driveUrl && <a href={driveUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-700 hover:underline">Open Drive folder ↗</a>}
             </div>
             {generatedDocs.length === 0 ? (
               <p className="mt-2 text-sm text-neutral-400">Not generated yet — fills the branded templates for this product selection with the case data.</p>
