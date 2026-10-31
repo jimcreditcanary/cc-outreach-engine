@@ -18,7 +18,8 @@ export type IntegrationName =
   | "drive"
   | "charityCommission"
   | "sanctions"
-  | "fcaRegister";
+  | "fcaRegister"
+  | "xero";
 
 function mockList(): Set<string> {
   return new Set(

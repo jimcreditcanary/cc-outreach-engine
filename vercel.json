@@ -55,6 +55,18 @@
     {
       "path": "/api/cron/billing-reconcile",
       "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/cron/billing-run",
+      "schedule": "0 6 1 * *"
+    },
+    {
+      "path": "/api/cron/billing-run-retry",
+      "schedule": "0 18 1 * *"
+    },
+    {
+      "path": "/api/cron/billing-nudge",
+      "schedule": "0 8 * * 1"
     }
   ]
 }
