@@ -12,6 +12,7 @@ import { flash } from "@/lib/flash";
 import { isSuperAdmin } from "@/lib/auth/role";
 import { ensureBillingForCase } from "@/lib/billing/provision";
 import { getBillingItemById, setBillingItemOverride, logBillingAudit } from "@/lib/billing/repo";
+import { recordContacted } from "@/lib/billing/dunning";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 
@@ -76,4 +77,23 @@ export async function setItemOverrideAction(formData: FormData) {
   }
   revalidatePath(back);
   redirect(back);
+}
+
+/** Record whether the deal owner has chased a customer about an unpaid invoice
+ *  (the per-row toggle on /billing/outstanding). */
+export async function markContactedAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const invoiceId = str(formData.get("invoice_id"));
+  if (!invoiceId) return redirect("/billing/outstanding");
+  const contacted = str(formData.get("contacted")) === "on";
+  const note = str(formData.get("note"));
+  try {
+    await recordContacted(serviceClient(), invoiceId, contacted, note, me.id);
+    await flash("success", contacted ? "Marked as contacted." : "Updated.");
+  } catch (e) {
+    await flash("error", `Update failed: ${(e as Error).message}`);
+  }
+  revalidatePath("/billing/outstanding");
+  redirect("/billing/outstanding");
 }
