@@ -6,13 +6,34 @@
 import { currentRole } from "@/lib/auth/role";
 import { serviceClient } from "@/lib/db/client";
 import { listPricingTables, type PricingBand } from "@/lib/billing/repo";
-import { labelFor, METRICS, VAT_TREATMENTS } from "@/lib/billing/catalogue";
+import { labelFor, METRICS, VAT_TREATMENTS, type Metric } from "@/lib/billing/catalogue";
+import { fieldsForMetric, type ItemConfig } from "@/lib/billing/itemConfig";
 import { updatePricingTableAction, createPricingVersionAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 const field = "rounded border border-neutral-300 px-2 py-1 text-sm";
 const today = () => new Date().toISOString().slice(0, 10);
+
+/** Per-metric standard-price inputs (write to the pricing table's config). */
+function PriceFields({ metric, cfg }: { metric: Metric; cfg: ItemConfig }) {
+  const f = fieldsForMetric(metric);
+  const n = (v: unknown) => (typeof v === "number" ? v : undefined);
+  const gbp = (p?: number) => (p != null ? (p / 100).toFixed(2) : "");
+  return (
+    <div className="col-span-12 flex flex-wrap items-end gap-3 rounded bg-neutral-50 px-2 py-1.5">
+      <span className="text-xs font-medium text-neutral-500">Standard price</span>
+      {f.includable && <label className="flex items-center gap-1 text-xs text-neutral-600"><input type="checkbox" name="cfg_included" defaultChecked={cfg.included} /> included (£0)</label>}
+      {f.monthly && <label className="text-xs text-neutral-500">£/month<input name="cfg_amount" defaultValue={gbp(n(cfg.amount_pence))} placeholder="0.00" className={`${field} mt-0.5 w-24`} /></label>}
+      {f.perUnit && <label className="text-xs text-neutral-500">pence/unit<input name="cfg_amount_pence" defaultValue={n(cfg.amount_pence) ?? ""} placeholder="e.g. 50" className={`${field} mt-0.5 w-24`} /></label>}
+      {f.fixed && <label className="text-xs text-neutral-500">pence/txn<input name="cfg_fixed_pence" defaultValue={n(cfg.fixed_pence) ?? ""} placeholder="e.g. 20" className={`${field} mt-0.5 w-24`} /></label>}
+      {f.pct && <label className="text-xs text-neutral-500">% of value<input name="cfg_pct" defaultValue={cfg.pct ?? ""} placeholder="e.g. 1.5" className={`${field} mt-0.5 w-20`} /></label>}
+      {f.cap && <label className="text-xs text-neutral-500">cap pence<input name="cfg_cap_pence" defaultValue={n(cfg.cap_pence ?? undefined) ?? ""} placeholder="optional" className={`${field} mt-0.5 w-24`} /></label>}
+      {f.perApplication && <label className="text-xs text-neutral-500">pence/application<input name="cfg_per_application_pence" defaultValue={n(cfg.per_application_pence) ?? ""} placeholder="e.g. 500" className={`${field} mt-0.5 w-28`} /></label>}
+      {f.perNumberMonth && <label className="text-xs text-neutral-500">pence/number/mo<input name="cfg_per_number_month_pence" defaultValue={n(cfg.per_number_month_pence) ?? ""} placeholder="e.g. 100" className={`${field} mt-0.5 w-28`} /></label>}
+    </div>
+  );
+}
 
 function bandsToText(bands: PricingBand[]): string {
   return bands
@@ -112,8 +133,9 @@ export default async function PricingPage() {
                         {VAT_TREATMENTS.map((v) => <option key={v} value={v}>{v}</option>)}
                       </select>
                     </label>
+                    <PriceFields metric={t.metric} cfg={(t.config as ItemConfig) ?? {}} />
                     <label className="col-span-12 text-xs text-neutral-500">
-                      Bands — one per line: <code className="text-neutral-400">from | to(*=∞) | unit_price_pence | none|monthly|on_band_hit | minimum_pence</code>
+                      Graduated bands <span className="text-neutral-400">(optional — only for volume tiers; if set, bands override the flat price above)</span>: <code className="text-neutral-400">from | to(*=∞) | unit_price_pence | none|monthly|on_band_hit | minimum_pence</code>
                       <textarea name="bands" rows={Math.max(2, bands.length + 1)} defaultValue={bandsToText(bands)}
                         className={`${field} mt-0.5 w-full font-mono`} />
                     </label>

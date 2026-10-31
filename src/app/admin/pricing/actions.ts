@@ -11,6 +11,7 @@ import { flash } from "@/lib/flash";
 import { isSuperAdmin } from "@/lib/auth/role";
 import { updatePricingTable, saveBands, createPricingVersion } from "@/lib/billing/repo";
 import { parseBandsText } from "@/lib/billing/bands";
+import { parseItemConfig } from "@/lib/billing/itemConfig";
 import { METRICS, VAT_TREATMENTS, type Metric, type VatTreatment } from "@/lib/billing/catalogue";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
@@ -32,6 +33,10 @@ export async function updatePricingTableAction(formData: FormData) {
     await flash("error", "Invalid metric or VAT treatment.");
     return redirect(BACK);
   }
+  // Per-metric default price, stored on the pricing table's config — the
+  // catalogue standard rate that flows into every account's invoices (unless
+  // overridden per account).
+  const config = parseItemConfig(metric, (f) => str(formData.get(`cfg_${f}`))) as unknown as Record<string, unknown>;
   const db = serviceClient();
   try {
     await updatePricingTable(db, id, {
@@ -39,6 +44,7 @@ export async function updatePricingTableAction(formData: FormData) {
       product_group: str(formData.get("product_group")) || null,
       metric,
       vat_treatment: vat,
+      config,
       is_placeholder: str(formData.get("is_placeholder")) === "on",
     });
     await saveBands(db, id, parseBandsText(str(formData.get("bands"))));

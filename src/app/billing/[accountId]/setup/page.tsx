@@ -128,7 +128,8 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
                     </label>
                     <span className="text-xs text-neutral-400">VAT {table?.vat_treatment ?? e.vat}</span>
                   </div>
-                  <ItemConfigFields k={e.key} metric={metric} cfg={(it?.config as ItemConfig) ?? {}} />
+                  {/* Prefill from the account's saved config, else the catalogue standard price. */}
+                  <ItemConfigFields k={e.key} metric={metric} cfg={(it?.config as ItemConfig) ?? (table?.config as ItemConfig) ?? {}} />
                 </div>
               );
             })}
