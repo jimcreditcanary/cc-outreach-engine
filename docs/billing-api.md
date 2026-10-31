@@ -56,6 +56,58 @@ curl -sS -X POST https://www.veepveep.co.uk/api/billing/usage \
 
 ---
 
+## POST /api/billing/usage/internal
+
+The **client-level** feed, for veepveep's own platform: one call per client per
+month carrying usage for **every variable product** the client is set up for.
+No per-item keys — one internal secret + a client reference.
+
+**Auth:** `Authorization: Bearer $CRON_SECRET`
+
+**Body:**
+
+```json
+{
+  "client_ref": "<HubSpot company id | billing account id | onboarding case id>",
+  "period_month": "2026-02",
+  "usage": [
+    { "item_type": "tu_call_report", "quantity": 100 },
+    { "item_type": "tu_callml",      "quantity": 250 },
+    { "item_type": "faster_payments","quantity": 500, "value": 95000 }
+  ]
+}
+```
+
+- `client_ref` resolves to the billing account (HubSpot company id tried first,
+  then account id / onboarding case id).
+- **SET / restate semantics** per (product, month): re-sending a month overwrites
+  that product's total, so you can safely send the full monthly feed each run.
+- A product the client **isn't** set up for comes back `not_configured` (not an
+  error) — send your whole product list; only configured items are recorded.
+- `item_type` values are the catalogue keys in `src/lib/billing/catalogue.ts`.
+
+**Response** (`200`; `404` unknown client, `400` validation, `401` auth):
+
+```json
+{ "ok": true, "account_id": "…", "period_month": "2026-02",
+  "results": [
+    { "item_type": "tu_call_report", "status": "recorded", "quantity": 100 },
+    { "item_type": "tu_callml",      "status": "recorded", "quantity": 250 },
+    { "item_type": "faster_payments","status": "recorded", "quantity": 500 },
+    { "item_type": "monevo_broker_fee", "status": "not_configured" }
+  ] }
+```
+
+```bash
+curl -sS -X POST https://www.veepveep.co.uk/api/billing/usage/internal \
+  -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" \
+  -d '{"client_ref":"9175484","period_month":"2026-02","usage":[
+        {"item_type":"tu_call_report","quantity":100},
+        {"item_type":"tu_callml","quantity":250}]}'
+```
+
+---
+
 ## POST /api/billing/contract-status
 
 Internal contract-status sink. Writes a `contract_status_event` and, for known

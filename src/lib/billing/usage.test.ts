@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizePeriodMonth, usagePayloadEqual, usageBodySchema } from "./usage";
+import { normalizePeriodMonth, usagePayloadEqual, usageBodySchema, clientUsageSchema } from "./usage";
 
 describe("normalizePeriodMonth", () => {
   it("coerces any date in the month to the 1st", () => {
@@ -34,5 +34,16 @@ describe("usageBodySchema", () => {
     expect(usageBodySchema.safeParse([{ period_month: "2026-01", quantity: 1, idempotency_key: "abcdefgh" }]).success).toBe(true);
     expect(usageBodySchema.safeParse({ period_month: "2026-01", quantity: -1, idempotency_key: "abcdefgh" }).success).toBe(false);
     expect(usageBodySchema.safeParse({ period_month: "2026-01", quantity: 1, idempotency_key: "short" }).success).toBe(false);
+  });
+});
+
+describe("clientUsageSchema", () => {
+  it("accepts a client feed with multiple products", () => {
+    const ok = clientUsageSchema.safeParse({ client_ref: "9175484", period_month: "2026-02", usage: [{ item_type: "tu_call_report", quantity: 100 }, { item_type: "tu_callml", quantity: 250 }] });
+    expect(ok.success).toBe(true);
+  });
+  it("rejects an empty usage list or a bad quantity", () => {
+    expect(clientUsageSchema.safeParse({ client_ref: "x", period_month: "2026-02", usage: [] }).success).toBe(false);
+    expect(clientUsageSchema.safeParse({ client_ref: "x", period_month: "2026-02", usage: [{ item_type: "tu_call_report", quantity: -1 }] }).success).toBe(false);
   });
 });

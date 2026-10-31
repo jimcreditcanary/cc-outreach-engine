@@ -92,3 +92,67 @@ export async function recordUsage(db: DB, itemId: string, rec: UsageRecordInput)
   if (!existing) throw ins.error;
   return usagePayloadEqual(existing as StoredUsage, rec) ? "duplicate" : "conflict";
 }
+
+// ─── client-level multi-product feed (internal) ───────────────────────────────
+// One call per client per month carrying usage for every variable product the
+// client is set up for: { client_ref, period_month, usage: [{item_type, qty…}] }.
+// Auth is CRON_SECRET (internal, from veepveep's platform), not per-item keys.
+// Semantics are SET/restate per (product, month): re-sending a month overwrites
+// that product's total (last write wins), so monthly feeds are safe to resend.
+
+export const clientUsageItemSchema = z.object({
+  item_type: z.string().min(1),
+  quantity: z.number().nonnegative(),
+  value: z.number().nullish(),
+  principal: z.number().nullish(),
+  application_outcome: z.string().nullish(),
+  idempotency_key: z.string().min(8).max(200).optional(),
+});
+export type ClientUsageItem = z.infer<typeof clientUsageItemSchema>;
+
+export const clientUsageSchema = z.object({
+  client_ref: z.string().min(1),
+  period_month: z.string().min(4),
+  usage: z.array(clientUsageItemSchema).min(1).max(100),
+});
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Resolve a client reference to a billing account id. Accepts (in order) the
+ *  HubSpot company id, the billing account id, or the onboarding case id — so
+ *  whatever stable id veepveep holds for the merchant works. */
+export async function resolveClientAccountId(db: DB, ref: string): Promise<string | null> {
+  const byCompany = await db.from("billing_accounts").select("id").eq("hubspot_company_id", ref).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (byCompany.data) return (byCompany.data as { id: string }).id;
+  if (UUID_RE.test(ref)) {
+    const byId = await db.from("billing_accounts").select("id").eq("id", ref).maybeSingle();
+    if (byId.data) return (byId.data as { id: string }).id;
+    const byCase = await db.from("billing_accounts").select("id").eq("onboarding_case_id", ref).maybeSingle();
+    if (byCase.data) return (byCase.data as { id: string }).id;
+  }
+  return null;
+}
+
+export type ClientUsageStatus = "recorded" | "not_configured";
+export interface ClientUsageResult { item_type: string; status: ClientUsageStatus; quantity?: number }
+
+/** Record (set/restate) usage for each product against the client's items. A
+ *  product the client isn't set up for is reported as not_configured, not an
+ *  error, so the caller can send its full product list every month. */
+export async function recordClientUsage(db: DB, accountId: string, periodMonth: string, items: ClientUsageItem[]): Promise<ClientUsageResult[]> {
+  const period = normalizePeriodMonth(periodMonth);
+  const results: ClientUsageResult[] = [];
+  for (const it of items) {
+    const { data: item } = await db.from("billing_items").select("id").eq("account_id", accountId).eq("item_type", it.item_type).eq("active", true).maybeSingle();
+    if (!item) { results.push({ item_type: it.item_type, status: "not_configured" }); continue; }
+    const key = it.idempotency_key ?? `platform:${accountId}:${it.item_type}:${period}`;
+    const { error } = await db.from("billing_usage_records").upsert({
+      billing_item_id: (item as { id: string }).id, period_month: period, quantity: it.quantity,
+      value: it.value ?? null, principal: it.principal ?? null, application_outcome: it.application_outcome ?? null,
+      source: "api", idempotency_key: key, raw: it as unknown as Record<string, unknown>,
+    }, { onConflict: "idempotency_key" });
+    if (error) throw error;
+    results.push({ item_type: it.item_type, status: "recorded", quantity: it.quantity });
+  }
+  return results;
+}
