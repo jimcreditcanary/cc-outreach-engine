@@ -29,6 +29,18 @@ const CONTACT_PROPS = uniq([...CONTACT_READ_PROPS,
   "website", "address", "city", "country", "hs_object_id"]);
 const DEAL_PROPS = uniq([...DEAL_READ_PROPS, "hubspot_owner_id", "description", "hs_object_id"]);
 
+/** Every CUSTOM property name for an object type (hubspotDefined=false) — so the
+ *  mirror captures all bespoke fields, not just the curated set. Best-effort:
+ *  [] on failure, so the mirror still runs on the curated props. */
+async function customPropNames(objectType: string): Promise<string[]> {
+  try {
+    const r = await hsFetch<{ results?: { name: string; hubspotDefined?: boolean }[] }>(`/crm/v3/properties/${objectType}`);
+    return (r.results ?? []).filter((p) => !p.hubspotDefined).map((p) => p.name);
+  } catch {
+    return [];
+  }
+}
+
 const num = (v: string | null | undefined): number | null => {
   const n = Number(v);
   return v != null && v !== "" && Number.isFinite(n) ? n : null;
@@ -94,25 +106,28 @@ export async function runHubspotMirror(db: DB, opts: { only?: ("companies" | "co
   const objects: ObjectResult[] = [];
 
   if (want("companies")) {
+    const props = uniq([...COMPANY_PROPS, ...(await customPropNames("companies"))]);
     objects.push(await mirrorObject(db, "companies", (o) => ({
       id: String(o.id), name: o.properties.name ?? null, domain: o.properties.domain ?? null,
       properties: o.properties, associations: o.associations ?? null, mirrored_at: now(),
-    }), "hs_mirror_companies", COMPANY_PROPS));
+    }), "hs_mirror_companies", props));
   }
   if (want("contacts")) {
+    const props = uniq([...CONTACT_PROPS, ...(await customPropNames("contacts"))]);
     objects.push(await mirrorObject(db, "contacts", (o) => ({
       id: String(o.id),
       email: o.properties.email ?? null,
       full_name: fullName(o.properties.firstname, o.properties.lastname, o.properties.email ?? null) || null,
       company_id: o.properties.associatedcompanyid ?? firstAssoc(o, "companies"),
       properties: o.properties, associations: o.associations ?? null, mirrored_at: now(),
-    }), "hs_mirror_contacts", CONTACT_PROPS, "companies"));
+    }), "hs_mirror_contacts", props, "companies"));
   }
   if (want("deals")) {
+    const props = uniq([...DEAL_PROPS, ...(await customPropNames("deals"))]);
     objects.push(await mirrorObject(db, "deals", (o) => ({
       id: String(o.id), dealname: o.properties.dealname ?? null, amount: num(o.properties.amount), dealstage: o.properties.dealstage ?? null,
       properties: o.properties, associations: o.associations ?? null, mirrored_at: now(),
-    }), "hs_mirror_deals", DEAL_PROPS, "companies,contacts"));
+    }), "hs_mirror_deals", props, "companies,contacts"));
   }
 
   return { ok: objects.every((o) => o.ok), objects };
