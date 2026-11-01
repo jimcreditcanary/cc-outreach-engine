@@ -15,6 +15,11 @@ export interface ItemConfig {
   per_number_month_pence?: number; // comms sms/whatsapp: per number per month
   setup_kind?: "one_off" | "schedule"; // setup_fee
   billing_trigger?: "on_contract_signed" | "on_go_live"; // setup_fee default on_contract_signed
+  // Escalating recurring fee (e.g. platform fee Yr1/2/3). The product stores the
+  // RELATIVE schedule; it is resolved to absolute `escalation` against the
+  // account's contract_start at invoice time.
+  escalation_relative?: { start_month: number; amount_pence: number }[];
+  escalation?: { from_date: string; amount_pence: number }[];
 }
 
 /** Which config fields the wizard shows for a given metric. Drives the form. */

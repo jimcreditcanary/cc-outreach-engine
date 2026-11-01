@@ -6,8 +6,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getXero } from "@/lib/integrations/xero";
 import { getCrm } from "@/lib/crm";
-import { listBillingItems, listBands, currentPricingByItemType, updateBillingAccount } from "./repo";
-import { computeInvoice, type EngineItem, type EngineInput, type InvoiceResult } from "./engine";
+import { listBillingItems, listBands, currentPricingByItemType, currentGroupMinimums, updateBillingAccount } from "./repo";
+import { computeInvoice, resolveEscalation, type EngineItem, type EngineInput, type GroupMinimumInput, type InvoiceResult } from "./engine";
 import type { Metric, VatTreatment } from "./catalogue";
 import type { ItemConfig } from "./itemConfig";
 
@@ -35,7 +35,7 @@ async function aggregateUsage(db: DB, itemId: string, periodM1: string): Promise
   return { quantity, value: hasV ? value : null, principal: hasP ? principal : null };
 }
 
-async function buildEngineItems(db: DB, accountId: string, periodM1: string): Promise<EngineItem[]> {
+async function buildEngineItems(db: DB, accountId: string, periodM1: string, contractStartDate: string): Promise<EngineItem[]> {
   const [items, pricing] = await Promise.all([listBillingItems(db, accountId), currentPricingByItemType(db)]);
   const out: EngineItem[] = [];
   for (const it of items) {
@@ -43,15 +43,27 @@ async function buildEngineItems(db: DB, accountId: string, periodM1: string): Pr
     const table = pricing.get(it.item_type);
     const metric = (table?.metric ?? "flat_monthly") as Metric;
     const bands = table ? await listBands(db, table.id) : [];
+    // Config = product-library defaults (fixed/pct/cap/amount/escalation) with
+    // the per-account item config layered on top, then resolve any escalation
+    // schedule to absolute dates against the contract start.
+    const tableCfg = (table?.config ?? {}) as unknown as ItemConfig;
+    const cfg: ItemConfig = { ...tableCfg, ...(it.config as ItemConfig) };
+    if (!cfg.escalation) {
+      const esc = resolveEscalation(cfg.escalation_relative, contractStartDate);
+      if (esc) cfg.escalation = esc;
+    }
+
     out.push({
       billing_item_id: it.id,
       item_type: it.item_type,
       label: table?.name ?? it.item_type,
       metric,
-      vat_treatment: (it.vat_treatment as VatTreatment) ?? "standard",
-      config: it.config as ItemConfig,
+      vat_treatment: (it.vat_treatment as VatTreatment) ?? (table?.vat_treatment as VatTreatment) ?? "standard",
+      product_group: table?.product_group ?? null,
+      band_mode: table?.band_mode ?? "volume",
+      config: cfg,
       override: (it.override as ItemConfig) ?? null,
-      bands: bands.map((b) => ({ from_units: b.from_units, to_units: b.to_units, unit_price_pence: b.unit_price_pence, minimum_type: b.minimum_type, minimum_pence: b.minimum_pence })),
+      bands: bands.map((b) => ({ from_units: b.from_units, to_units: b.to_units, unit_price_pence: b.unit_price_pence, minimum_type: b.minimum_type, minimum_pence: b.minimum_pence, unit_cap_pence: b.unit_cap_pence })),
       usage: await aggregateUsage(db, it.id, periodM1),
     });
   }
@@ -91,6 +103,7 @@ export async function runBilling(db: DB, period?: string): Promise<RunSummary> {
   const approve = !!process.env.XERO_AUTO_APPROVE_FROM && runDate >= process.env.XERO_AUTO_APPROVE_FROM;
   const xero = getXero();
   const crm = getCrm();
+  const groupMinimums: GroupMinimumInput[] = (await currentGroupMinimums(db)).map((g) => ({ product_group: g.product_group, minimum_pence: g.minimum_pence }));
 
   const { data: run } = await db.from("billing_invoice_runs").insert({ period_month: periodMonth, run_date: runDate, status: "running" }).select("id").single();
   const runId = run!.id as string;
@@ -113,8 +126,8 @@ export async function runBilling(db: DB, period?: string): Promise<RunSummary> {
       const { count: priorCount } = await db.from("billing_invoices").select("id", { count: "exact", head: true }).eq("account_id", acc.id);
       const isFirstInvoice = (priorCount ?? 0) === 0;
 
-      const items = await buildEngineItems(db, acc.id, periodM1);
-      const input: EngineInput = { periodMonth, isFirstInvoice, contractStartDate: acc.contract_start_date, contractEndDate: acc.contract_end_date, items };
+      const items = await buildEngineItems(db, acc.id, periodM1, acc.contract_start_date);
+      const input: EngineInput = { periodMonth, isFirstInvoice, contractStartDate: acc.contract_start_date, contractEndDate: acc.contract_end_date, items, groupMinimums };
       const result = computeInvoice(input);
       if (result.lines.length === 0) { summary.skipped += 1; continue; }
 

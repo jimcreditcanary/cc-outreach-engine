@@ -15,6 +15,7 @@ export interface PricingTable {
   metric: Metric;
   config: Record<string, unknown>;
   vat_treatment: VatTreatment;
+  band_mode: "volume" | "graduated";
   is_placeholder: boolean;
   version: number;
   effective_from: string;
@@ -31,7 +32,13 @@ export interface PricingBand {
   unit_price_pence: number;
   minimum_type: "none" | "monthly" | "on_band_hit";
   minimum_pence: number;
+  unit_cap_pence: number | null;
   sort_order: number;
+}
+
+export interface GroupMinimum {
+  product_group: string;
+  minimum_pence: number;
 }
 
 export interface BillingAccount {
@@ -53,8 +60,8 @@ export interface BillingAccount {
 }
 
 const TABLE_COLS =
-  "id, item_type, name, product_group, metric, config, vat_treatment, is_placeholder, version, effective_from, effective_to, created_at, updated_at";
-const BAND_COLS = "id, pricing_table_id, from_units, to_units, unit_price_pence, minimum_type, minimum_pence, sort_order";
+  "id, item_type, name, product_group, metric, config, vat_treatment, band_mode, is_placeholder, version, effective_from, effective_to, created_at, updated_at";
+const BAND_COLS = "id, pricing_table_id, from_units, to_units, unit_price_pence, minimum_type, minimum_pence, unit_cap_pence, sort_order";
 const ACCT_COLS =
   "id, onboarding_case_id, hubspot_company_id, hubspot_deal_id, xero_contact_id, contract_start_date, contract_signed_at, notice_period_days, contract_end_date, status, finance_contact_id, deal_owner_user_id, po_number, created_at, updated_at";
 
@@ -98,7 +105,7 @@ export async function updatePricingTable(db: DB, id: string, patch: PricingTable
   if (error) throw error;
 }
 
-export type BandInput = Omit<PricingBand, "id" | "pricing_table_id">;
+export type BandInput = Omit<PricingBand, "id" | "pricing_table_id" | "unit_cap_pence"> & { unit_cap_pence?: number | null };
 
 /** Replace all bands for a table (clean resubmit). */
 export async function saveBands(db: DB, tableId: string, bands: BandInput[]): Promise<void> {
@@ -125,6 +132,7 @@ export async function createPricingVersion(db: DB, fromId: string, effectiveFrom
       metric: base.metric,
       config: base.config,
       vat_treatment: base.vat_treatment,
+      band_mode: base.band_mode,
       is_placeholder: base.is_placeholder,
       version: base.version + 1,
       effective_from: effectiveFrom,
@@ -143,6 +151,7 @@ export async function createPricingVersion(db: DB, fromId: string, effectiveFrom
         unit_price_pence: b.unit_price_pence,
         minimum_type: b.minimum_type,
         minimum_pence: b.minimum_pence,
+        unit_cap_pence: b.unit_cap_pence,
         sort_order: b.sort_order,
       })),
     );
@@ -280,6 +289,23 @@ export async function currentPricingByItemType(db: DB): Promise<Map<string, Pric
     if (!map.has(t.item_type)) map.set(t.item_type, t); // first = newest effective
   }
   return map;
+}
+
+/** Current effective product-group monthly minimums, newest per group. */
+export async function currentGroupMinimums(db: DB): Promise<GroupMinimum[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data, error } = await db
+    .from("billing_group_minimums")
+    .select("product_group, minimum_pence, effective_from, effective_to")
+    .lte("effective_from", today)
+    .order("effective_from", { ascending: false });
+  if (error) throw error;
+  const seen = new Map<string, GroupMinimum>();
+  for (const r of (data ?? []) as { product_group: string; minimum_pence: number; effective_to: string | null }[]) {
+    if (r.effective_to && r.effective_to <= today) continue;
+    if (!seen.has(r.product_group) && r.minimum_pence > 0) seen.set(r.product_group, { product_group: r.product_group, minimum_pence: r.minimum_pence });
+  }
+  return [...seen.values()];
 }
 
 export async function logBillingAudit(

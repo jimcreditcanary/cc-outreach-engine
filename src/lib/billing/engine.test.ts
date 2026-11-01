@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeInvoice, graduatedCharge, monthlyAmount, type EngineItem, type EngineBand, type EngineInput } from "./engine";
+import { computeInvoice, graduatedCharge, volumeCharge, resolveEscalation, monthlyAmount, type EngineItem, type EngineBand, type EngineInput } from "./engine";
 
 const band = (from: number, to: number | null, price: number, minType: EngineBand["minimum_type"] = "none", min = 0): EngineBand => ({ from_units: from, to_units: to, unit_price_pence: price, minimum_type: minType, minimum_pence: min });
 
@@ -30,6 +30,46 @@ describe("graduatedCharge", () => {
     expect(graduatedCharge(500, bands).amount_pence).toBe(50000);      // band 2 not reached → no floor
     expect(graduatedCharge(1100, bands).amount_pence).toBe(100000 + 8000); // 108000 > floor 90000
     expect(graduatedCharge(1001, bands).amount_pence).toBe(Math.max(100000 + 80, 90000)); // floor wins? 100080 > 90000
+  });
+});
+
+describe("volumeCharge (whole-volume tiers — Jim's model)", () => {
+  // OB AIS-style: lands in ONE tier, whole volume at that tier's rate, tier min floors.
+  const obBands = [
+    band(0, 1000, 33, "monthly", 25000),
+    band(1001, 5000, 25, "monthly", 100000),
+    band(5001, null, 20, "monthly", 150000),
+  ];
+  it("charges every unit at the tier the volume lands in (not cumulative slices)", () => {
+    // 3000 → tier 2: 3000*25 = 75000, floored to tier-2 min 100000
+    expect(volumeCharge(3000, obBands).amount_pence).toBe(100000);
+    // 4500 → tier 2: 4500*25 = 112500 (above the min)
+    expect(volumeCharge(4500, obBands).amount_pence).toBe(112500);
+    // 6000 → tier 3: 6000*20 = 120000, floored to 150000
+    expect(volumeCharge(6000, obBands).amount_pence).toBe(150000);
+  });
+  it("tier minimum floors low usage, and applies at zero usage (committed floor)", () => {
+    expect(volumeCharge(200, obBands).amount_pence).toBe(25000); // 200*33=6600 → floor 25000
+    expect(volumeCharge(0, obBands).amount_pence).toBe(25000);   // 0 → tier 1 floor
+  });
+  it("differs from graduated for the same bands", () => {
+    const g = graduatedCharge(3000, obBands).amount_pence; // 1000*33 + 2000*25 = 83000 (floored)
+    expect(g).not.toBe(volumeCharge(3000, obBands).amount_pence);
+  });
+});
+
+describe("resolveEscalation", () => {
+  it("anchors relative start-months on the contract start", () => {
+    const r = resolveEscalation([{ start_month: 0, amount_pence: 250000 }, { start_month: 12, amount_pence: 350000 }, { start_month: 24, amount_pence: 450000 }], "2026-03-01");
+    expect(r).toEqual([
+      { from_date: "2026-03-01", amount_pence: 250000 },
+      { from_date: "2027-03-01", amount_pence: 350000 },
+      { from_date: "2028-03-01", amount_pence: 450000 },
+    ]);
+  });
+  it("undefined for an empty schedule", () => {
+    expect(resolveEscalation(undefined, "2026-03-01")).toBeUndefined();
+    expect(resolveEscalation([], "2026-03-01")).toBeUndefined();
   });
 });
 
@@ -111,5 +151,68 @@ describe("computeInvoice — setup, cancellation, VAT, usage", () => {
     const a = computeInvoice(input);
     const b = computeInvoice(input);
     expect(a).toEqual(b);
+  });
+});
+
+describe("computeInvoice — Billing v2: volume, included, group minimums, escalation", () => {
+  const ob = (usage: number, extra: Partial<EngineItem> = {}): EngineItem => ({
+    billing_item_id: "ob", item_type: "open_banking_ais", label: "Open Banking (AIS)", metric: "per_account_month",
+    vat_treatment: "standard", product_group: "open_banking_data", band_mode: "volume", config: {},
+    bands: [band(0, 1000, 33, "monthly", 25000), band(1001, 5000, 25, "monthly", 100000), band(5001, null, 20, "monthly", 150000)],
+    usage: { quantity: usage }, ...extra,
+  });
+
+  it("volume product bills the tier the month's volume lands in", () => {
+    const inv = computeInvoice(base([ob(3000)]));
+    expect(inv.lines[0]?.line_amount_pence).toBe(100000); // tier-2 min
+    expect(inv.lines[0]?.calc.mode).toBe("volume");
+  });
+
+  it("committed monthly minimum bills at zero usage WITHIN contract", () => {
+    const inv = computeInvoice(base([ob(0)]));
+    expect(inv.lines[0]?.line_amount_pence).toBe(25000); // tier-1 floor
+  });
+
+  it("no phantom minimum after cancellation (zero trailing usage → no line)", () => {
+    const inv = computeInvoice(base([ob(0)], { contractEndDate: "2026-02-28", periodMonth: "2026-03-01" }));
+    expect(inv.lines).toHaveLength(0);
+  });
+
+  it("trailing usage after cancellation bills actual, without the floor", () => {
+    const inv = computeInvoice(base([ob(200)], { contractEndDate: "2026-02-28", periodMonth: "2026-03-01" }));
+    expect(inv.lines[0]?.line_amount_pence).toBe(200 * 33); // 6600, NOT floored to 25000
+  });
+
+  it("'included' bills £0 and ignores reported usage", () => {
+    const inv = computeInvoice(base([ob(4000, { config: { included: true } })]));
+    expect(inv.lines[0]?.line_amount_pence).toBe(0);
+    expect(inv.lines[0]?.calc.included).toBe(true);
+  });
+
+  it("category minimum tops up a group that bills under its floor", () => {
+    const tu = (id: string, q: number): EngineItem => ({ billing_item_id: id, item_type: "tu_x", label: "TU " + id, metric: "per_request", vat_treatment: "standard", product_group: "tu_credit", config: {}, bands: [band(0, null, 50)], usage: { quantity: q } });
+    const inv = computeInvoice(base([tu("a", 100), tu("b", 100)], { groupMinimums: [{ product_group: "tu_credit", minimum_pence: 50000 }] }));
+    // 2 * (100*50) = 10000 billed → top-up 40000 to reach 50000
+    const top = inv.lines.find((l) => l.calc.group_minimum);
+    expect(top?.line_amount_pence).toBe(40000);
+    expect(top?.vat_pence).toBe(8000); // standard VAT on the top-up
+    expect(inv.subtotal_pence).toBe(50000);
+  });
+
+  it("no category top-up when the group already clears its floor, or isn't sold", () => {
+    const tu: EngineItem = { billing_item_id: "a", item_type: "tu_x", label: "TU", metric: "per_request", vat_treatment: "standard", product_group: "tu_credit", config: {}, bands: [band(0, null, 50)], usage: { quantity: 2000 } };
+    const over = computeInvoice(base([tu], { groupMinimums: [{ product_group: "tu_credit", minimum_pence: 50000 }] }));
+    expect(over.lines.find((l) => l.calc.group_minimum)).toBeUndefined(); // 100000 ≥ 50000
+    // group minimum for a category with no items on the account → nothing
+    const none = computeInvoice(base([platform(10000)], { groupMinimums: [{ product_group: "tu_credit", minimum_pence: 50000 }] }));
+    expect(none.lines.find((l) => l.calc.group_minimum)).toBeUndefined();
+  });
+
+  it("platform fee escalates by contract year via the resolved schedule", () => {
+    const esc = resolveEscalation([{ start_month: 0, amount_pence: 250000 }, { start_month: 12, amount_pence: 350000 }, { start_month: 24, amount_pence: 450000 }], "2026-03-01")!;
+    const pf = (period: string) => computeInvoice(base([platform(250000, { config: { amount_pence: 250000, escalation: esc } })], { contractStartDate: "2026-03-01", periodMonth: period }));
+    expect(pf("2026-06-01").lines[0]?.line_amount_pence).toBe(250000); // Yr1
+    expect(pf("2027-06-01").lines[0]?.line_amount_pence).toBe(350000); // Yr2
+    expect(pf("2028-06-01").lines[0]?.line_amount_pence).toBe(450000); // Yr3
   });
 });
