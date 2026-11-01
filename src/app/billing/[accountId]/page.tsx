@@ -5,12 +5,22 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { getBillingAccountById, listBillingItems, currentPricingByItemType } from "@/lib/billing/repo";
+import { getBillingAccountById, listBillingItems, listBands, currentPricingByItemType } from "@/lib/billing/repo";
 import { labelFor, type Metric } from "@/lib/billing/catalogue";
 import { describeConfig, type ItemConfig } from "@/lib/billing/itemConfig";
+import { reconcile, comparablePricePence, type ConfiguredItem, type DealLine, type ReconStatus } from "@/lib/billing/reconcile";
+import { formatPence } from "@/lib/billing/money";
 import { isSuperAdmin } from "@/lib/auth/role";
 import { setItemOverrideAction } from "../actions";
 import { fmtDate } from "@/lib/format/datetime";
+
+const RECON_FLAG: Record<ReconStatus, { label: string; cls: string }> = {
+  ok: { label: "✓ matches", cls: "bg-emerald-100 text-emerald-700" },
+  price_mismatch: { label: "price differs", cls: "bg-amber-100 text-amber-800" },
+  missing_setup: { label: "on deal, not set up", cls: "bg-amber-100 text-amber-800" },
+  not_on_deal: { label: "set up, not on deal", cls: "bg-neutral-200 text-neutral-600" },
+  unmapped: { label: "SKU not recognised", cls: "bg-red-100 text-red-700" },
+};
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +40,16 @@ export default async function BillingAccountPage({ params }: { params: Promise<{
     .select("id, name, sku, quantity, price, amount, term")
     .eq("account_id", accountId)
     .order("mirrored_at", { ascending: true });
+
+  // Reconcile what we set up vs what the deal sold (SKU → product key, + price).
+  const configuredForRecon: ConfiguredItem[] = await Promise.all(items.filter((i) => i.active).map(async (it) => {
+    const t = pricing.get(it.item_type);
+    const bands = t ? await listBands(db, t.id) : [];
+    const mergedCfg = { ...((t?.config ?? {}) as object), ...(it.config as object) } as { amount_pence?: number; fixed_pence?: number };
+    return { item_type: it.item_type, label: t?.name ?? it.item_type, our_price_pence: t ? comparablePricePence(t.metric, mergedCfg, bands) : null };
+  }));
+  const dealLines: DealLine[] = (lineItems ?? []).map((li) => ({ sku: li.sku, name: li.name, quantity: li.quantity, price: li.price }));
+  const recon = reconcile(dealLines, configuredForRecon, { knownKeys: new Set(pricing.keys()) });
 
   const row = "flex justify-between border-b border-neutral-100 py-1.5 text-sm";
   const key = "text-neutral-500";
@@ -95,6 +115,34 @@ export default async function BillingAccountPage({ params }: { params: Promise<{
               );
             })}
           </div>
+        )}
+      </section>
+
+      <section className="mt-6">
+        <div className="mb-2 flex items-center gap-2">
+          <h2 className="text-sm font-semibold">Were we accurate?</h2>
+          {dealLines.length === 0 ? null : recon.accurate
+            ? <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700">✓ setup matches the deal</span>
+            : <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">⚠ {recon.issues} to check</span>}
+        </div>
+        {dealLines.length === 0 ? (
+          <p className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">No deal line items mirrored to compare against.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500"><tr><th className="py-1.5">Product</th><th>On deal</th><th>Set up</th><th>Deal price</th><th>Our price</th><th>Flag</th></tr></thead>
+            <tbody>
+              {recon.rows.map((r, i) => (
+                <tr key={`${r.item_type ?? "x"}-${i}`} className="border-b border-neutral-100">
+                  <td className="py-1.5">{r.label} {r.item_type ? <span className="font-mono text-xs text-neutral-400">{r.item_type}</span> : null}</td>
+                  <td>{r.on_deal ? "✓" : "—"}</td>
+                  <td>{r.configured ? "✓" : "—"}</td>
+                  <td>{r.deal_price_pence != null ? formatPence(r.deal_price_pence) : "—"}</td>
+                  <td>{r.our_price_pence != null ? formatPence(r.our_price_pence) : <span className="text-neutral-400">n/a</span>}</td>
+                  <td><span className={`rounded px-1.5 py-0.5 text-xs ${RECON_FLAG[r.status].cls}`}>{RECON_FLAG[r.status].label}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
 

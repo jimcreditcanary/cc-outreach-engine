@@ -24,6 +24,7 @@ export default async function BillingHome() {
       <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Billing</h1>
         <div className="flex items-baseline gap-3 text-sm">
+          <Link href="/billing/customers" className="text-blue-600 hover:underline">Customers →</Link>
           <Link href="/billing/outstanding" className="text-blue-600 hover:underline">Outstanding →</Link>
           <span className="text-neutral-500">{accounts.length} account{accounts.length === 1 ? "" : "s"}</span>
         </div>
