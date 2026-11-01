@@ -108,6 +108,41 @@ curl -sS -X POST https://www.veepveep.co.uk/api/billing/usage/internal \
 
 ---
 
+## GET /api/billing/customers
+
+The **customer directory** for veepveep's platform. Lists every billing account
+with the id(s) usable as `client_ref`, its status + contract window, and the
+products it's configured for — so the caller knows which `item_type` keys to
+feed usage against (only `variable: true` products need usage; `included: true`
+ones are billed as part of a fixed line and their usage is ignored).
+
+**Auth:** `Authorization: Bearer $CRON_SECRET`
+
+**Response** (`200`):
+
+```json
+{ "ok": true, "count": 1,
+  "customers": [
+    { "account_id": "…", "status": "active",
+      "company_name": "Acme Ltd", "hubspot_company_id": "9175484",
+      "onboarding_case_id": "…",
+      "contract_start_date": "2026-09-01", "contract_end_date": null,
+      "products": [
+        { "item_type": "tu_callml", "label": "TU CallML", "metric": "per_request", "variable": true, "included": false },
+        { "item_type": "platform_fee", "label": "Platform fee", "metric": "flat_monthly", "variable": false, "included": false }
+      ] } ] }
+```
+
+Any of `hubspot_company_id`, `account_id`, or `onboarding_case_id` is accepted as
+`client_ref` by `POST /api/billing/usage/internal`.
+
+```bash
+curl -sS https://www.veepveep.co.uk/api/billing/customers \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+---
+
 ## POST /api/billing/contract-status
 
 Internal contract-status sink. Writes a `contract_status_event` and, for known

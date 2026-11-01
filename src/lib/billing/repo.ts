@@ -16,6 +16,7 @@ export interface PricingTable {
   config: Record<string, unknown>;
   vat_treatment: VatTreatment;
   band_mode: "volume" | "graduated";
+  product_type: "fixed" | "variable";
   is_placeholder: boolean;
   version: number;
   effective_from: string;
@@ -60,7 +61,7 @@ export interface BillingAccount {
 }
 
 const TABLE_COLS =
-  "id, item_type, name, product_group, metric, config, vat_treatment, band_mode, is_placeholder, version, effective_from, effective_to, created_at, updated_at";
+  "id, item_type, name, product_group, metric, config, vat_treatment, band_mode, product_type, is_placeholder, version, effective_from, effective_to, created_at, updated_at";
 const BAND_COLS = "id, pricing_table_id, from_units, to_units, unit_price_pence, minimum_type, minimum_pence, unit_cap_pence, sort_order";
 const ACCT_COLS =
   "id, onboarding_case_id, hubspot_company_id, hubspot_deal_id, xero_contact_id, contract_start_date, contract_signed_at, notice_period_days, contract_end_date, status, finance_contact_id, deal_owner_user_id, po_number, created_at, updated_at";
@@ -133,6 +134,7 @@ export async function createPricingVersion(db: DB, fromId: string, effectiveFrom
       config: base.config,
       vat_treatment: base.vat_treatment,
       band_mode: base.band_mode,
+      product_type: base.product_type,
       is_placeholder: base.is_placeholder,
       version: base.version + 1,
       effective_from: effectiveFrom,
