@@ -82,6 +82,22 @@ export async function updateUserProfileAction(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
+export async function setUserRoleAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("id"));
+  if (!id) return;
+  const role = str(formData.get("role")) === "super_admin" ? "super_admin" : "operator";
+  // Partial upsert — sets only role, leaving the profile fields intact.
+  const { error } = await serviceClient().from("user_settings").upsert(
+    { user_id: id, role, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" },
+  );
+  if (error) throw error;
+  await flash("success", role === "super_admin" ? "Granted super-admin (pricing + product library)." : "Set to operator.");
+  revalidatePath("/admin/users");
+}
+
 export async function resetPasswordAction(formData: FormData) {
   const me = await currentUser();
   if (!me) redirect("/login");

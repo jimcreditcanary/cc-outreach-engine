@@ -6,6 +6,7 @@
 // The MEDDICC appraisal runs on load (one Claude call, ~10s) — it's a
 // deliberate drill-in, not a list view.
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/server";
@@ -60,8 +61,6 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
   ]);
   const company = contact?.company_id ? await hubspotRepo.getCompany(contact.company_id) : null;
   const ctx: DealContext = { deal, company, contact, notes };
-
-  const assessment = await assessDealForWork(ctx);
   const noContact = !contact?.email || !!contact?.email_bounced;
 
   return (
@@ -94,80 +93,116 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
         </div>
       </header>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">
-        {/* LEFT: the update — where it stands + recent activity */}
-        <section className="space-y-4">
-          <div>
-            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Where it stands</h2>
-            <p className="rounded-lg border border-neutral-200 bg-white p-3 text-sm text-neutral-700">{assessment.summary}</p>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 text-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Biggest gap</div>
-              <p className="mt-1 text-amber-900">{assessment.biggest_gap}</p>
-            </div>
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 text-sm">
-              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Next best action</div>
-              <p className="mt-1 text-emerald-900">{assessment.next_best_action}</p>
-            </div>
-          </div>
-          <div>
-            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Recent activity</h2>
-            {notes.length === 0 ? (
-              <p className="text-sm text-neutral-400">No notes logged on the deal in HubSpot.</p>
-            ) : (
-              <ul className="space-y-2">
-                {notes.map((n, i) => (
-                  <li key={i} className="rounded border border-neutral-200 bg-white p-2 text-sm text-neutral-700">
-                    {n.ts && <div className="text-xs text-neutral-400">{fmtDateTime(n.ts)}</div>}
-                    <p className="mt-0.5 whitespace-pre-wrap">{n.body.length > 500 ? `${n.body.slice(0, 500)}…` : n.body}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
-
-        {/* RIGHT: answer the questions → draft */}
-        <section>
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Answer, then draft</h2>
-          <p className="mb-3 text-xs text-neutral-500">
-            A few MEDDICC-style questions to sharpen the email. Answer what you can — blanks are fine, the draft uses the context too.
-          </p>
-
-          {noContact && (
-            <p className="mb-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-              No contact with a usable email is linked to this deal — link one in HubSpot to draft an email.
-            </p>
-          )}
-
-          <form action={draftFromAnswersAction} className="space-y-3">
-            <input type="hidden" name="deal_id" value={deal.id} />
-            <input type="hidden" name="contact_id" value={contact?.id ?? ""} />
-            <input type="hidden" name="a_summary" value={assessment.summary} />
-            <input type="hidden" name="a_gap" value={assessment.biggest_gap} />
-            <input type="hidden" name="a_nba" value={assessment.next_best_action} />
-            <input type="hidden" name="q_count" value={assessment.questions.length} />
-
-            {assessment.questions.map((q, i) => (
-              <div key={q.id || i}>
-                <input type="hidden" name={`q_text_${i}`} value={q.question} />
-                <label className="mb-1 block text-sm font-medium text-neutral-700">{q.question}</label>
-                <textarea name={`q_answer_${i}`} rows={2} className={field} placeholder="Your answer (optional)…" />
-              </div>
-            ))}
-
-            <PendingButton
-              className="rounded bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50"
-              pendingLabel="Drafting the email…"
-              disabled={noContact}
-            >
-              ✨ Draft email → workflow
-            </PendingButton>
-            <p className="text-xs text-neutral-400">The draft lands in Outreach › Nurture for review — nothing sends automatically.</p>
-          </form>
-        </section>
-      </div>
+      {/* The MEDDICC appraisal is a ~10s Claude call — stream it so the header
+          above paints instantly and the body fills in behind a skeleton. */}
+      <Suspense fallback={<BodySkeleton />}>
+        <DealBody ctx={ctx} noContact={noContact} />
+      </Suspense>
     </main>
+  );
+}
+
+function BodySkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">
+      <section className="space-y-4">
+        <div>
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Where it stands</h2>
+          <div className="animate-pulse space-y-2 rounded-lg border border-neutral-200 bg-white p-3">
+            <div className="h-3 w-full rounded bg-neutral-100" />
+            <div className="h-3 w-5/6 rounded bg-neutral-100" />
+            <div className="h-3 w-2/3 rounded bg-neutral-100" />
+          </div>
+          <p className="mt-2 text-xs text-neutral-400">Appraising the deal with MEDDICC…</p>
+        </div>
+      </section>
+      <section>
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Answer, then draft</h2>
+        <div className="animate-pulse space-y-3">
+          {[0, 1, 2].map((i) => <div key={i} className="h-16 rounded-lg border border-neutral-200 bg-neutral-50" />)}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+async function DealBody({ ctx, noContact }: { ctx: DealContext; noContact: boolean }) {
+  const assessment = await assessDealForWork(ctx);
+  const { deal, contact, notes } = ctx;
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">
+      {/* LEFT: the update — where it stands + recent activity */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Where it stands</h2>
+          <p className="rounded-lg border border-neutral-200 bg-white p-3 text-sm text-neutral-700">{assessment.summary}</p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 text-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Biggest gap</div>
+            <p className="mt-1 text-amber-900">{assessment.biggest_gap}</p>
+          </div>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 text-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Next best action</div>
+            <p className="mt-1 text-emerald-900">{assessment.next_best_action}</p>
+          </div>
+        </div>
+        <div>
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Recent activity</h2>
+          {notes.length === 0 ? (
+            <p className="text-sm text-neutral-400">No notes logged on the deal in HubSpot.</p>
+          ) : (
+            <ul className="space-y-2">
+              {notes.map((n, i) => (
+                <li key={i} className="rounded border border-neutral-200 bg-white p-2 text-sm text-neutral-700">
+                  {n.ts && <div className="text-xs text-neutral-400">{fmtDateTime(n.ts)}</div>}
+                  <p className="mt-0.5 whitespace-pre-wrap">{n.body.length > 500 ? `${n.body.slice(0, 500)}…` : n.body}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      {/* RIGHT: answer the questions → draft */}
+      <section>
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Answer, then draft</h2>
+        <p className="mb-3 text-xs text-neutral-500">
+          A few MEDDICC-style questions to sharpen the email. Answer what you can — blanks are fine, the draft uses the context too.
+        </p>
+
+        {noContact && (
+          <p className="mb-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+            No contact with a usable email is linked to this deal — link one in HubSpot to draft an email.
+          </p>
+        )}
+
+        <form action={draftFromAnswersAction} className="space-y-3">
+          <input type="hidden" name="deal_id" value={deal.id} />
+          <input type="hidden" name="contact_id" value={contact?.id ?? ""} />
+          <input type="hidden" name="a_summary" value={assessment.summary} />
+          <input type="hidden" name="a_gap" value={assessment.biggest_gap} />
+          <input type="hidden" name="a_nba" value={assessment.next_best_action} />
+          <input type="hidden" name="q_count" value={assessment.questions.length} />
+
+          {assessment.questions.map((q, i) => (
+            <div key={q.id || i}>
+              <input type="hidden" name={`q_text_${i}`} value={q.question} />
+              <label className="mb-1 block text-sm font-medium text-neutral-700">{q.question}</label>
+              <textarea name={`q_answer_${i}`} rows={2} className={field} placeholder="Your answer (optional)…" />
+            </div>
+          ))}
+
+          <PendingButton
+            className="rounded bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+            pendingLabel="Drafting the email…"
+            disabled={noContact}
+          >
+            ✨ Draft email → workflow
+          </PendingButton>
+          <p className="text-xs text-neutral-400">The draft lands in Outreach › Nurture for review — nothing sends automatically.</p>
+        </form>
+      </section>
+    </div>
   );
 }

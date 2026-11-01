@@ -17,6 +17,8 @@ export interface Operator {
   first_name: string | null;
   last_name: string | null;
   job_title: string | null;
+  /** Operator role — 'super_admin' unlocks /admin/pricing + the product library. */
+  role: "operator" | "super_admin";
   /** ISO timestamp of their most recent successful sign-in, or null. */
   last_sign_in_at: string | null;
   /** "First Last" if both set, else "First", else the email, else the id.
@@ -47,10 +49,10 @@ export function displayName(
 export async function listOperators(): Promise<Operator[]> {
   const [{ data: usersData }, { data: settingsData }] = await Promise.all([
     adminClient().auth.admin.listUsers({ page: 1, perPage: 100 }),
-    serviceClient().from("user_settings").select("user_id, first_name, last_name, job_title"),
+    serviceClient().from("user_settings").select("user_id, first_name, last_name, job_title, role"),
   ]);
   const settingsById = new Map(
-    ((settingsData ?? []) as { user_id: string; first_name: string | null; last_name: string | null; job_title: string | null }[])
+    ((settingsData ?? []) as { user_id: string; first_name: string | null; last_name: string | null; job_title: string | null; role: string | null }[])
       .map((s) => [s.user_id, s]),
   );
   return (usersData?.users ?? []).map((u) => {
@@ -61,6 +63,7 @@ export async function listOperators(): Promise<Operator[]> {
       first_name: s?.first_name ?? null,
       last_name:  s?.last_name  ?? null,
       job_title:  s?.job_title  ?? null,
+      role: (s?.role === "super_admin" ? "super_admin" : "operator") as "operator" | "super_admin",
       last_sign_in_at: u.last_sign_in_at ?? null,
     };
     return { ...op, display_name: displayName(op) };

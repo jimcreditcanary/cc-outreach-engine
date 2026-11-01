@@ -6,6 +6,7 @@ import {
   resetPasswordAction,
   reassignOwnershipAction,
   updateUserProfileAction,
+  setUserRoleAction,
 } from "../../auth-actions";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { RowIconAction } from "@/components/RowIconAction";
@@ -50,6 +51,18 @@ export default async function UsersPage() {
               <span className="font-medium text-neutral-800">{displayName(u)}</span>
               {u.email && <span className="text-xs text-neutral-500">· {u.email}</span>}
               {u.id === me?.id && <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-800">you</span>}
+              {u.role === "super_admin" && <span className="rounded bg-violet-100 px-1.5 text-xs text-violet-700">super-admin</span>}
+              {/* Role toggle — super-admin unlocks /admin/pricing + the product library. */}
+              <form action={setUserRoleAction} className="ml-auto">
+                <input type="hidden" name="id" value={u.id} />
+                <input type="hidden" name="role" value={u.role === "super_admin" ? "operator" : "super_admin"} />
+                <PendingButton
+                  className={`rounded border px-2 py-0.5 text-xs ${u.role === "super_admin" ? "border-neutral-300 text-neutral-600 hover:bg-neutral-100" : "border-violet-300 text-violet-700 hover:bg-violet-50"}`}
+                  pendingLabel="…"
+                >
+                  {u.role === "super_admin" ? "Revoke super-admin" : "Make super-admin"}
+                </PendingButton>
+              </form>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

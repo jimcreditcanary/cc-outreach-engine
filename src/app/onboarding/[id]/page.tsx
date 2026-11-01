@@ -11,7 +11,7 @@ import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { hubspotEnabled } from "@/lib/hubspot/client";
 import { getDeal, dealContactIds, hubspotRepo } from "@/lib/hubspot/repo";
-import { getCompaniesHouse } from "@/lib/integrations/companiesHouse";
+import { getCompaniesHouse, type ChCompanySearchResult } from "@/lib/integrations/companiesHouse";
 import { fmtDate } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
 import type { ContactRecord } from "@/lib/crm/types";
@@ -127,7 +127,17 @@ function StatusBadge({ status }: { status: string }) {
 
 async function CompanyStep({ c, deal, q }: { c: OnboardingCase; deal: { name: string | null } | null; q?: string }) {
   const query = (q ?? "").trim();
-  const results = query ? await getCompaniesHouse().searchCompanies(query, 10) : [];
+  // Never let a Companies House API error (bad/missing key, rate-limit, 4xx/5xx,
+  // network) crash the whole wizard — surface it inline instead.
+  let results: ChCompanySearchResult[] = [];
+  let searchError: string | null = null;
+  if (query) {
+    try {
+      results = await getCompaniesHouse().searchCompanies(query, 10);
+    } catch (e) {
+      searchError = e instanceof Error ? e.message : "search failed";
+    }
+  }
 
   return (
     <section className="max-w-2xl">
@@ -148,7 +158,12 @@ async function CompanyStep({ c, deal, q }: { c: OnboardingCase; deal: { name: st
         <button className="rounded bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700">Search</button>
       </form>
 
-      {query && results.length === 0 && <p className="text-sm text-neutral-400">No matches for “{query}”.</p>}
+      {searchError && (
+        <p className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          Companies House search failed: {searchError}. Try again, or check the API key is set.
+        </p>
+      )}
+      {query && !searchError && results.length === 0 && <p className="text-sm text-neutral-400">No matches for “{query}”.</p>}
       <ul className="space-y-2">
         {results.map((r) => (
           <li key={r.company_number} className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-sm">
