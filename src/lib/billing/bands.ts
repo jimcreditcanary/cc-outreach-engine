@@ -1,7 +1,8 @@
 // Pure parser for the /admin/pricing bands textarea. One band per line:
-//   from_units | to_units(*=unbounded) | unit_price_pence | minimum_type | minimum_pence
-// Separators | or , are both accepted. Kept separate from the server action so
-// it's unit-testable.
+//   from_units | to_units(*=unbounded) | unit_price_pence | minimum_type | minimum_pence | unit_cap_pence(optional)
+// Separators | or , are both accepted. The 6th field is the per-txn cap (volume
+// products leave it blank). Kept separate from the server action so it's
+// unit-testable.
 
 import type { BandInput } from "./repo";
 
@@ -19,7 +20,9 @@ export function parseBandsText(text: string): BandInput[] {
     const minTypeRaw = (parts[3] ?? "none").toLowerCase();
     const minimum_type = (MIN_TYPES.has(minTypeRaw) ? minTypeRaw : "none") as BandInput["minimum_type"];
     const minimum_pence = Math.round(Number(parts[4] ?? 0) || 0);
-    out.push({ from_units: from, to_units: Number.isNaN(to as number) ? null : to, unit_price_pence: price, minimum_type, minimum_pence, sort_order: i });
+    const capRaw = parts[5] ?? "";
+    const unit_cap_pence = capRaw === "" || capRaw === "*" ? null : Math.round(Number(capRaw) || 0);
+    out.push({ from_units: from, to_units: Number.isNaN(to as number) ? null : to, unit_price_pence: price, minimum_type, minimum_pence, unit_cap_pence, sort_order: i });
   });
   return out;
 }

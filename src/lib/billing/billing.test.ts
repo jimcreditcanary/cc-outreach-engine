@@ -47,6 +47,12 @@ describe("parseBandsText", () => {
     expect(bands[0]).toMatchObject({ from_units: 0, to_units: 500, unit_price_pence: 25, minimum_type: "none" });
   });
 
+  it("parses the optional per-txn cap (6th field); blank → null", () => {
+    const bands = parseBandsText("0 | * | 10 | none | 0 | 300\n0 | * | 10 | none | 0");
+    expect(bands[0]).toMatchObject({ unit_cap_pence: 300 });
+    expect(bands[1]).toMatchObject({ unit_cap_pence: null });
+  });
+
   it("coerces non-numeric price to 0 and rounds to pence", () => {
     const bands = parseBandsText("0 | 100 | abc | none | 0\n0 | 100 | 12.7 | none | 0");
     expect(bands[0]?.unit_price_pence).toBe(0);

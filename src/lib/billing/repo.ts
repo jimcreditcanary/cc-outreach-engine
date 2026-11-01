@@ -17,6 +17,11 @@ export interface PricingTable {
   vat_treatment: VatTreatment;
   band_mode: "volume" | "graduated";
   product_type: "fixed" | "variable";
+  billing_frequency: string | null;
+  delayed_start_months: number;
+  active: boolean;
+  internal_notes: string | null;
+  sort_order: number;
   is_placeholder: boolean;
   version: number;
   effective_from: string;
@@ -61,7 +66,7 @@ export interface BillingAccount {
 }
 
 const TABLE_COLS =
-  "id, item_type, name, product_group, metric, config, vat_treatment, band_mode, product_type, is_placeholder, version, effective_from, effective_to, created_at, updated_at";
+  "id, item_type, name, product_group, metric, config, vat_treatment, band_mode, product_type, billing_frequency, delayed_start_months, active, internal_notes, sort_order, is_placeholder, version, effective_from, effective_to, created_at, updated_at";
 const BAND_COLS = "id, pricing_table_id, from_units, to_units, unit_price_pence, minimum_type, minimum_pence, unit_cap_pence, sort_order";
 const ACCT_COLS =
   "id, onboarding_case_id, hubspot_company_id, hubspot_deal_id, xero_contact_id, contract_start_date, contract_signed_at, notice_period_days, contract_end_date, status, finance_contact_id, deal_owner_user_id, po_number, created_at, updated_at";
@@ -98,8 +103,70 @@ export async function listBands(db: DB, tableId: string): Promise<PricingBand[]>
 }
 
 export type PricingTablePatch = Partial<
-  Pick<PricingTable, "name" | "product_group" | "metric" | "config" | "vat_treatment" | "is_placeholder" | "effective_from" | "effective_to">
+  Pick<PricingTable, "name" | "product_group" | "metric" | "config" | "vat_treatment" | "band_mode" | "product_type" | "billing_frequency" | "delayed_start_months" | "active" | "internal_notes" | "sort_order" | "is_placeholder" | "effective_from" | "effective_to">
 >;
+
+export interface NewProduct {
+  item_type: string;
+  name: string;
+  product_group: string | null;
+  metric: Metric;
+  product_type: "fixed" | "variable";
+  band_mode: "volume" | "graduated";
+  vat_treatment: VatTreatment;
+  billing_frequency: string | null;
+  config: Record<string, unknown>;
+  internal_notes: string | null;
+  is_placeholder: boolean;
+}
+
+/** Create a brand-new product (version 1, effective today) + its bands. Rejects
+ *  a key that already exists — editing an existing product goes through the
+ *  table/version actions instead. */
+export async function createProduct(db: DB, input: NewProduct, bands: BandInput[]): Promise<string> {
+  const { data: existing, error: selErr } = await db.from("billing_pricing_tables").select("id").eq("item_type", input.item_type).limit(1);
+  if (selErr) throw selErr;
+  if (existing && existing.length) throw new Error(`a product with key "${input.item_type}" already exists`);
+  const { data, error } = await db.from("billing_pricing_tables").insert({
+    item_type: input.item_type, name: input.name, product_group: input.product_group, metric: input.metric,
+    product_type: input.product_type, band_mode: input.band_mode, vat_treatment: input.vat_treatment,
+    billing_frequency: input.billing_frequency, config: input.config, internal_notes: input.internal_notes,
+    is_placeholder: input.is_placeholder, active: true, version: 1,
+  }).select("id").single();
+  if (error) throw error;
+  const id = data.id as string;
+  if (bands.length) await saveBands(db, id, bands);
+  return id;
+}
+
+export interface GroupMinimumRow { id: string; product_group: string; minimum_pence: number; note: string | null }
+
+/** Every current group-minimum row (including 0), newest per group — for the editor. */
+export async function listGroupMinimums(db: DB): Promise<GroupMinimumRow[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data, error } = await db.from("billing_group_minimums")
+    .select("id, product_group, minimum_pence, note, effective_from, effective_to")
+    .lte("effective_from", today).order("effective_from", { ascending: false });
+  if (error) throw error;
+  const seen = new Map<string, GroupMinimumRow>();
+  for (const r of (data ?? []) as (GroupMinimumRow & { effective_to: string | null })[]) {
+    if (r.effective_to && r.effective_to <= today) continue;
+    if (!seen.has(r.product_group)) seen.set(r.product_group, { id: r.id, product_group: r.product_group, minimum_pence: r.minimum_pence, note: r.note });
+  }
+  return [...seen.values()];
+}
+
+/** Set a product-group's monthly minimum — updates the current row, or inserts one. */
+export async function upsertGroupMinimum(db: DB, productGroup: string, minimumPence: number, note: string | null): Promise<void> {
+  const current = (await listGroupMinimums(db)).find((g) => g.product_group === productGroup);
+  if (current) {
+    const { error } = await db.from("billing_group_minimums").update({ minimum_pence: minimumPence, note }).eq("id", current.id);
+    if (error) throw error;
+  } else {
+    const { error } = await db.from("billing_group_minimums").insert({ product_group: productGroup, minimum_pence: minimumPence, note });
+    if (error) throw error;
+  }
+}
 
 export async function updatePricingTable(db: DB, id: string, patch: PricingTablePatch): Promise<void> {
   const { error } = await db.from("billing_pricing_tables").update(patch).eq("id", id);
