@@ -11,8 +11,9 @@ import { propOptions } from "@/lib/hubspot/schema";
 import { PendingButton } from "@/components/PendingButton";
 import { OnboardingBadge } from "@/components/OnboardingBadge";
 import { fmtDate } from "@/lib/format/datetime";
-import { updateHubspotCompany } from "./hubspotActions";
+import { updateHubspotCompany, toggleCustomerAction } from "./hubspotActions";
 import { serviceClient } from "@/lib/db/client";
+import { isCustomer } from "@/lib/crm/customer";
 import { setUpBillingAction } from "../billing/actions";
 
 const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
@@ -32,9 +33,10 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
   // billing" when the company has an onboarded case (normally auto-created on
   // approval). Scoped to this file — the Supabase detail page is unaffected.
   const bdb = serviceClient();
-  const [{ data: billingAccts }, { data: onboardedCases }] = await Promise.all([
+  const [{ data: billingAccts }, { data: onboardedCases }, customer] = await Promise.all([
     bdb.from("billing_accounts").select("id, status").eq("hubspot_company_id", id).order("created_at", { ascending: false }).limit(1),
     bdb.from("onboarding_cases").select("id").eq("hubspot_company_id", id).eq("status", "onboarded").limit(1),
+    isCustomer(bdb, id),
   ]);
   const billingAcct = (billingAccts ?? [])[0] ?? null;
   const hasOnboardedCase = (onboardedCases?.length ?? 0) > 0;
@@ -53,6 +55,7 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
       <header className="mb-5 border-b border-neutral-200 pb-3">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold">{co.name || "Company"}</h1>
+          {customer && <span className="rounded bg-teal-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Customer</span>}
           {co.current_client && <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Client</span>}
           {onboardingText && <OnboardingBadge status={onboardingText} />}
           {co.is_partner && <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">partner</span>}
@@ -66,6 +69,16 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
               <button type="submit" className="rounded border border-indigo-300 px-1.5 py-0.5 text-xs text-indigo-700 hover:bg-indigo-50">Set up billing</button>
             </form>
           ) : null}
+          <form action={toggleCustomerAction} className="ml-auto">
+            <input type="hidden" name="company_id" value={id} />
+            <input type="hidden" name="on" value={customer ? "false" : "true"} />
+            <PendingButton
+              className={`rounded border px-1.5 py-0.5 text-xs ${customer ? "border-neutral-300 text-neutral-500 hover:bg-neutral-100" : "border-teal-400 text-teal-700 hover:bg-teal-50"}`}
+              pendingLabel="…"
+            >
+              {customer ? "Unmark customer" : "Mark as Customer"}
+            </PendingButton>
+          </form>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-neutral-500">
           {co.website && <a href={/^https?:\/\//.test(co.website) ? co.website : `https://${co.website}`} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">{co.website} ↗</a>}
