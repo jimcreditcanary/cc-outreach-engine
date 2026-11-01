@@ -95,8 +95,8 @@ const TU: SeedProduct[] = ([
 // ─── Monevo broker fee — one product, two components ──────────────────────────
 const MONEVO: SeedProduct[] = [
   { key: "monevo_broker_fee", label: "Monevo broker fee", group: "tu_monevo", metric: "pct_of_principal", type: "variable", vat: "standard",
-    config: { pct: 0.5, per_application_pence: 0 },
-    notes: "Two components: a fixed charge per signed lead (per_application_pence — SET THIS) + 0.5% of total loan principal. Usage reports quantity = signed leads, principal = total principal." },
+    config: { pct: 0.5, per_application_pence: gbp(2.50) },
+    notes: "Two components (Jim 2026-11-01): 0.5% of total loan principal + £2.50 per application. Usage reports quantity = applications, principal = total principal." },
 ];
 
 // ─── Confirmation of Payee — banded (volume) ──────────────────────────────────
@@ -130,10 +130,11 @@ const PAYMENTS: SeedProduct[] = [
 ];
 
 // ─── Communications ───────────────────────────────────────────────────────────
+// Comms are VAT-exempt (Jim 2026-11-01).
 const COMMS: SeedProduct[] = [
-  { key: "comms_email", label: "Communications — Email", group: "comms", metric: "per_message", type: "variable", vat: "standard", unit_pence: gbp(0) },
-  { key: "comms_sms", label: "Communications — SMS", group: "comms", metric: "per_message", type: "variable", vat: "standard", unit_pence: gbp(0.06), notes: "Could be banded like other volume products in future." },
-  { key: "comms_whatsapp", label: "Communications — WhatsApp", group: "comms", metric: "per_message", type: "variable", vat: "standard", unit_pence: gbp(0.01) },
+  { key: "comms_email", label: "Communications — Email", group: "comms", metric: "per_message", type: "variable", vat: "exempt", unit_pence: gbp(0) },
+  { key: "comms_sms", label: "Communications — SMS", group: "comms", metric: "per_message", type: "variable", vat: "exempt", unit_pence: gbp(0.06), notes: "Could be banded like other volume products in future." },
+  { key: "comms_whatsapp", label: "Communications — WhatsApp", group: "comms", metric: "per_message", type: "variable", vat: "exempt", unit_pence: gbp(0.01) },
 ];
 
 export const PRODUCTS: SeedProduct[] = [
