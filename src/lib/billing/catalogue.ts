@@ -1,11 +1,14 @@
-// Billing item catalogue — the single source of truth for the closed set of
-// item types, their default metric, VAT treatment and the onboarding product
-// group that unlocks them. Used by the seed script (to create one PLACEHOLDER
-// pricing table per item) and by the app (validation + the Phase-2 setup wizard,
-// which only offers items whose product group the case was onboarded for).
+// Billing item catalogue — the shared metric/VAT/status vocabulary, plus a
+// derived view of the product library's SHAPE (key/label/metric/vat/group).
 //
-// Prices/bands are NOT here — they live in billing_pricing_tables, are
-// super-admin-editable and effective-dated. These are only the catalogue shape.
+// Billing v2: the product list is no longer a closed code set. Its source of
+// truth is productSeed.ts (which the seed writes into the DB) and, after
+// seeding, the DB itself — the /admin product-library UI can add products.
+// CATALOGUE below is derived from productSeed so the setup wizard + labels track
+// it. Prices/bands/config live in billing_pricing_tables/_bands, are
+// super-admin-editable and effective-dated — never here.
+
+import { PRODUCTS } from "./productSeed";
 
 export const METRICS = [
   "per_request",
@@ -40,37 +43,12 @@ export interface CatalogueEntry {
   productGroup: string;
 }
 
-// VAT defaults per brief Assumption 3 — PLACEHOLDER, super-admin editable,
-// finance-confirmed before go-live. Payment rails = exempt; everything else
-// standard 20%.
-export const CATALOGUE: CatalogueEntry[] = [
-  { key: "setup_fee", label: "Setup fee", metric: "flat_monthly", vat: "standard", productGroup: "core" },
-  { key: "platform_fee", label: "Platform fee", metric: "flat_monthly", vat: "standard", productGroup: "core" },
-  { key: "support_fee", label: "Support fee", metric: "flat_monthly", vat: "standard", productGroup: "core" },
-  { key: "open_banking_ais", label: "Open Banking (AIS)", metric: "per_account_month", vat: "standard", productGroup: "open_banking_data" },
-  { key: "tu_call_report", label: "TU Call Report", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_auto_search", label: "TU Auto Search", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_affordability", label: "TU Affordability", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_true_vision", label: "TU TrueVision", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_callml", label: "TU CallML", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_watchlist", label: "TU Watchlist", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_deceased", label: "TU Deceased", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_bank_account_id", label: "TU Bank Account ID", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_bank_element", label: "TU Bank Element", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_bank_account_premium", label: "TU Bank Account Premium", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_ownership_fraud", label: "TU Ownership Fraud", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "tu_realtime_fraud", label: "TU Real-time Fraud", metric: "per_request", vat: "standard", productGroup: "tu_credit" },
-  { key: "monevo_broker_fee", label: "Monevo broker fee", metric: "pct_of_principal", vat: "standard", productGroup: "tu_monevo" },
-  { key: "pay_by_bank", label: "Pay by Bank", metric: "per_txn_fixed_and_pct", vat: "exempt", productGroup: "pay_by_bank" },
-  { key: "faster_payments", label: "Faster Payments", metric: "per_txn_fixed", vat: "exempt", productGroup: "faster_payments" },
-  { key: "settlement_accounts", label: "Settlement accounts", metric: "per_account_month", vat: "exempt", productGroup: "settlement_accounts" },
-  { key: "sweeping_vrp", label: "Sweeping VRP", metric: "per_txn_fixed_and_pct", vat: "exempt", productGroup: "sweeping_vrp" },
-  { key: "cvrp", label: "CVRP", metric: "per_txn_fixed_and_pct", vat: "exempt", productGroup: "cvrp" },
-  { key: "direct_debits", label: "Direct Debits", metric: "per_txn_fixed", vat: "exempt", productGroup: "direct_debits" },
-  { key: "comms_email", label: "Communications — Email", metric: "per_message", vat: "standard", productGroup: "comms" },
-  { key: "comms_sms", label: "Communications — SMS", metric: "per_message", vat: "standard", productGroup: "comms" },
-  { key: "comms_whatsapp", label: "Communications — WhatsApp", metric: "per_message", vat: "standard", productGroup: "comms" },
-];
+// Derived from the product library bootstrap (productSeed.ts) — the single
+// source. VAT defaults there are editable + finance-confirmed before go-live;
+// payment rails = exempt, everything else standard 20%.
+export const CATALOGUE: CatalogueEntry[] = PRODUCTS.map((p) => ({
+  key: p.key, label: p.label, metric: p.metric, vat: p.vat, productGroup: p.group,
+}));
 
 export const ITEM_TYPES = CATALOGUE.map((c) => c.key);
 export type ItemType = (typeof ITEM_TYPES)[number];

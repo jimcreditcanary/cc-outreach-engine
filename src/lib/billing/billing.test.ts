@@ -26,9 +26,9 @@ describe("billing catalogue", () => {
   });
 
   it("isItemType / labelFor", () => {
-    expect(isItemType("tu_call_report")).toBe(true);
+    expect(isItemType("tu_callml")).toBe(true);
     expect(isItemType("nope")).toBe(false);
-    expect(labelFor("setup_fee")).toBe("Setup fee");
+    expect(labelFor("setup_fee")).toBe("Setup / Integration Fee");
     expect(labelFor("unknown")).toBe("unknown");
   });
 });
