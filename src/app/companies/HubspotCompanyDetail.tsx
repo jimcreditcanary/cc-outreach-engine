@@ -14,6 +14,8 @@ import { fmtDate } from "@/lib/format/datetime";
 import { updateHubspotCompany, toggleCustomerAction } from "./hubspotActions";
 import { serviceClient } from "@/lib/db/client";
 import { isCustomer } from "@/lib/crm/customer";
+import { companyDeals } from "@/lib/hubspot/repo";
+import { startOnboardingAction } from "@/app/onboarding/actions";
 import { setUpBillingAction } from "../billing/actions";
 
 const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
@@ -33,13 +35,16 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
   // billing" when the company has an onboarded case (normally auto-created on
   // approval). Scoped to this file — the Supabase detail page is unaffected.
   const bdb = serviceClient();
-  const [{ data: billingAccts }, { data: onboardedCases }, customer] = await Promise.all([
+  const [{ data: billingAccts }, { data: caseRows }, customer] = await Promise.all([
     bdb.from("billing_accounts").select("id, status").eq("hubspot_company_id", id).order("created_at", { ascending: false }).limit(1),
-    bdb.from("onboarding_cases").select("id").eq("hubspot_company_id", id).eq("status", "onboarded").limit(1),
+    bdb.from("onboarding_cases").select("id, status").eq("hubspot_company_id", id).neq("status", "cancelled").order("updated_at", { ascending: false }).limit(1),
     isCustomer(bdb, id),
   ]);
   const billingAcct = (billingAccts ?? [])[0] ?? null;
-  const hasOnboardedCase = (onboardedCases?.length ?? 0) > 0;
+  const onboardingCase = (caseRows ?? [])[0] ?? null;
+  const hasOnboardedCase = onboardingCase?.status === "onboarded";
+  // Deal picker for "Start onboarding" — only needed when no case exists yet.
+  const deals = onboardingCase ? [] : await companyDeals(id);
 
   // HubSpot option values can differ from labels — show the label.
   const onboardingText = co.onboarding_status ? (onboardingOpts.find((o) => o.value === co.onboarding_status)?.label ?? co.onboarding_status) : null;
@@ -61,6 +66,24 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
           {co.is_partner && <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">partner</span>}
           {co.icp && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">ICP</span>}
           {co.tier != null && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">Tier {co.tier}</span>}
+          {/* Onboarding — stateful: Continue+stage once a case exists, else Start (deal picker). */}
+          {onboardingCase ? (
+            <Link href={`/onboarding/${onboardingCase.id}`} className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 hover:underline">Onboarding: {onboardingCase.status} →</Link>
+          ) : deals.length === 1 ? (
+            <form action={startOnboardingAction}>
+              <input type="hidden" name="deal_id" value={deals[0]!.id} />
+              <PendingButton className="rounded border border-amber-300 px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-50" pendingLabel="Starting…">Start onboarding</PendingButton>
+            </form>
+          ) : deals.length > 1 ? (
+            <form action={startOnboardingAction} className="flex items-center gap-1">
+              <select name="deal_id" defaultValue={deals[0]!.id} className="rounded border border-amber-300 px-1 py-0.5 text-xs">
+                {deals.map((d) => <option key={d.id} value={d.id}>{d.name ?? d.id}{d.stage ? ` · ${d.stage}` : ""}</option>)}
+              </select>
+              <PendingButton className="rounded border border-amber-300 px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-50" pendingLabel="Starting…">Start onboarding</PendingButton>
+            </form>
+          ) : (
+            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-400">No deal to onboard</span>
+          )}
           {billingAcct ? (
             <Link href={`/billing/${billingAcct.id}`} className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-700 hover:underline">Billing: {billingAcct.status} →</Link>
           ) : hasOnboardedCase ? (

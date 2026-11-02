@@ -353,6 +353,21 @@ export async function dealCompanyId(dealId: string): Promise<string | null> {
   }
 }
 
+/** Deals associated with a company (for the company-view "Start onboarding"
+ *  picker). Best-effort: [] on any failure. */
+export async function companyDeals(companyId: string): Promise<DealRecord[]> {
+  try {
+    const res = await hsFetch<{ results: { toObjectId: string | number }[] }>(
+      `/crm/v4/objects/companies/${companyId}/associations/deals?limit=25`, { cacheTtl: READ_TTL },
+    );
+    const ids = (res.results ?? []).map((r) => String(r.toObjectId));
+    const deals = await Promise.all(ids.map((id) => getDeal(id).catch(() => null)));
+    return deals.filter((d): d is DealRecord => d != null);
+  } catch {
+    return [];
+  }
+}
+
 /** A single deal by id, with pipeline/stage resolved to labels. For the Hot
  *  "work this deal" view. */
 export async function getDeal(id: string): Promise<DealRecord | null> {
