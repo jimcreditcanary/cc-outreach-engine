@@ -466,13 +466,18 @@ const DEAL_SORT: Record<string, string> = {
   created_at: "createdate", last_contacted: "notes_last_contacted",
 };
 
-export interface DealPipeline { id: string; label: string; stages: { id: string; label: string }[] }
+export interface DealPipeline { id: string; label: string; stages: { id: string; label: string; isClosed: boolean }[] }
 
 /** Deal pipelines + stages (cached 5m — pipelines rarely change). Used for the
- *  stage filter UI and for id→label resolution. */
+ *  stage filter UI, the deals board, and id→label resolution. Stages carry
+ *  isClosed (from HubSpot stage metadata) so the board can show open stages. */
 export async function dealPipelines(): Promise<DealPipeline[]> {
-  const res = await hsFetch<{ results: DealPipeline[] }>(`/crm/v3/pipelines/deals`, { cacheTtl: 300_000 });
-  return res.results ?? [];
+  const res = await hsFetch<{ results: { id: string; label: string; stages?: { id: string; label: string; metadata?: { isClosed?: string | boolean } }[] }[] }>(`/crm/v3/pipelines/deals`, { cacheTtl: 300_000 });
+  return (res.results ?? []).map((p) => ({
+    id: p.id,
+    label: p.label,
+    stages: (p.stages ?? []).map((s) => ({ id: s.id, label: s.label, isClosed: s.metadata?.isClosed === true || s.metadata?.isClosed === "true" })),
+  }));
 }
 
 async function dealLabels(): Promise<{ pipelines: Map<string, string>; stages: Map<string, string> }> {

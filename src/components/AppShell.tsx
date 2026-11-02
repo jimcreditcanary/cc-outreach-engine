@@ -17,7 +17,6 @@ import {
   Briefcase,
   CalendarClock,
   ClipboardCheck,
-  Flame,
   UserCheck,
   Mail,
   Reply,
@@ -59,7 +58,6 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/companies",  label: "CRM",        Icon: Building2 },
       { href: "/deals",      label: "Deals",      Icon: Briefcase },
-      { href: "/hot",        label: "Hot",        Icon: Flame },
       { href: "/meetings",   label: "Meetings",   Icon: CalendarClock },
       { href: "/customers",  label: "Customers",  Icon: UserCheck },
       { href: "/onboarding", label: "Onboarding", Icon: ClipboardCheck },
@@ -88,6 +86,7 @@ const SECTIONS: Section[] = [
 // live under its combined view (so "CRM" lights up on /contacts too).
 const GROUPED: Record<string, string[]> = {
   "/companies": ["/companies", "/contacts"],
+  "/deals": ["/deals", "/hot"], // the Work-Deal page lives at /hot/[id]
   "/alerts": ["/alerts", "/content", "/linkedin", "/events"],
   "/settings": ["/settings", "/admin/users"],
 };

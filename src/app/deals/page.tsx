@@ -8,7 +8,7 @@ import { PendingButton } from "@/components/PendingButton";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort, sortRows } from "@/lib/table/sort";
 import { activeBackend } from "@/lib/crm";
-import { HubspotDealsView } from "./HubspotDealsView";
+import { HubspotDealsBoard } from "./HubspotDealsBoard";
 
 export const dynamic = "force-dynamic";
 
@@ -46,13 +46,14 @@ interface DealRow {
   organisation: { id: string; name: string | null; tier: number | null } | null;
 }
 
-export default async function DealsPage({ searchParams }: { searchParams: Promise<{ tier?: string; status?: string; owner?: string; sort?: string; q?: string; after?: string; stages?: string }> }) {
-  const { tier, status, owner, sort: sortRaw, q, after, stages } = await searchParams;
+export default async function DealsPage({ searchParams }: { searchParams: Promise<{ tier?: string; status?: string; owner?: string; sort?: string; q?: string; after?: string; stages?: string; pipeline?: string }> }) {
+  const { tier, status, owner, sort: sortRaw, q, pipeline } = await searchParams;
 
-  // HubSpot-backed read-only deals list (P3) — isolated; Supabase page below
-  // (MEDDICC nudges etc.) is untouched and used when CRM_BACKEND=supabase.
+  // HubSpot-backed deals board (Phase 4) — one pipeline's stages as a kanban,
+  // cards into the Work-Deal page. Isolated; the Supabase page below (MEDDICC
+  // nudges etc.) is untouched and used when CRM_BACKEND=supabase.
   if (activeBackend() === "hubspot") {
-    return <HubspotDealsView q={q} sortRaw={sortRaw} after={after} stagesRaw={stages} />;
+    return <HubspotDealsBoard pipelineId={pipeline} q={q} />;
   }
 
   const db = serviceClient();
