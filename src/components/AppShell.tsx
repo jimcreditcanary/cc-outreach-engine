@@ -16,13 +16,11 @@ import {
   Building2,
   Briefcase,
   CalendarClock,
-  ClipboardCheck,
   UserCheck,
   Mail,
   Reply,
   Telescope,
   Megaphone,
-  Receipt,
   Tags,
   Settings as SettingsIcon,
   ChevronsLeft,
@@ -60,8 +58,6 @@ const SECTIONS: Section[] = [
       { href: "/deals",      label: "Deals",      Icon: Briefcase },
       { href: "/meetings",   label: "Meetings",   Icon: CalendarClock },
       { href: "/customers",  label: "Customers",  Icon: UserCheck },
-      { href: "/onboarding", label: "Onboarding", Icon: ClipboardCheck },
-      { href: "/billing",    label: "Billing",    Icon: Receipt },
     ],
   },
   {
@@ -87,6 +83,7 @@ const SECTIONS: Section[] = [
 const GROUPED: Record<string, string[]> = {
   "/companies": ["/companies", "/contacts"],
   "/deals": ["/deals", "/hot"], // the Work-Deal page lives at /hot/[id]
+  "/customers": ["/customers", "/billing", "/onboarding"], // onboarding + billing fold into Customers
   "/alerts": ["/alerts", "/content", "/linkedin", "/events"],
   "/settings": ["/settings", "/admin/users"],
 };
