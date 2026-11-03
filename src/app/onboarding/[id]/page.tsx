@@ -10,7 +10,7 @@ import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { hubspotEnabled } from "@/lib/hubspot/client";
-import { getDeal, dealContactIds, hubspotRepo } from "@/lib/hubspot/repo";
+import { getDeal, hubspotRepo } from "@/lib/hubspot/repo";
 import { getCompaniesHouse, type ChCompanySearchResult } from "@/lib/integrations/companiesHouse";
 import { fmtDate } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
@@ -27,10 +27,13 @@ import {
 import {
   saveCompanyAction, saveProductsAction, addStakeholderAction, removeStakeholderAction,
   setSandboxAction, completeInternalAction, cancelCaseAction, inviteMerchantAction,
-  addContactToCompanyAction,
+  addContactToCompanyAction, pullOfficersUbosAction,
 } from "../actions";
 import { merchantFormUrl } from "@/lib/onboarding/merchantForm";
 import { loadGeneratedDocs, type GeneratedDoc } from "@/lib/onboarding/docgen";
+import { loadEnrichment } from "@/lib/onboarding/enrich";
+import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
+import { getCrm } from "@/lib/crm";
 import { CopyButton } from "@/components/CopyButton";
 
 export const dynamic = "force-dynamic";
@@ -234,69 +237,152 @@ function ProductsStep({ c }: { c: OnboardingCase }) {
 // ─── Step 3: Stakeholders ────────────────────────────────────────────────────────
 
 async function StakeholdersStep({ c, stakeholders }: { c: OnboardingCase; stakeholders: Stakeholder[] }) {
-  // Deal contacts populate the picker; we also resolve stakeholder names.
-  const dealContactIdList = c.hubspot_deal_id && hubspotEnabled() ? await dealContactIds(c.hubspot_deal_id) : [];
-  const neededIds = [...new Set([...dealContactIdList, ...stakeholders.map((s) => s.hubspot_contact_id)])];
-  const contacts = await Promise.all(neededIds.map((cid) => hubspotRepo.getContact(cid).catch(() => null)));
-  const byId = new Map<string, ContactRecord>();
-  for (const ct of contacts) if (ct) byId.set(ct.id, ct);
-  const dealContacts = dealContactIdList.map((cid) => byId.get(cid)).filter((x): x is ContactRecord => !!x);
+  // Role picker + matching use the company's contacts (brief §3: "the contacts
+  // assigned to the company"). Enrichment supplies the directors + UBOs.
+  const companyId = c.hubspot_company_id;
+  const [companyContacts, enrichment] = await Promise.all([
+    companyId && hubspotEnabled() ? getCrm().listCompanyContacts(companyId, 100).catch(() => [] as ContactRecord[]) : Promise.resolve([] as ContactRecord[]),
+    loadEnrichment(serviceClient(), c.id).catch(() => ({ snapshot: null, officers: [], ubos: [] })),
+  ]);
+  const byId = new Map<string, ContactRecord>(companyContacts.map((ct) => [ct.id, ct]));
+  // Resolve any stakeholder contact not on the company list (edge case).
+  const missing = [...new Set(stakeholders.map((s) => s.hubspot_contact_id))].filter((cid) => !byId.has(cid));
+  if (missing.length) {
+    const extra = await Promise.all(missing.map((cid) => hubspotRepo.getContact(cid).catch(() => null)));
+    for (const ct of extra) if (ct) byId.set(ct.id, ct);
+  }
+  // name → contact, to match CH directors/UBOs to existing contacts by first+last.
+  const contactByName = new Map<string, ContactRecord>();
+  for (const ct of companyContacts) {
+    const pn = ct.first_name || ct.last_name ? { first: ct.first_name ?? "", last: ct.last_name ?? "" } : parsePersonName(ct.full_name);
+    contactByName.set(nameMatchKey(pn.first, pn.last), ct);
+  }
+  const matchFor = (raw: string | null) => {
+    const pn = parsePersonName(raw);
+    return contactByName.get(nameMatchKey(pn.first, pn.last)) ?? null;
+  };
   const roleLabel = (r: string) => ONBOARDING_ROLES.find((x) => x.key === r)?.label ?? r;
 
+  // Active directors: role contains "director", not resigned.
+  const directors = enrichment.officers.filter((o) => /director/i.test(o.officer_role ?? "") && !o.resigned_on);
+  // Individual UBOs (leaf people) from the PSC tree — exclude corporates + statements.
+  const ubos = enrichment.ubos.filter((u) => !u.is_corporate && u.name && !/statement/i.test(u.kind ?? ""));
+  const enriched = !!enrichment.snapshot || enrichment.officers.length > 0 || enrichment.ubos.length > 0;
+
+  // Group assigned stakeholders by contact so a person shows once with all roles.
+  const byContact = new Map<string, { contact: ContactRecord | undefined; roles: Stakeholder[] }>();
+  for (const s of stakeholders) {
+    const g = byContact.get(s.hubspot_contact_id) ?? { contact: byId.get(s.hubspot_contact_id), roles: [] };
+    g.roles.push(s);
+    byContact.set(s.hubspot_contact_id, g);
+  }
+
   return (
-    <section className="max-w-2xl">
-      <h2 className="mb-1 font-semibold">Stakeholders &amp; roles</h2>
-      <p className="mb-3 text-sm text-neutral-500">Who are we dealing with on this onboarding? Add the deal&apos;s contacts and tag each with their role.</p>
+    <section className="max-w-2xl space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-semibold">Stakeholders &amp; roles</h2>
+        {/* Finish — prominent, at the top (feedback item 5). */}
+        <Link href={`/onboarding/${c.id}?step=finish`} className="rounded bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800">Finish → review &amp; complete</Link>
+      </div>
+      <p className="text-sm text-neutral-500">Confirm the people behind this company: directors and beneficial owners from Companies House, then tag each contact with their role(s).</p>
 
-      {stakeholders.length === 0 ? (
-        <p className="mb-4 text-sm text-neutral-400">No stakeholders yet.</p>
-      ) : (
-        <ul className="mb-4 space-y-2">
-          {stakeholders.map((s) => {
-            const ct = byId.get(s.hubspot_contact_id);
-            return (
-              <li key={s.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white p-2.5 text-sm">
-                <span className="font-medium text-neutral-800">{ct?.full_name || s.hubspot_contact_id}</span>
-                {ct?.job_title && <span className="text-xs text-neutral-400">{ct.job_title}</span>}
-                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">{roleLabel(s.role)}</span>
-                <form action={removeStakeholderAction} className="ml-auto">
-                  <input type="hidden" name="case_id" value={c.id} />
-                  <input type="hidden" name="stakeholder_id" value={s.id} />
-                  <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100" pendingLabel="…">Remove</PendingButton>
-                </form>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {/* Directors + UBOs from Companies House */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-neutral-800">Directors &amp; UBOs <span className="font-normal text-neutral-400">(Companies House)</span></h3>
+          <form action={pullOfficersUbosAction}>
+            <input type="hidden" name="case_id" value={c.id} />
+            <PendingButton className="rounded border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Pulling…">
+              {enriched ? "↻ Refresh from Companies House" : "Pull from Companies House"}
+            </PendingButton>
+          </form>
+        </div>
+        {!enriched ? (
+          <p className="text-sm text-neutral-500">Pull active directors and beneficial owners (PSCs, with corporate ownership chains resolved) from Companies House, then match them to contacts or add the missing ones.</p>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Active directors ({directors.length})</p>
+              {directors.length === 0 ? <p className="text-xs text-neutral-400">No active directors found.</p> : (
+                <ul className="space-y-1.5">
+                  {directors.map((o) => <PersonRow key={o.id} caseId={c.id} rawName={o.name} subtitle={o.occupation} match={matchFor(o.name)} jobTitle={o.occupation || "Director"} />)}
+                </ul>
+              )}
+            </div>
+            <div>
+              <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Beneficial owners / PSCs ({ubos.length})</p>
+              {ubos.length === 0 ? <p className="text-xs text-neutral-400">No individual beneficial owners found.</p> : (
+                <ul className="space-y-1.5">
+                  {ubos.map((u) => {
+                    const sub = [(u.natures_of_control ?? []).join(", "), u.depth > 0 && u.via_company_number ? `via ${u.via_company_number}` : ""].filter(Boolean).join(" · ");
+                    return <PersonRow key={u.id} caseId={c.id} rawName={u.name} subtitle={sub} match={matchFor(u.name)} jobTitle="Beneficial owner" />;
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
 
-      {dealContacts.length === 0 ? (
+      {/* Assigned stakeholders */}
+      <div>
+        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Assigned roles</p>
+        {stakeholders.length === 0 ? (
+          <p className="text-sm text-neutral-400">No roles assigned yet.</p>
+        ) : (
+          <ul className="space-y-2">
+            {[...byContact.values()].map((g) => {
+              const key = g.roles[0]!.hubspot_contact_id;
+              return (
+                <li key={key} className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white p-2.5 text-sm">
+                  <span className="font-medium text-neutral-800">{g.contact?.full_name || key}</span>
+                  {g.contact?.job_title && <span className="text-xs text-neutral-400">{g.contact.job_title}</span>}
+                  <span className="ml-auto flex flex-wrap gap-1">
+                    {g.roles.map((s) => (
+                      <form key={s.id} action={removeStakeholderAction} className="inline">
+                        <input type="hidden" name="case_id" value={c.id} />
+                        <input type="hidden" name="stakeholder_id" value={s.id} />
+                        <button type="submit" className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200" title="Remove this role">{roleLabel(s.role)} ✕</button>
+                      </form>
+                    ))}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* Assign a contact to one or more roles (multi-select — feedback item 4) */}
+      {companyContacts.length === 0 ? (
         <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          No contacts associated with this deal in HubSpot — add them on the deal in HubSpot, then they&apos;ll appear here.
+          No contacts on this company in HubSpot yet — add one below (or in HubSpot), then assign roles.
         </p>
       ) : (
-        <form action={addStakeholderAction} className="flex flex-wrap items-end gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-          <input type="hidden" name="case_id" value={c.id} />
-          <div className="min-w-48 flex-1">
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">Contact</label>
-            <select name="contact_id" className={field} defaultValue="">
-              <option value="" disabled>Pick a contact…</option>
-              {dealContacts.map((ct) => <option key={ct.id} value={ct.id}>{ct.full_name}{ct.job_title ? ` — ${ct.job_title}` : ""}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">Role</label>
-            <select name="role" className={field} defaultValue="">
-              <option value="" disabled>Role…</option>
-              {ONBOARDING_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-            </select>
-          </div>
-          <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Adding…">+ Add</PendingButton>
-        </form>
+        <>
+          <form action={addStakeholderAction} className="flex flex-wrap items-end gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <input type="hidden" name="case_id" value={c.id} />
+            <div className="min-w-48 flex-1">
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">Contact</label>
+              <select name="contact_id" className={field} defaultValue="">
+                <option value="" disabled>Pick a contact…</option>
+                {companyContacts.map((ct) => <option key={ct.id} value={ct.id}>{ct.full_name}{ct.job_title ? ` — ${ct.job_title}` : ""}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">Roles</label>
+              <select name="roles" multiple className="h-28 w-full rounded border border-neutral-300 px-2 py-1.5 text-sm">
+                {ONBOARDING_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+              </select>
+            </div>
+            <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Adding…">+ Add</PendingButton>
+          </form>
+          <p className="mt-1 text-xs text-neutral-400">Hold ⌘ (Mac) or Ctrl to pick multiple roles. A contact can hold several roles, and several contacts can share a role.</p>
+        </>
       )}
 
       {/* Add a brand-new contact to the company (and this deal) without leaving. */}
-      <div className="mt-4">
+      <div>
         <p className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">New contact</p>
         <form action={addContactToCompanyAction} className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-neutral-300 bg-white p-3">
           <input type="hidden" name="case_id" value={c.id} />
@@ -309,10 +395,39 @@ async function StakeholdersStep({ c, stakeholders }: { c: OnboardingCase; stakeh
         <p className="mt-1 text-xs text-neutral-400">Creates the contact on the company (and links it to this deal), then pick it above with a role.</p>
       </div>
 
-      <div className="mt-4">
+      <div>
         <Link href={`/onboarding/${c.id}?step=finish`} className="text-sm text-blue-700 hover:underline">Next: finish →</Link>
       </div>
     </section>
+  );
+}
+
+/** One director / UBO row — de-shouted name, and either a match to an existing
+ *  contact or an "Add to HubSpot" action that creates + links the contact. */
+function PersonRow({ caseId, rawName, subtitle, match, jobTitle }: {
+  caseId: string; rawName: string | null; subtitle?: string | null; match: ContactRecord | null; jobTitle: string;
+}) {
+  const pn = parsePersonName(rawName);
+  const display = [pn.first, pn.last].filter(Boolean).join(" ") || rawName || "—";
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-sm">
+      <span className="font-medium text-neutral-800">{display}</span>
+      {subtitle && <span className="text-xs text-neutral-400">{subtitle}</span>}
+      {match ? (
+        <span className="ml-auto flex items-center gap-1 text-xs">
+          <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-700">✓ in system</span>
+          <Link href={`/contacts/${match.id}`} className="text-blue-700 hover:underline">{match.full_name || match.email}</Link>
+        </span>
+      ) : (
+        <form action={addContactToCompanyAction} className="ml-auto">
+          <input type="hidden" name="case_id" value={caseId} />
+          <input type="hidden" name="first_name" value={pn.first} />
+          <input type="hidden" name="last_name" value={pn.last} />
+          <input type="hidden" name="job_title" value={jobTitle} />
+          <PendingButton className="rounded border border-emerald-500 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="Adding…">+ Add to HubSpot</PendingButton>
+        </form>
+      )}
+    </li>
   );
 }
 

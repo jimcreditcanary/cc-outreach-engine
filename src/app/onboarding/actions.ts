@@ -90,22 +90,44 @@ export async function addStakeholderAction(formData: FormData) {
   if (!me) redirect("/login");
   const id = str(formData.get("case_id"));
   const contactId = str(formData.get("contact_id"));
-  const role = str(formData.get("role"));
+  // Multi-select: one contact can take several roles in one go (a contact can
+  // hold multiple roles; the stakeholder table is unique per case+contact+role).
+  const roles = formData.getAll("roles").map((v) => String(v)).filter(isOnboardingRole);
   if (!id) return redirect("/onboarding");
-  if (!contactId || !isOnboardingRole(role)) {
-    await flash("error", "Pick a contact and a role.");
+  if (!contactId || roles.length === 0) {
+    await flash("error", "Pick a contact and at least one role.");
     return redirect(`/onboarding/${id}?step=stakeholders`);
   }
   const db = serviceClient();
-  await addStakeholder(db, id, contactId, role);
-  // Mirror the role to HubSpot as a labeled deal↔contact association (best-effort;
+  for (const role of roles) await addStakeholder(db, id, contactId, role);
+  // Mirror each role to HubSpot as a labeled deal↔contact association (best-effort;
   // no-ops until the labels + association-write scope are set up).
   const c = await getCase(db, id);
   if (c?.hubspot_deal_id) {
-    const label = ONBOARDING_ROLES.find((r) => r.key === role)?.label ?? role;
-    await associateDealContactRole(c.hubspot_deal_id, contactId, label).catch(() => {});
+    for (const role of roles) {
+      const label = ONBOARDING_ROLES.find((r) => r.key === role)?.label ?? role;
+      await associateDealContactRole(c.hubspot_deal_id, contactId, label).catch(() => {});
+    }
   }
-  await logCaseEvent(db, id, "stakeholder_added", actorOf(me), { contact_id: contactId, role });
+  await logCaseEvent(db, id, "stakeholder_added", actorOf(me), { contact_id: contactId, roles });
+  revalidatePath(`/onboarding/${id}`);
+  redirect(`/onboarding/${id}?step=stakeholders`);
+}
+
+/** Stakeholders step — run (or refresh) Companies House enrichment and stay on
+ *  the step so the pulled directors + UBOs render inline. */
+export async function pullOfficersUbosAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  try {
+    const r = await enrichCompanyForCase(db, id, actorOf(me));
+    await flash("success", `Pulled ${r.officers} officer(s) and ${r.ubos} UBO node(s) from Companies House.`);
+  } catch (e) {
+    await flash("error", `Companies House pull failed: ${(e as Error).message}`);
+  }
   revalidatePath(`/onboarding/${id}`);
   redirect(`/onboarding/${id}?step=stakeholders`);
 }
