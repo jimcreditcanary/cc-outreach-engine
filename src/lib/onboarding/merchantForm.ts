@@ -11,7 +11,7 @@ import { getCop } from "../integrations/cop";
 type DB = ReturnType<typeof serviceClient>;
 
 /** The public merchant-form URL for a token. Defaults to the app host; set
- *  ONBOARDING_FORM_BASE_URL to the branded host (https://onboarding.creditcanary.co.uk)
+ *  ONBOARDING_FORM_BASE_URL to the branded host (https://dd.creditcanary.co.uk)
  *  once its DNS + host-routing are live. */
 export function merchantFormUrl(token: string): string {
   const base = process.env.ONBOARDING_FORM_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";

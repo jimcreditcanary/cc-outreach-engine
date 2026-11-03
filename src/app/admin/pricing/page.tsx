@@ -4,6 +4,7 @@
 // so historic invoices stay reproducible. Prices are integer PENCE.
 
 import { currentRole } from "@/lib/auth/role";
+import { PageTabs, SETTINGS_TABS } from "@/components/PageTabs";
 import { serviceClient } from "@/lib/db/client";
 import { listPricingTables, listGroupMinimums, type PricingBand } from "@/lib/billing/repo";
 import { labelFor, METRICS, VAT_TREATMENTS, type Metric } from "@/lib/billing/catalogue";
@@ -68,6 +69,7 @@ export default async function PricingPage() {
   if (role !== "super_admin") {
     return (
       <main className="px-4 py-6 md:px-8">
+        <PageTabs tabs={SETTINGS_TABS} />
         <h1 className="text-xl font-semibold">Pricing catalogue</h1>
         <p className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           This page is super-admin only. Ask an admin to set your role, or run:{" "}
@@ -104,6 +106,7 @@ export default async function PricingPage() {
 
   return (
     <main className="px-4 py-6 md:px-8">
+      <PageTabs tabs={SETTINGS_TABS} />
       <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
         <h1 className="text-xl font-semibold">Pricing catalogue</h1>
         <span className="text-sm text-neutral-500">{tables.length} tables · {byItem.size} item types</span>

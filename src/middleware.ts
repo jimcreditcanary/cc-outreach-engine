@@ -46,7 +46,7 @@ function withFrameHeaders(res: NextResponse, pathname: string): NextResponse {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Branded merchant-form host (onboarding.creditcanary.co.uk, set via
+  // Branded merchant-form host (dd.creditcanary.co.uk, set via
   // ONBOARDING_FORM_HOST once its DNS is live). It serves ONLY the public
   // merchant form (/m/*) — the internal app is never exposed there. Everything
   // else on that host bounces to the main site. No session handling here (the

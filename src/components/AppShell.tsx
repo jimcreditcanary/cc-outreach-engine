@@ -21,7 +21,6 @@ import {
   Reply,
   Telescope,
   Megaphone,
-  Tags,
   Settings as SettingsIcon,
   ChevronsLeft,
   ChevronsRight,
@@ -73,7 +72,6 @@ const SECTIONS: Section[] = [
     header: "Admin",
     items: [
       { href: "/settings", label: "Settings", Icon: SettingsIcon },
-      { href: "/admin/pricing", label: "Pricing", Icon: Tags },
     ],
   },
 ];
@@ -85,7 +83,7 @@ const GROUPED: Record<string, string[]> = {
   "/deals": ["/deals", "/hot"], // the Work-Deal page lives at /hot/[id]
   "/customers": ["/customers", "/billing", "/onboarding"], // onboarding + billing fold into Customers
   "/alerts": ["/alerts", "/content", "/linkedin", "/events"],
-  "/settings": ["/settings", "/admin/users"],
+  "/settings": ["/settings", "/admin/users", "/admin/pricing"],
 };
 
 function isActive(pathname: string, href: string): boolean {

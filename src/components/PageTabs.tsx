@@ -57,4 +57,5 @@ export const RESEARCH_TABS: PageTab[] = [
 export const SETTINGS_TABS: PageTab[] = [
   { href: "/settings", label: "Setup" },
   { href: "/admin/users", label: "Users" },
+  { href: "/admin/pricing", label: "Pricing" },
 ];

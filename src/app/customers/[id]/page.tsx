@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { getCrm } from "@/lib/crm";
 import { toggleCustomerAction } from "../../companies/hubspotActions";
+import { setUpBillingAction } from "../../billing/actions";
 import { formatPence } from "@/lib/billing/money";
 import { fmtDate } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
@@ -102,7 +103,13 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
       <section>
         <h2 className="mb-2 text-sm font-semibold">Billing</h2>
         {!(accounts?.length) ? (
-          <p className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">No billing account for this company.</p>
+          <div className="flex flex-wrap items-center gap-3 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">
+            <span>No billing account for this company.</span>
+            <form action={setUpBillingAction}>
+              <input type="hidden" name="company_id" value={id} />
+              <PendingButton className="rounded border border-indigo-300 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50" pendingLabel="Setting up…">Set up billing →</PendingButton>
+            </form>
+          </div>
         ) : (
           <div className="space-y-3">
             {(accounts ?? []).map((a) => {
