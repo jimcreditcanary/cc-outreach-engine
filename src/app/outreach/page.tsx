@@ -205,7 +205,7 @@ function DraftCard({ r, editable }: { r: Row; editable?: boolean }) {
         <div className="ml-auto flex flex-wrap gap-1">
           {r.status === "queued" && (
             <form action={approveDraftAction}><input type="hidden" name="id" value={r.id} />
-              <PendingButton className="rounded border border-emerald-300 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="…" title="Approve — it goes out via Postmark on the next send batch">✓ Approve · send via Postmark</PendingButton>
+              <PendingButton className="rounded border border-emerald-300 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="…" title="Approve — it goes out on the next send batch via the configured channel (Outlook / HubSpot / Postmark)">✓ Approve · queue to send</PendingButton>
             </form>
           )}
           {(r.status === "queued" || r.status === "approved") && (

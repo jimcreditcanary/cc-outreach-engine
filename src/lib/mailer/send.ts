@@ -18,10 +18,17 @@ import { sendBroadcast, isDryRun, resolveSenderIdentity } from "../send/postmark
 import { appendSignatureHtml, appendSignatureText } from "../send/signature";
 import { logEmailActivity } from "../hubspot/repo";
 import { hubspotSendEnabled, sendHubspotTransactional } from "../hubspot/transactional";
+import { getValidAccessToken, connectedSenderUserId } from "../microsoft/oauth";
+import { sendGraphMail } from "../microsoft/mail";
 import { tagLinks } from "./tracking";
 
 type DB = ReturnType<typeof serviceClient>;
 const env = (k: string, d: string) => process.env[k] ?? d;
+
+/** Outreach goes from the operator's own Outlook mailbox when switched on. */
+function outlookSendEnabled(): boolean {
+  return (process.env.HS_SEND_CHANNEL ?? "").toLowerCase() === "outlook";
+}
 
 function startOfUkDayUtc(now: Date): string {
   const d = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
@@ -72,12 +79,24 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export async function runHsSendBatch(db: DB, opts: { batch?: number; force?: boolean } = {}): Promise<HsSendBatchResult> {
-  const channel: "hubspot" | "postmark" = hubspotSendEnabled() ? "hubspot" : "postmark";
-  // HubSpot sends are always live when the channel is on; Postmark keeps its
-  // token-gated dry-run (no token = simulate the whole pipeline, mutate nothing).
+  const channel: "hubspot" | "postmark" | "outlook" =
+    outlookSendEnabled() ? "outlook" : hubspotSendEnabled() ? "hubspot" : "postmark";
+  // HubSpot + Outlook are always live when their channel is on; Postmark keeps
+  // its token-gated dry-run (no token = simulate the whole pipeline, mutate
+  // nothing). Outlook needs a connected mailbox, resolved just below.
   const dry = channel === "postmark" ? isDryRun() : false;
   const now = new Date();
   const nil: HsSendBatchResult = { ok: true, dry, cap: 0, sentToday: 0, attempted: 0, sent: 0, skipped: 0, failed: 0 };
+
+  // Outlook channel needs a connected mailbox + a usable token up front, so we
+  // fail loudly rather than silently sending nothing.
+  let outlookToken: string | null = null;
+  if (channel === "outlook") {
+    const senderId = await connectedSenderUserId(db, null);
+    if (!senderId) return { ...nil, ok: false, reason: "Outlook not connected — connect your Microsoft account in Settings, then retry" };
+    outlookToken = await getValidAccessToken(db, senderId).catch(() => null);
+    if (!outlookToken) return { ...nil, ok: false, reason: "Outlook token invalid — reconnect your Microsoft account in Settings" };
+  }
 
   // 1. Auto-pause (complaint/bounce) over the HubSpot send history.
   const [{ count: sentCount }, { count: bouncedCount }, { count: complaints }] = await Promise.all([
@@ -168,7 +187,16 @@ export async function runHsSendBatch(db: DB, opts: { batch?: number; force?: boo
     const html = appendSignatureHtml(tagLinks(d.body_html ?? "", tagOpts));
     const text = appendSignatureText(tagLinks(d.body_text ?? "", tagOpts));
     try {
-      if (channel === "hubspot") {
+      if (channel === "outlook") {
+        // Send from the operator's own Outlook mailbox (Graph /me/sendMail).
+        // From = the connected mailbox itself; Reply-To = the assigned reply
+        // address. Graph returns no id (202) — tag the row so it's traceable.
+        const { replyTo } = await resolveSenderIdentity(d.owner_id);
+        await sendGraphMail(outlookToken!, { to: d.email, subject: d.subject ?? "", html, replyTo });
+        await db.from("hs_sends").update({ status: "sent", postmark_message_id: `outlook:${Date.now()}`, sent_at: new Date().toISOString() }).eq("id", d.id);
+        // Mirror to the HubSpot timeline (best-effort) for last-contacted / deal engagement.
+        await logEmailActivity(d.hs_contact_id, { subject: d.subject ?? "", text: d.body_text ?? "" });
+      } else if (channel === "hubspot") {
         // Send THROUGH HubSpot (Single-Send) → native open/click tracking +
         // timeline logging. From = the owner's assigned address; sign off with
         // Jim's signature. sendId = the draft id (HubSpot de-dupes retries).

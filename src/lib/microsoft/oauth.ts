@@ -8,11 +8,13 @@ type DB = ReturnType<typeof serviceClient>;
 
 const AUTH_BASE = "https://login.microsoftonline.com";
 // Calendars.ReadWrite (was .Read) so booking-page events can be written
-// straight into the operator's calendar. Applies to NEW connects; existing
-// tokens keep their original grant (refresh deliberately omits scope below)
-// and event creation 403s → the caller falls back to emailed ICS invites
-// until the operator reconnects.
-export const MS_SCOPES = ["openid", "offline_access", "Calendars.ReadWrite", "User.Read"];
+// straight into the operator's calendar. Mail.Send so outreach can be sent
+// from the operator's own Outlook mailbox (HS_SEND_CHANNEL=outlook). Applies to
+// NEW connects; existing tokens keep their original grant (refresh deliberately
+// omits scope below) and the affected call 403s → calendar writes fall back to
+// emailed ICS invites, and Outlook sends fail with a "reconnect" error — until
+// the operator reconnects their Microsoft account.
+export const MS_SCOPES = ["openid", "offline_access", "Calendars.ReadWrite", "Mail.Send", "User.Read"];
 
 function tenant(): string {
   return process.env.MS_TENANT_ID || "common";
@@ -139,4 +141,17 @@ export async function getValidAccessToken(db: DB, userId: string): Promise<strin
 export async function isConnected(db: DB, userId: string): Promise<boolean> {
   const { data } = await db.from("ms_oauth_tokens").select("user_id").eq("user_id", userId).maybeSingle();
   return !!data;
+}
+
+/** The Supabase user id of a connected Microsoft account, preferring `preferred`
+ *  (the draft's owner) when it's connected, else the earliest-connected one.
+ *  Single-mailbox today (Jim), but owner-aware so it stays correct if a second
+ *  operator connects. Returns null when nobody has connected Outlook. */
+export async function connectedSenderUserId(db: DB, preferred?: string | null): Promise<string | null> {
+  if (preferred) {
+    const { data } = await db.from("ms_oauth_tokens").select("user_id").eq("user_id", preferred).maybeSingle();
+    if (data) return preferred;
+  }
+  const { data } = await db.from("ms_oauth_tokens").select("user_id").order("created_at", { ascending: true }).limit(1).maybeSingle();
+  return (data?.user_id as string | undefined) ?? null;
 }
