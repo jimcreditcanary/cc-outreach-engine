@@ -13,6 +13,7 @@ import { OnboardingBadge } from "@/components/OnboardingBadge";
 import { fmtDate } from "@/lib/format/datetime";
 import { updateHubspotCompany, toggleCustomerAction } from "./hubspotActions";
 import { serviceClient } from "@/lib/db/client";
+import { isCustomer } from "@/lib/crm/customer";
 import { companyDeals } from "@/lib/hubspot/repo";
 import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
 import { startOnboardingAction } from "@/app/onboarding/actions";
@@ -38,12 +39,14 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
   // billing" when the company has an onboarded case (normally auto-created on
   // approval). Scoped to this file — the Supabase detail page is unaffected.
   const bdb = serviceClient();
-  const [{ data: billingAccts }, { data: caseRows }] = await Promise.all([
+  const [{ data: billingAccts }, { data: caseRows }, customer] = await Promise.all([
     bdb.from("billing_accounts").select("id, status").eq("hubspot_company_id", id).order("created_at", { ascending: false }).limit(1),
     bdb.from("onboarding_cases").select("id, status").eq("hubspot_company_id", id).neq("status", "cancelled").order("updated_at", { ascending: false }).limit(1),
+    isCustomer(bdb, id),
   ]);
-  // Customer status IS current_client (single source of truth) — no local flag.
-  const customer = co.current_client === true;
+  // Customer status = the local "Active Customer" flag (the button), NOT
+  // HubSpot current_client. Clicking the button sets both; current_client on
+  // its own does not make a company a customer here.
   const billingAcct = (billingAccts ?? [])[0] ?? null;
   const onboardingCase = (caseRows ?? [])[0] ?? null;
   const hasOnboardedCase = onboardingCase?.status === "onboarded";
@@ -102,7 +105,7 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
               className={`rounded border px-1.5 py-0.5 text-xs ${customer ? "border-neutral-300 text-neutral-500 hover:bg-neutral-100" : "border-teal-400 text-teal-700 hover:bg-teal-50"}`}
               pendingLabel="…"
             >
-              {customer ? "Unmark customer" : "Mark as Customer"}
+              {customer ? "Unmark active customer" : "Mark as Active Customer"}
             </PendingButton>
           </form>
         </div>

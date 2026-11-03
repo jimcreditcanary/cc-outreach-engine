@@ -10,6 +10,8 @@ import { getCrm } from "@/lib/crm";
 import { bulkUpdateCompanies } from "@/lib/hubspot/repo";
 import type { CompanyWrite } from "@/lib/crm/types";
 import { currentUser } from "@/lib/auth/server";
+import { serviceClient } from "@/lib/db/client";
+import { setCustomer } from "@/lib/crm/customer";
 
 const s = (v: FormDataEntryValue | null): string | null => {
   const t = String(v ?? "").trim();
@@ -55,15 +57,20 @@ export async function bulkUpdateCompaniesAction(formData: FormData) {
   revalidatePath("/companies");
 }
 
-/** Mark / unmark a HubSpot company as a customer. Single source of truth is the
- *  HubSpot `current_client` property — no separate local flag, no dropdown. */
+/** Mark / unmark a company as an Active Customer. The local crm_customer_flags
+ *  flag is the source of truth for the Customers tab; clicking also writes
+ *  through to the HubSpot `current_client` property (button → field, one way).
+ *  A company that's current_client=true in HubSpot but never flagged here does
+ *  NOT appear as a customer. */
 export async function toggleCustomerAction(formData: FormData) {
   const me = await currentUser();
   if (!me) redirect("/login");
   const id = String(formData.get("company_id") ?? "");
   if (!id) return;
   const on = String(formData.get("on") ?? "") === "true";
-  await getCrm().updateCompany(id, { current_client: on });
+  await setCustomer(serviceClient(), id, on, me.id);
+  // Keep HubSpot in step (write-through only — we never read it back as truth).
+  try { await getCrm().updateCompany(id, { current_client: on }); } catch { /* flag is source of truth; HubSpot sync best-effort */ }
   revalidatePath(`/companies/${id}`);
   revalidatePath("/customers");
   revalidatePath(`/customers/${id}`);

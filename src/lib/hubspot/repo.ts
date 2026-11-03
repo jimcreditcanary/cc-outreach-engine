@@ -77,7 +77,7 @@ async function contactCompanyIds(contactIds: string[]): Promise<Map<string, stri
 }
 
 // companyId → name (one batch call).
-async function companyNames(companyIds: string[]): Promise<Map<string, string | null>> {
+export async function companyNames(companyIds: string[]): Promise<Map<string, string | null>> {
   const out = new Map<string, string | null>();
   const unique = [...new Set(companyIds)];
   if (unique.length === 0) return out;

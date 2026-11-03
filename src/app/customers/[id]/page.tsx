@@ -7,6 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { getCrm } from "@/lib/crm";
+import { isCustomer } from "@/lib/crm/customer";
 import { toggleCustomerAction } from "../../companies/hubspotActions";
 import { setUpBillingAction } from "../../billing/actions";
 import { formatPence } from "@/lib/billing/money";
@@ -21,13 +22,14 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
   const { id } = await params;
   const db = serviceClient();
 
-  const [co, { data: cases }, { data: accounts }] = await Promise.all([
+  const [co, { data: cases }, { data: accounts }, customer] = await Promise.all([
     getCrm().getCompany(id).catch(() => null),
     db.from("onboarding_cases").select("id, status, product_groups, hubspot_deal_id, updated_at").eq("hubspot_company_id", id).order("updated_at", { ascending: false }),
     db.from("billing_accounts").select("id, status, contract_start_date").eq("hubspot_company_id", id).order("created_at", { ascending: false }),
+    isCustomer(db, id),
   ]);
-  // Customer status IS current_client (single source of truth).
-  const customer = co?.current_client === true;
+  // Customer status = the local "Active Customer" flag (the button), not
+  // HubSpot current_client.
 
   // Nothing links this company to a customer record, onboarding, or billing.
   if (!customer && !(cases?.length) && !(accounts?.length)) notFound();
@@ -62,7 +64,7 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
             <input type="hidden" name="company_id" value={id} />
             <input type="hidden" name="on" value={customer ? "false" : "true"} />
             <PendingButton className={`rounded border px-2 py-0.5 text-xs ${customer ? "border-neutral-300 text-neutral-500 hover:bg-neutral-100" : "border-teal-400 text-teal-700 hover:bg-teal-50"}`} pendingLabel="…">
-              {customer ? "Unmark customer" : "Mark as Customer"}
+              {customer ? "Unmark active customer" : "Mark as Active Customer"}
             </PendingButton>
           </form>
         </div>

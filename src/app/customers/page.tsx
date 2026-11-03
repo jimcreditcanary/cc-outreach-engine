@@ -5,7 +5,8 @@
 
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
-import { listCustomerCompanies } from "@/lib/hubspot/repo";
+import { companyNames } from "@/lib/hubspot/repo";
+import { listCustomerCompanyIds } from "@/lib/crm/customer";
 import { formatPence } from "@/lib/billing/money";
 import { fmtDate } from "@/lib/format/datetime";
 
@@ -26,10 +27,10 @@ const BILL_STYLE: Record<string, string> = {
 
 export default async function CustomersPage() {
   const db = serviceClient();
-  // Single source of truth: companies flagged current_client=true in HubSpot.
-  const customers = await listCustomerCompanies();
-  const ids = customers.map((c) => c.id);
-  const nameFor = new Map(customers.filter((c) => c.name).map((c) => [c.id, c.name!]));
+  // Source of truth: companies flagged as Active Customers here (the button),
+  // NOT HubSpot current_client. Names are resolved from HubSpot by id.
+  const ids = await listCustomerCompanyIds(db);
+  const nameFor = await companyNames(ids);
 
   const grab = async <T,>(table: string, cols: string, col: string, vals: string[]): Promise<T[]> => {
     if (!vals.length) return [];
@@ -63,7 +64,7 @@ export default async function CustomersPage() {
 
       {ids.length === 0 ? (
         <p className="rounded border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
-          No customers yet — open a company and click <strong>Mark as Customer</strong>.
+          No customers yet — open a company and click <strong>Mark as Active Customer</strong>.
         </p>
       ) : (
         <table className="w-full text-sm">
