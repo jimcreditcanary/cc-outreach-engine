@@ -128,8 +128,8 @@ export function AppShell({
         >
           <Menu size={22} />
         </button>
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-600 text-sm font-bold text-white">CC</div>
-        <span className="font-semibold text-neutral-800">Credit Canary</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/cc-logo.svg" alt="Credit Canary" className="h-7 w-auto" />
       </header>
 
       {/* Desktop sidebar (hidden below md) */}
@@ -175,8 +175,12 @@ function SidebarBody({
   return (
     <>
       <div className={`flex h-14 items-center border-b border-neutral-100 px-3 ${collapsed ? "justify-center" : "gap-2"}`}>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-600 text-sm font-bold text-white">CC</div>
-        {!collapsed && <span className="truncate font-semibold text-neutral-800">Credit Canary</span>}
+        {collapsed ? (
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-600 text-sm font-bold text-white">CC</div>
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src="/cc-logo.svg" alt="Credit Canary" className="h-7 w-auto" />
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3">

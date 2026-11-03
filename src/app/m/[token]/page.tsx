@@ -17,9 +17,9 @@ function Shell({ children }: { children: ReactNode }) {
   return (
     <main className="min-h-screen bg-neutral-50">
       <div className="bg-[#003566] px-4 py-4">
-        <div className="mx-auto flex max-w-2xl items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[#FFD600] text-sm font-bold text-[#003566]">CC</div>
-          <span className="font-semibold text-white">Credit Canary</span>
+        <div className="mx-auto max-w-2xl">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/cc-logo-white.svg" alt="Credit Canary" className="h-7 w-auto" />
         </div>
       </div>
       <div className="mx-auto max-w-2xl px-4 py-8">{children}</div>

@@ -279,8 +279,8 @@ export async function savePageAction(formData: FormData) {
       }
     } else if (page === "payments") {
       const entries: AnswerInput[] = [];
-      for (const k of PAYMENT_ANSWER_KEYS) entries.push({ field_key: k, value: str(formData.get(k)) });
-      for (const p of paymentReasonProducts(c.product_groups)) entries.push({ field_key: `reason_${p}`, value: str(formData.get(`reason_${p}`)) });
+      for (const k of PAYMENT_ANSWER_KEYS) entries.push({ field_key: k, value: str(formData.get(k)), is_unknown: str(formData.get(`${k}__unknown`)) === "on" });
+      for (const p of paymentReasonProducts(c.product_groups)) entries.push({ field_key: `reason_${p}`, value: str(formData.get(`reason_${p}`)), is_unknown: str(formData.get(`reason_${p}__unknown`)) === "on" });
       entries.push({ field_key: "dd_signup", value: formData.getAll("dd_signup").map(String).filter(Boolean).join(",") });
       await setAnswers(db, c.id, entries, ed);
       // Bank statement upload (best-effort).
@@ -304,7 +304,7 @@ export async function savePageAction(formData: FormData) {
         else { await setPageComplete(db, c.id, "payments", true); dest = advance(); }
       }
     } else if (page === "infosec") {
-      const entries: AnswerInput[] = INFOSEC_ANSWER_KEYS.map((k) => ({ field_key: k, value: str(formData.get(k)) }));
+      const entries: AnswerInput[] = INFOSEC_ANSWER_KEYS.map((k) => ({ field_key: k, value: str(formData.get(k)), is_unknown: str(formData.get(`${k}__unknown`)) === "on" }));
       await setAnswers(db, c.id, entries, ed);
       const uploadGroups: [string, string][] = [
         ["infosec_policy_file", "infosec_policy"], ["pentest_file", "pentest"],

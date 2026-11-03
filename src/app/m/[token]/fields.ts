@@ -192,7 +192,7 @@ export function missingPaymentFields(answers: AnswerMap, opts: {
   transactionProfile: boolean; directDebit: boolean; charity: boolean; reasonProducts: string[];
 }): string[] {
   const miss: string[] = [];
-  const need = (key: string, label: string) => { if (!(answers[key]?.value ?? "").trim()) miss.push(label); };
+  const need = (key: string, label: string) => { if (answers[key]?.is_unknown) return; if (!(answers[key]?.value ?? "").trim()) miss.push(label); };
   if (opts.transactionProfile) {
     need("pay_bank_statement", "Recent bank statement (yes/no)");
     need("pay_take_payments_for", "What you take payments for");
@@ -280,7 +280,7 @@ export const INFOSEC_ANSWER_KEYS = [
 export function missingInfosecFields(answers: AnswerMap): string[] {
   const miss: string[] = [];
   const val = (k: string) => (answers[k]?.value ?? "").trim();
-  const need = (k: string, label: string) => { if (!val(k)) miss.push(label); };
+  const need = (k: string, label: string) => { if (answers[k]?.is_unknown) return; if (!val(k)) miss.push(label); };
   need("infosec_cmc_pi", "CMC / PI firm?");
   need("infosec_search_type_ok", "Search type in keeping with business?");
   need("infosec_shared_email", "Shared email account?");

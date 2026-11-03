@@ -372,19 +372,29 @@ function Attr({ answers, name }: { answers: AnswerMap; name: string }) {
   const a = attributionLine(answers[name]);
   return a ? <p className="mt-0.5 text-[11px] text-neutral-400">{a}</p> : null;
 }
-function TextA({ name, label, answers, type = "text", placeholder, required, full }: {
-  name: string; label: string; answers: AnswerMap; type?: string; placeholder?: string; required?: boolean; full?: boolean;
+// "Don't know — ask later": lets the filler defer any payment/infosec question to
+// the economic buyer. On by default for these helpers; opt out with noUnknown.
+function UnknownToggle({ name, answers }: { name: string; answers: AnswerMap }) {
+  return (
+    <label className="mt-1 flex items-center gap-1.5 text-xs text-neutral-400">
+      <input type="checkbox" name={`${name}__unknown`} defaultChecked={answers[name]?.is_unknown} /> Don&apos;t know — ask later
+    </label>
+  );
+}
+function TextA({ name, label, answers, type = "text", placeholder, required, full, noUnknown }: {
+  name: string; label: string; answers: AnswerMap; type?: string; placeholder?: string; required?: boolean; full?: boolean; noUnknown?: boolean;
 }) {
   return (
     <div className={full ? "sm:col-span-2" : undefined}>
       <label htmlFor={name} className={lbl}>{label}{required && <span className="text-red-600"> *</span>}</label>
       <input id={name} name={name} type={type} placeholder={placeholder} defaultValue={answers[name]?.value ?? ""} className={field} />
+      {!noUnknown && <UnknownToggle name={name} answers={answers} />}
       <Attr answers={answers} name={name} />
     </div>
   );
 }
-function RadioA({ name, label, answers, options, required, dflt, full }: {
-  name: string; label: string; answers: AnswerMap; options: { value: string; label: string }[]; required?: boolean; dflt?: string; full?: boolean;
+function RadioA({ name, label, answers, options, required, dflt, full, noUnknown }: {
+  name: string; label: string; answers: AnswerMap; options: { value: string; label: string }[]; required?: boolean; dflt?: string; full?: boolean; noUnknown?: boolean;
 }) {
   const cur = answers[name]?.value ?? "";
   return (
@@ -393,12 +403,13 @@ function RadioA({ name, label, answers, options, required, dflt, full }: {
       <div className="flex flex-wrap gap-4 text-sm">
         {options.map((o) => <label key={o.value} className="flex items-center gap-1.5"><input type="radio" name={name} value={o.value} defaultChecked={cur ? cur === o.value : o.value === dflt} /> {o.label}</label>)}
       </div>
+      {!noUnknown && <UnknownToggle name={name} answers={answers} />}
       <Attr answers={answers} name={name} />
     </div>
   );
 }
-function SelectA({ name, label, answers, options, required }: {
-  name: string; label: string; answers: AnswerMap; options: { value: string; label: string }[]; required?: boolean;
+function SelectA({ name, label, answers, options, required, noUnknown }: {
+  name: string; label: string; answers: AnswerMap; options: { value: string; label: string }[]; required?: boolean; noUnknown?: boolean;
 }) {
   return (
     <div>
@@ -407,6 +418,7 @@ function SelectA({ name, label, answers, options, required }: {
         <option value="">—</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
+      {!noUnknown && <UnknownToggle name={name} answers={answers} />}
       <Attr answers={answers} name={name} />
     </div>
   );
@@ -505,7 +517,7 @@ function YnRow({ name, label, answers, dflt, explainLabel, options = YN }: {
   return (
     <div className="border-t border-neutral-100 pt-3 first:border-0 first:pt-0">
       <RadioA name={name} label={label} answers={answers} options={options} dflt={dflt} required />
-      {explainLabel && <div className="mt-1"><TextA name={`${name}_explain`} label={explainLabel} answers={answers} /></div>}
+      {explainLabel && <div className="mt-1"><TextA name={`${name}_explain`} label={explainLabel} answers={answers} noUnknown /></div>}
     </div>
   );
 }
