@@ -9,7 +9,7 @@ import { serviceClient } from "@/lib/db/client";
 import {
   getCaseByToken, saveMerchantForm, saveBusinessComplianceSignatory, saveUboKyc,
   addBankAccounts, removeBankAccount, countBankAccounts, saveDirectDebit, finalizeMerchantSubmission,
-  type MerchantFormData, type UboKycInput, type BankAccountInput, type DirectDebitDetails,
+  type MerchantFormData, type UboKycInput, type BankAccountInput,
 } from "@/lib/onboarding/merchantForm";
 import { saveUpload } from "@/lib/onboarding/uploads";
 import { notifyMerchantSubmitted } from "@/lib/onboarding/notify";
@@ -18,11 +18,13 @@ import { getFormEditor, setFormEditor } from "@/lib/onboarding/formEditor";
 import { getAnswers, setAnswers, setPageComplete, type FormEditor, type AnswerInput } from "@/lib/onboarding/formAnswers";
 import { listStakeholders, ONBOARDING_ROLES } from "@/lib/onboarding/cases";
 import { hubspotRepo } from "@/lib/hubspot/repo";
-import { requiresFcaFrn } from "@/lib/onboarding/productGroups";
+import { requiresFcaFrn, requiresDirectDebit } from "@/lib/onboarding/productGroups";
 import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
+import { loadEnrichment } from "@/lib/onboarding/enrich";
 import {
-  COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, projectCompanyAnswers,
-  missingCompanyFields, hasValidDpo, isPersonalEmailDomain, nextFormPage,
+  COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, PAYMENT_ANSWER_KEYS, projectCompanyAnswers,
+  missingCompanyFields, hasValidDpo, isPersonalEmailDomain, requiresTransactionProfile,
+  paymentReasonProducts, missingPaymentFields, projectPaymentAnswers, isCharityType, nextFormPage,
 } from "./fields";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
@@ -176,13 +178,6 @@ function parseAddBankAccounts(formData: FormData): BankAccountInput[] {
   return out;
 }
 
-function parseDd(formData: FormData): DirectDebitDetails {
-  return {
-    collects_dd: str(formData.get("dd_collects")), existing_sun: str(formData.get("dd_existing_sun")),
-    payment_description: str(formData.get("dd_payment_description")),
-    expected_monthly_volume: str(formData.get("dd_expected_volume")), average_value: str(formData.get("dd_average_value")),
-  };
-}
 
 /** Self-identify on the shared link: record WHO is filling the form in (for
  *  per-field attribution). Resolves name/email/role from the case's stakeholders
@@ -281,8 +276,31 @@ export async function savePageAction(formData: FormData) {
         else { await setPageComplete(db, c.id, "accounts", true); dest = advance(); }
       }
     } else if (page === "payments") {
-      await saveDirectDebit(db, c.id, parseDd(formData));
-      if (mode === "continue") { await setPageComplete(db, c.id, "payments", true); dest = advance(); }
+      const entries: AnswerInput[] = [];
+      for (const k of PAYMENT_ANSWER_KEYS) entries.push({ field_key: k, value: str(formData.get(k)) });
+      for (const p of paymentReasonProducts(c.product_groups)) entries.push({ field_key: `reason_${p}`, value: str(formData.get(`reason_${p}`)) });
+      entries.push({ field_key: "dd_signup", value: formData.getAll("dd_signup").map(String).filter(Boolean).join(",") });
+      await setAnswers(db, c.id, entries, ed);
+      // Bank statement upload (best-effort).
+      const stmts = formData.getAll("bank_statement_file").filter((f): f is File => f instanceof File && f.size > 0);
+      for (const f of stmts.slice(0, 3)) {
+        if (f.size > 20 * 1024 * 1024) continue;
+        try { await saveUpload(db, c.id, { name: f.name, type: f.type, bytes: new Uint8Array(await f.arrayBuffer()) }, "bank_statement"); } catch { /* best-effort */ }
+      }
+      // Project the key DD fields into the typed record for /review + docgen.
+      const answers = await getAnswers(db, c.id);
+      await saveDirectDebit(db, c.id, projectPaymentAnswers(answers));
+      if (mode === "continue") {
+        const snap = (await loadEnrichment(db, c.id)).snapshot;
+        const missing = missingPaymentFields(answers, {
+          transactionProfile: requiresTransactionProfile(c.product_groups),
+          directDebit: requiresDirectDebit(c.product_groups),
+          charity: isCharityType(snap?.company_type),
+          reasonProducts: paymentReasonProducts(c.product_groups),
+        });
+        if (missing.length) dest = `${back}?page=payments&error=required${qp(v2)}`;
+        else { await setPageComplete(db, c.id, "payments", true); dest = advance(); }
+      }
     } else if (page === "infosec") {
       const files = formData.getAll("infosec_files").filter((f): f is File => f instanceof File && f.size > 0);
       for (const f of files.slice(0, 10)) {
@@ -328,6 +346,16 @@ export async function submitForApprovalAction(formData: FormData) {
   const missing = missingCompanyFields(answers, { fcaRequired: requiresFcaFrn(c.product_groups), tuCredit: c.product_groups.includes("tu_credit") });
   if (missing.length) redirect(`${back}?page=company&error=required${qp(v2)}`);
   if (answers["ubo_list_complete"]?.value !== "yes") redirect(`${back}?page=ubos&error=attest${qp(v2)}`);
+  if (requiresTransactionProfile(c.product_groups) || requiresDirectDebit(c.product_groups)) {
+    const snap = (await loadEnrichment(db, c.id)).snapshot;
+    const payMissing = missingPaymentFields(answers, {
+      transactionProfile: requiresTransactionProfile(c.product_groups),
+      directDebit: requiresDirectDebit(c.product_groups),
+      charity: isCharityType(snap?.company_type),
+      reasonProducts: paymentReasonProducts(c.product_groups),
+    });
+    if (payMissing.length) redirect(`${back}?page=payments&error=required${qp(v2)}`);
+  }
 
   let failed = false;
   try {

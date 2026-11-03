@@ -5,8 +5,8 @@
 // so /review + docgen keep working.
 
 import type { AnswerMap } from "@/lib/onboarding/formAnswers";
-import type { MerchantBusiness, MerchantCompliance, MerchantSignatory, DpoRecord } from "@/lib/onboarding/merchantForm";
-import { requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
+import type { MerchantBusiness, MerchantCompliance, MerchantSignatory, DpoRecord, DirectDebitDetails } from "@/lib/onboarding/merchantForm";
+import { PRODUCT_GROUPS, requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
 
 export interface FormPage {
   id: "company" | "ubos" | "accounts" | "payments" | "infosec" | "review";
@@ -20,7 +20,7 @@ export function visibleFormPages(groups: string[]): FormPage[] {
     { id: "ubos", label: "Beneficial owners" },
   ];
   if (requiresPayments(groups) || requiresDirectDebit(groups)) pages.push({ id: "accounts", label: "Bank accounts" });
-  if (requiresDirectDebit(groups)) pages.push({ id: "payments", label: "Direct Debit" });
+  if (requiresTransactionProfile(groups) || requiresDirectDebit(groups)) pages.push({ id: "payments", label: "Payment details" });
   if (requiresTuSection(groups)) pages.push({ id: "infosec", label: "Information security" });
   pages.push({ id: "review", label: "Review & submit" });
   return pages;
@@ -155,4 +155,79 @@ export function missingCompanyFields(answers: AnswerMap, opts: { fcaRequired: bo
     if (!(a?.value ?? "").trim()) missing.push(f.label);
   }
   return missing;
+}
+
+// ─── Payment details page (P4) ───────────────────────────────────────────────
+
+const TRANSACTION_PROFILE_PRODUCTS = new Set(["communications", "pay_by_bank", "sweeping_vrp", "cvrp"]);
+/** The transaction-profile block shows for Communications / Pay-by-Bank / VRP / CVRP. */
+export function requiresTransactionProfile(groups: string[]): boolean {
+  return groups.some((g) => TRANSACTION_PROFILE_PRODUCTS.has(g));
+}
+
+const PAYMENT_PRODUCTS_FOR_REASON = new Set(["communications", "pay_by_bank", "sweeping_vrp", "cvrp", "faster_payments", "settlement_accounts", "direct_debits"]);
+/** Selected products that need a per-type "why did you choose this" reason. */
+export function paymentReasonProducts(groups: string[]): string[] {
+  return groups.filter((g) => PAYMENT_PRODUCTS_FOR_REASON.has(g));
+}
+export function productLabel(key: string): string {
+  return PRODUCT_GROUPS[key as keyof typeof PRODUCT_GROUPS]?.label ?? key;
+}
+
+/** Best-effort: the Companies House type marks it a charity (gates Gift Aid). */
+export function isCharityType(companyType: string | null | undefined): boolean {
+  return /charit/i.test(companyType ?? "");
+}
+
+/** Static payment answer keys (reason_{product} and dd_signup are handled separately). */
+export const PAYMENT_ANSWER_KEYS = [
+  "pay_bank_statement", "pay_bank_statement_reason", "pay_take_payments_for", "pay_expected_volume",
+  "pay_avg_value", "pay_max_value", "pay_b2b_b2c", "pay_b2b_pct", "pay_b2c_pct", "pay_collect_method",
+  "dd_has_sun", "dd_sun_number", "dd_sun_provider", "dd_branded_sun_ok", "dd_statement_display",
+  "dd_transfer", "dd_max_collection_limit", "dd_frequency", "dd_frequency_other", "dd_frequency_split",
+  "dd_before_after", "dd_schedule", "dd_collection_dates", "dd_advance_notice", "dd_auto_represent", "dd_gift_aid",
+];
+
+export function missingPaymentFields(answers: AnswerMap, opts: {
+  transactionProfile: boolean; directDebit: boolean; charity: boolean; reasonProducts: string[];
+}): string[] {
+  const miss: string[] = [];
+  const need = (key: string, label: string) => { if (!(answers[key]?.value ?? "").trim()) miss.push(label); };
+  if (opts.transactionProfile) {
+    need("pay_bank_statement", "Recent bank statement (yes/no)");
+    need("pay_take_payments_for", "What you take payments for");
+    need("pay_expected_volume", "Expected monthly volume");
+    need("pay_avg_value", "Average transaction value");
+    need("pay_max_value", "Maximum transaction value");
+    need("pay_b2b_b2c", "B2B / B2C");
+    need("pay_collect_method", "How you collect payments + provider");
+    for (const p of opts.reasonProducts) need(`reason_${p}`, `Reason for ${productLabel(p)}`);
+  }
+  if (opts.directDebit) {
+    need("dd_has_sun", "Active SUN (yes/no)");
+    need("dd_transfer", "Direct Debit transfer (all/partial)");
+    need("dd_max_collection_limit", "Max collection limit per customer/month");
+    need("dd_frequency", "Collection frequency");
+    need("dd_before_after", "Collect before/after service");
+    if (!(answers["dd_signup"]?.value ?? "").trim()) miss.push("Direct Debit sign-up method");
+    need("dd_schedule", "Schedule type");
+    need("dd_collection_dates", "Collection date(s)");
+    need("dd_advance_notice", "Advance-notice method");
+    need("dd_auto_represent", "Auto-representment (yes/no)");
+    if (opts.charity) need("dd_gift_aid", "Gift Aid (yes/no)");
+  }
+  return miss;
+}
+
+/** Project the key DD answers into the typed onboarding_direct_debit record so
+ *  /review + docgen keep working; the full set lives in the answer store. */
+export function projectPaymentAnswers(answers: AnswerMap): DirectDebitDetails {
+  const v = (k: string) => answers[k]?.value ?? "";
+  return {
+    collects_dd: v("dd_has_sun"),
+    existing_sun: v("dd_sun_number"),
+    payment_description: v("pay_take_payments_for"),
+    expected_monthly_volume: v("pay_expected_volume"),
+    average_value: v("pay_avg_value"),
+  };
 }

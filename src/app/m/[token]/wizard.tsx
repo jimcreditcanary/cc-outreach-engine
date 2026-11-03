@@ -17,7 +17,10 @@ import { loadUploads } from "@/lib/onboarding/uploads";
 import { requiresFcaFrn, requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
 import { PendingButton } from "@/components/PendingButton";
 import { AddressLookup } from "@/components/AddressLookup";
-import { COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, collectDpos, dpoSummary, visibleFormPages, type AnswerFieldDef } from "./fields";
+import {
+  COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, collectDpos, dpoSummary, visibleFormPages,
+  requiresTransactionProfile, paymentReasonProducts, productLabel, isCharityType, type AnswerFieldDef,
+} from "./fields";
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
 import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAccountAction } from "./actions";
 
@@ -117,7 +120,7 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
         {current === "company" && <CompanyPage token={token} c={c} answers={answers} v2={v2} />}
         {current === "ubos" && <UbosPage token={token} c={c} enrichment={enrichment} merchant={merchant} answers={answers} v2={v2} />}
         {current === "accounts" && <AccountsPage token={token} c={c} merchant={merchant} v2={v2} />}
-        {current === "payments" && <PaymentsPage token={token} merchant={merchant} v2={v2} />}
+        {current === "payments" && <PaymentsPage token={token} c={c} answers={answers} companyName={enrichment.snapshot?.company_name ?? ""} charity={isCharityType(enrichment.snapshot?.company_type)} v2={v2} />}
         {current === "infosec" && <InfosecPage token={token} uploadCount={uploads.length} v2={v2} />}
         {current === "review" && <ReviewPage token={token} c={c} answers={answers} merchant={merchant} v2={v2} />}
       </div>
@@ -362,20 +365,130 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
   );
 }
 
-function PaymentsPage({ token, merchant, v2 }: { token: string; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; v2?: string }) {
-  const dd = merchant.directDebit ?? {};
+function Attr({ answers, name }: { answers: AnswerMap; name: string }) {
+  const a = attributionLine(answers[name]);
+  return a ? <p className="mt-0.5 text-[11px] text-neutral-400">{a}</p> : null;
+}
+function TextA({ name, label, answers, type = "text", placeholder, required, full }: {
+  name: string; label: string; answers: AnswerMap; type?: string; placeholder?: string; required?: boolean; full?: boolean;
+}) {
   return (
-    <PageForm token={token} page="payments" v2={v2} title="Direct Debit" intro="How you collect Direct Debits through Credit Canary.">
-      <fieldset className="grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor="dd_collects" className={lbl}>Do you currently collect Direct Debits?</label>
-          <select id="dd_collects" name="dd_collects" defaultValue={dd.collects_dd ?? ""} className={field}><option value="">—</option><option value="yes">Yes</option><option value="no">No</option></select>
-        </div>
-        <div><label htmlFor="dd_existing_sun" className={lbl}>Existing Service User Number (if any)</label><input id="dd_existing_sun" name="dd_existing_sun" defaultValue={dd.existing_sun ?? ""} className={field} /></div>
-        <div className="sm:col-span-2"><label htmlFor="dd_payment_description" className={lbl}>What are you collecting payments for?</label><input id="dd_payment_description" name="dd_payment_description" defaultValue={dd.payment_description ?? ""} className={field} /></div>
-        <div><label htmlFor="dd_expected_volume" className={lbl}>Expected monthly volume</label><input id="dd_expected_volume" name="dd_expected_volume" defaultValue={dd.expected_monthly_volume ?? ""} className={field} /></div>
-        <div><label htmlFor="dd_average_value" className={lbl}>Average collection value</label><input id="dd_average_value" name="dd_average_value" defaultValue={dd.average_value ?? ""} className={field} /></div>
-      </fieldset>
+    <div className={full ? "sm:col-span-2" : undefined}>
+      <label htmlFor={name} className={lbl}>{label}{required && <span className="text-red-600"> *</span>}</label>
+      <input id={name} name={name} type={type} placeholder={placeholder} defaultValue={answers[name]?.value ?? ""} className={field} />
+      <Attr answers={answers} name={name} />
+    </div>
+  );
+}
+function RadioA({ name, label, answers, options, required, dflt, full }: {
+  name: string; label: string; answers: AnswerMap; options: { value: string; label: string }[]; required?: boolean; dflt?: string; full?: boolean;
+}) {
+  const cur = answers[name]?.value ?? "";
+  return (
+    <div className={full ? "sm:col-span-2" : undefined}>
+      <span className={lbl}>{label}{required && <span className="text-red-600"> *</span>}</span>
+      <div className="flex flex-wrap gap-4 text-sm">
+        {options.map((o) => <label key={o.value} className="flex items-center gap-1.5"><input type="radio" name={name} value={o.value} defaultChecked={cur ? cur === o.value : o.value === dflt} /> {o.label}</label>)}
+      </div>
+      <Attr answers={answers} name={name} />
+    </div>
+  );
+}
+function SelectA({ name, label, answers, options, required }: {
+  name: string; label: string; answers: AnswerMap; options: { value: string; label: string }[]; required?: boolean;
+}) {
+  return (
+    <div>
+      <label htmlFor={name} className={lbl}>{label}{required && <span className="text-red-600"> *</span>}</label>
+      <select id={name} name={name} defaultValue={answers[name]?.value ?? ""} className={field}>
+        <option value="">—</option>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <Attr answers={answers} name={name} />
+    </div>
+  );
+}
+
+const YN = [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }];
+const SIGNUP_OPTIONS = [
+  { value: "paper", label: "Paper" }, { value: "telephone", label: "Telephone" }, { value: "edd", label: "eDD" },
+  { value: "api", label: "API" }, { value: "xero", label: "Xero" },
+];
+
+function PaymentsPage({ token, c, answers, companyName, charity, v2 }: {
+  token: string; c: TokenCase; answers: AnswerMap; companyName: string; charity: boolean; v2?: string;
+}) {
+  const showProfile = requiresTransactionProfile(c.product_groups);
+  const showDd = requiresDirectDebit(c.product_groups);
+  const reasonProducts = paymentReasonProducts(c.product_groups);
+  const signup = new Set((answers["dd_signup"]?.value ?? "").split(",").filter(Boolean));
+  const stmtExample = answers["dd_statement_display"]?.value || companyName || "YOURCOMPANY";
+  return (
+    <PageForm token={token} page="payments" v2={v2} title="Payment details" intro="Tell us how you take and collect payments.">
+      {showProfile && (
+        <fieldset className="grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
+          <legend className="px-1 text-sm font-semibold text-[#003566]">Transaction profile</legend>
+          <RadioA name="pay_bank_statement" label="Can you provide a recent bank statement?" answers={answers} options={YN} required />
+          <div>
+            <label htmlFor="bank_statement_file" className={lbl}>If yes, upload it</label>
+            <input id="bank_statement_file" name="bank_statement_file" type="file" accept=".pdf,.png,.jpg,.jpeg" className="block w-full text-sm text-neutral-700 file:mr-3 file:rounded file:border-0 file:bg-[#003566] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-[#002a52]" />
+          </div>
+          <TextA name="pay_bank_statement_reason" label="If no, please explain why" answers={answers} full />
+          <TextA name="pay_take_payments_for" label="What will you take payments for?" answers={answers} required full />
+          <TextA name="pay_expected_volume" label="Expected monthly transaction volume" answers={answers} required />
+          <TextA name="pay_avg_value" label="Average transaction value" answers={answers} required />
+          <TextA name="pay_max_value" label="Maximum transaction value" answers={answers} required />
+          <RadioA name="pay_b2b_b2c" label="Do you provide your service B2B or B2C?" answers={answers} options={[{ value: "b2c", label: "B2C" }, { value: "b2b", label: "B2B" }, { value: "both", label: "Both" }]} required />
+          <TextA name="pay_b2b_pct" label="If both — B2B %" answers={answers} />
+          <TextA name="pay_b2c_pct" label="If both — B2C %" answers={answers} />
+          <TextA name="pay_collect_method" label="How do you currently collect payments, and who is your provider?" answers={answers} required full />
+        </fieldset>
+      )}
+
+      {reasonProducts.length > 0 && (
+        <fieldset className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+          <legend className="px-1 text-sm font-semibold text-[#003566]">Why each payment type?</legend>
+          {reasonProducts.map((p) => <TextA key={p} name={`reason_${p}`} label={`Reason for ${productLabel(p)}`} answers={answers} required full />)}
+        </fieldset>
+      )}
+
+      {showDd && (
+        <fieldset className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
+          <legend className="px-1 text-sm font-semibold text-[#003566]">Direct Debit</legend>
+          <RadioA name="dd_has_sun" label="Do you have an active SUN (Service User Number)?" answers={answers} options={YN} required full />
+          <TextA name="dd_sun_number" label="If yes — SUN number" answers={answers} />
+          <TextA name="dd_sun_provider" label="If yes — provider" answers={answers} />
+          <RadioA name="dd_branded_sun_ok" label="If no — happy for Credit Canary to provide a branded SUN?" answers={answers} options={[{ value: "yes", label: "Yes" }]} full />
+          <div className="sm:col-span-2">
+            <TextA name="dd_statement_display" label="What should show on your customers' bank statements?" answers={answers} placeholder={companyName || "Your company"} />
+            <p className="mt-0.5 text-[11px] text-neutral-400">Live example: “<span className="font-mono">{stmtExample.slice(0, 18)}</span>” will appear on their statement.</p>
+          </div>
+          <RadioA name="dd_transfer" label="Transferring all existing Direct Debits, or a partial transfer?" answers={answers} options={[{ value: "all", label: "All" }, { value: "partial", label: "Partial" }]} required full />
+          <TextA name="dd_max_collection_limit" label="Max collection limit per customer, per month" answers={answers} required />
+          <SelectA name="dd_frequency" label="Frequency of collections" answers={answers} required options={[{ value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }, { value: "quarterly", label: "Quarterly" }, { value: "annual", label: "Annual" }, { value: "other", label: "Other" }]} />
+          <TextA name="dd_frequency_other" label="If other — please specify" answers={answers} />
+          <TextA name="dd_frequency_split" label="If more than one frequency — the split (e.g. 10% weekly, 70% monthly)" answers={answers} full />
+          <RadioA name="dd_before_after" label="Do you collect before or after the service is provided?" answers={answers} options={[{ value: "before", label: "Before" }, { value: "after", label: "After" }]} required full />
+          <div className="sm:col-span-2">
+            <span className={lbl}>How will you sign customers up to Direct Debit? <span className="text-red-600">*</span></span>
+            <div className="flex flex-wrap gap-4 text-sm">
+              {SIGNUP_OPTIONS.map((o) => <label key={o.value} className="flex items-center gap-1.5"><input type="checkbox" name="dd_signup" value={o.value} defaultChecked={signup.size ? signup.has(o.value) : o.value === "api"} /> {o.label}</label>)}
+            </div>
+            <Attr answers={answers} name="dd_signup" />
+          </div>
+          <div className="sm:col-span-2">
+            <RadioA name="dd_schedule" label="Which schedule applies?" answers={answers} options={[{ value: "fixed", label: "Fixed" }, { value: "rolling", label: "Rolling" }, { value: "adhoc", label: "Ad-hoc" }]} required />
+            <p className="mt-0.5 text-[11px] text-neutral-400">Fixed: a regular amount each month over a fixed period. Rolling: a regular amount each month with no end date. Ad-hoc: variable amounts on the same or different days each month.</p>
+          </div>
+          <TextA name="dd_collection_dates" label="What date(s) would you like to collect from your customers?" answers={answers} required full />
+          <div className="sm:col-span-2">
+            <RadioA name="dd_advance_notice" label="How should we send Advance Notices?" answers={answers} options={[{ value: "email", label: "Email" }, { value: "letter", label: "Letter" }]} dflt="email" required />
+            <p className="mt-0.5 text-[11px] text-neutral-400">Additional charges apply for letters.</p>
+          </div>
+          <RadioA name="dd_auto_represent" label="Auto-represent failed collections?" answers={answers} options={YN} dflt="yes" required full />
+          {charity && <RadioA name="dd_gift_aid" label="As a registered charity, do you require Gift Aid?" answers={answers} options={YN} required full />}
+        </fieldset>
+      )}
     </PageForm>
   );
 }
@@ -447,6 +560,20 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
           <ul className="mt-1 text-neutral-600">
             {merchant.bankAccounts.map((a) => <li key={a.id}>{a.purpose.replace(/_/g, " ")}: ••••{a.account_tail ?? "----"} {a.cop_result ? `· CoP ${a.cop_result}` : ""}</li>)}
           </ul>
+        </section>
+      )}
+
+      {(requiresTransactionProfile(c.product_groups) || requiresDirectDebit(c.product_groups)) && (
+        <section className="rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-neutral-700">Payment details</h3>
+            <Link href={changeHref("payments")} className="text-xs text-blue-700 hover:underline">Change</Link>
+          </div>
+          <dl className="mt-1 space-y-0.5 text-neutral-600">
+            {answers["pay_take_payments_for"]?.value && <div>Payments for: {answers["pay_take_payments_for"].value}</div>}
+            {answers["pay_b2b_b2c"]?.value && <div>Model: {answers["pay_b2b_b2c"].value.toUpperCase()}</div>}
+            {answers["dd_frequency"]?.value && <div>DD frequency: {answers["dd_frequency"].value}</div>}
+          </dl>
         </section>
       )}
 
