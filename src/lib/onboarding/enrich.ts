@@ -133,6 +133,9 @@ export interface CompanySnapshot {
   company_number: string;
   company_name: string | null;
   company_status: string | null;
+  /** e.g. "active-proposal-to-strike-off" — an active company can still be
+   *  winding up. Derived from the raw CH profile (no dedicated column). */
+  company_status_detail: string | null;
   company_type: string | null;
   incorporation_date: string | null;
   sic_codes: string[];
@@ -170,8 +173,14 @@ export async function loadEnrichment(db: DB, caseId: string): Promise<{
       db.from("onboarding_officers").select("id, name, officer_role, appointed_on, resigned_on, nationality, occupation, dob_month, dob_year, is_disqualified").eq("case_id", caseId).order("resigned_on", { ascending: true, nullsFirst: true }),
       db.from("onboarding_ubos").select("id, parent_id, depth, via_company_number, kind, is_corporate, name, natures_of_control, dob_month, dob_year, identification").eq("case_id", caseId).order("depth", { ascending: true }),
     ]);
+    // company_status_detail has no column of its own — read it off the stored
+    // raw CH profile so "active but winding up" shows on the enrichment page.
+    const snapRow = snap.data as (CompanySnapshot & { raw?: { company_status_detail?: string | null } | null }) | null;
+    const snapshot: CompanySnapshot | null = snapRow
+      ? { ...snapRow, company_status_detail: snapRow.company_status_detail ?? snapRow.raw?.company_status_detail ?? null }
+      : null;
     return {
-      snapshot: (snap.data as CompanySnapshot | null) ?? null,
+      snapshot,
       officers: (offs.data as OfficerRow[] | null) ?? [],
       ubos: (ubos.data as UboRow[] | null) ?? [],
     };

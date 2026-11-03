@@ -114,9 +114,20 @@ export default async function EnrichmentPage({ params }: { params: Promise<{ id:
               <Flag on={snapshot.has_charges} label="Charges" warn={false} />
               <Flag on={snapshot.has_insolvency_history} label="Insolvency history" />
               <Flag on={snapshot.disqualified_officer_found} label="Disqualified-officer match" />
-              <span className={`rounded px-2 py-0.5 text-xs font-medium ${snapshot.company_status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-                Status: {snapshot.company_status ?? "—"}
-              </span>
+              {(() => {
+                // An "active" company can still be winding up (status_detail
+                // like "active-proposal-to-strike-off") — flag that amber, not
+                // green, and spell the detail out.
+                const detail = snapshot.company_status_detail;
+                const trulyActive = snapshot.company_status === "active" && !detail;
+                const humanize = (s: string) => s.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                return (
+                  <span className={`rounded px-2 py-0.5 text-xs font-medium ${trulyActive ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                    Status: {snapshot.company_status ? humanize(snapshot.company_status) : "—"}
+                    {detail && ` — ${humanize(detail)}`}
+                  </span>
+                );
+              })()}
             </div>
             {snapshot.disqualified_officer_found && (
               <p className="mt-2 text-xs text-red-700">⚠ A kept officer name matched the disqualified-officers register. This is a name match only — verify manually before relying on it.</p>

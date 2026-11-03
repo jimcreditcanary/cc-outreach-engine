@@ -145,6 +145,22 @@ export interface CompaniesHouseClient {
 
 // ─── live client ──────────────────────────────────────────────────────────────
 
+// Company statuses that mean the entity is no longer trading. Search results in
+// one of these are hidden from the picker (we onboard live companies only); a
+// missing/unknown status is kept rather than silently dropped. Note an "active"
+// company can still be winding down — that shows via company_status_detail
+// (e.g. "active-proposal-to-strike-off"), surfaced on the enrichment page.
+const CH_INACTIVE_STATUS = new Set([
+  "dissolved", "liquidation", "receivership", "administration",
+  "converted-closed", "closed", "removed", "insolvency-proceedings",
+  "voluntary-arrangement", "in-administration", "administrative-receiver",
+]);
+
+export function isActiveCompanyStatus(status: string | null | undefined): boolean {
+  if (!status) return true; // unknown → keep (don't hide a possibly-live match)
+  return !CH_INACTIVE_STATUS.has(status.toLowerCase());
+}
+
 function authHeader(key: string): string {
   return `Basic ${Buffer.from(`${key}:`).toString("base64")}`;
 }
@@ -274,17 +290,23 @@ function mapPsc(it: Record<string, unknown>): ChPsc {
 function liveClient(key: string): CompaniesHouseClient {
   return {
     async searchCompanies(query, limit = 20) {
-      const res = await chFetch(`/search/companies?q=${encodeURIComponent(query)}&items_per_page=${limit}`, key);
+      // Over-fetch so filtering out dissolved/liquidated entities doesn't starve
+      // the list down to a handful of active matches.
+      const fetchN = Math.min(Math.max(limit * 3, limit), 100);
+      const res = await chFetch(`/search/companies?q=${encodeURIComponent(query)}&items_per_page=${fetchN}`, key);
       if (!res.ok) throw new CompaniesHouseError(`search failed: ${res.status}`, res.status);
       const j = (await res.json()) as { items?: Record<string, unknown>[] };
-      return (j.items ?? []).map((it) => ({
-        company_number: String(it.company_number ?? ""),
-        title: String(it.title ?? ""),
-        company_status: (it.company_status as string) ?? null,
-        company_type: (it.company_type as string) ?? null,
-        address_snippet: (it.address_snippet as string) ?? null,
-        date_of_creation: (it.date_of_creation as string) ?? null,
-      }));
+      return (j.items ?? [])
+        .map((it) => ({
+          company_number: String(it.company_number ?? ""),
+          title: String(it.title ?? ""),
+          company_status: (it.company_status as string) ?? null,
+          company_type: (it.company_type as string) ?? null,
+          address_snippet: (it.address_snippet as string) ?? null,
+          date_of_creation: (it.date_of_creation as string) ?? null,
+        }))
+        .filter((r) => isActiveCompanyStatus(r.company_status))
+        .slice(0, limit);
     },
     async getProfile(companyNumber) {
       const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}`, key);
