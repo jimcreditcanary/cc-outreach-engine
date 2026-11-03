@@ -10,7 +10,7 @@ import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
-import { dealCompanyId, syncDealOnboardingStatus, associateDealContactRole, hubspotRepo } from "@/lib/hubspot/repo";
+import { dealCompanyId, syncDealOnboardingStatus, associateDealContactRole, associateDealContact, hubspotRepo } from "@/lib/hubspot/repo";
 import {
   findOrCreateCaseForDeal, getCase, updateCase, setProductGroups,
   addStakeholder, removeStakeholder, listStakeholders, logCaseEvent,
@@ -106,6 +106,42 @@ export async function addStakeholderAction(formData: FormData) {
     await associateDealContactRole(c.hubspot_deal_id, contactId, label).catch(() => {});
   }
   await logCaseEvent(db, id, "stakeholder_added", actorOf(me), { contact_id: contactId, role });
+  revalidatePath(`/onboarding/${id}`);
+  redirect(`/onboarding/${id}?step=stakeholders`);
+}
+
+/** Create a brand-new contact on the case's company (and associate it to the
+ *  deal so it's immediately pickable as a stakeholder). Saves a trip to HubSpot. */
+export async function addContactToCompanyAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  const c = await getCase(db, id);
+  if (!c?.hubspot_company_id) {
+    await flash("error", "Confirm the company first, then add contacts.");
+    return redirect(`/onboarding/${id}?step=stakeholders`);
+  }
+  const first = str(formData.get("first_name"));
+  const last = str(formData.get("last_name"));
+  const email = str(formData.get("email"));
+  const jobTitle = str(formData.get("job_title"));
+  if (!first && !email) {
+    await flash("error", "Enter at least a name or email for the new contact.");
+    return redirect(`/onboarding/${id}?step=stakeholders`);
+  }
+  const created = await hubspotRepo.createContact({
+    first_name: first,
+    last_name: last,
+    email: email ?? undefined,
+    job_title: jobTitle,
+    company_id: c.hubspot_company_id,
+  });
+  // Also link to the deal so it shows in the stakeholder picker (best-effort).
+  if (c.hubspot_deal_id) await associateDealContact(c.hubspot_deal_id, created.id).catch(() => {});
+  await logCaseEvent(db, id, "contact_created", actorOf(me), { contact_id: created.id, email });
+  await flash("success", "Contact added.");
   revalidatePath(`/onboarding/${id}`);
   redirect(`/onboarding/${id}?step=stakeholders`);
 }

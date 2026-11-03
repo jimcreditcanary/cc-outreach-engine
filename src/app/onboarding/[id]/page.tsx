@@ -27,8 +27,11 @@ import {
 import {
   saveCompanyAction, saveProductsAction, addStakeholderAction, removeStakeholderAction,
   setSandboxAction, completeInternalAction, cancelCaseAction, inviteMerchantAction,
+  addContactToCompanyAction,
 } from "../actions";
 import { merchantFormUrl } from "@/lib/onboarding/merchantForm";
+import { loadGeneratedDocs, type GeneratedDoc } from "@/lib/onboarding/docgen";
+import { CopyButton } from "@/components/CopyButton";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -59,6 +62,7 @@ export default async function CaseWizardPage({
 
   const stakeholders = await listStakeholders(db, id);
   const deal = c.hubspot_deal_id ? await getDeal(c.hubspot_deal_id) : null;
+  const docs = await loadGeneratedDocs(db, id).catch(() => []);
   const done = stepStatus(c, stakeholders.length);
 
   const validStep = (s: string | undefined): s is WizardStepId =>
@@ -110,7 +114,7 @@ export default async function CaseWizardPage({
       {step === "company" && <CompanyStep c={c} deal={deal} q={sp.q} />}
       {step === "products" && <ProductsStep c={c} />}
       {step === "stakeholders" && <StakeholdersStep c={c} stakeholders={stakeholders} />}
-      {step === "finish" && <FinishStep c={c} stakeholders={stakeholders} locked={locked} />}
+      {step === "finish" && <FinishStep c={c} stakeholders={stakeholders} locked={locked} generatedDocs={docs} />}
     </main>
   );
 }
@@ -291,6 +295,20 @@ async function StakeholdersStep({ c, stakeholders }: { c: OnboardingCase; stakeh
         </form>
       )}
 
+      {/* Add a brand-new contact to the company (and this deal) without leaving. */}
+      <div className="mt-4">
+        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">New contact</p>
+        <form action={addContactToCompanyAction} className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-neutral-300 bg-white p-3">
+          <input type="hidden" name="case_id" value={c.id} />
+          <div><label className="mb-1 block text-[10px] uppercase tracking-wide text-neutral-400">First name</label><input name="first_name" className={field} placeholder="Jane" /></div>
+          <div><label className="mb-1 block text-[10px] uppercase tracking-wide text-neutral-400">Last name</label><input name="last_name" className={field} placeholder="Smith" /></div>
+          <div className="min-w-48 flex-1"><label className="mb-1 block text-[10px] uppercase tracking-wide text-neutral-400">Email</label><input name="email" type="email" className={field} placeholder="jane@company.com" /></div>
+          <div><label className="mb-1 block text-[10px] uppercase tracking-wide text-neutral-400">Job title</label><input name="job_title" className={field} placeholder="CFO" /></div>
+          <PendingButton className="rounded border border-emerald-500 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="Adding…">+ New contact</PendingButton>
+        </form>
+        <p className="mt-1 text-xs text-neutral-400">Creates the contact on the company (and links it to this deal), then pick it above with a role.</p>
+      </div>
+
       <div className="mt-4">
         <Link href={`/onboarding/${c.id}?step=finish`} className="text-sm text-blue-700 hover:underline">Next: finish →</Link>
       </div>
@@ -300,7 +318,7 @@ async function StakeholdersStep({ c, stakeholders }: { c: OnboardingCase; stakeh
 
 // ─── Step 4: Finish ──────────────────────────────────────────────────────────────
 
-function FinishStep({ c, stakeholders, locked }: { c: OnboardingCase; stakeholders: Stakeholder[]; locked: boolean }) {
+function FinishStep({ c, stakeholders, locked, generatedDocs }: { c: OnboardingCase; stakeholders: Stakeholder[]; locked: boolean; generatedDocs: GeneratedDoc[] }) {
   const groups = c.product_groups;
   const ready = readyToComplete(c, stakeholders.length);
   const weight = isLightTouch(groups) ? "light-touch" : requiresFullKyc(groups) ? "full KYC" : "—";
@@ -343,9 +361,14 @@ function FinishStep({ c, stakeholders, locked }: { c: OnboardingCase; stakeholde
         </div>
       </form>
 
-      {alreadyComplete ? (
+      {c.status === "onboarded" ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-sm text-emerald-800">
-          ✓ Internal onboarding marked <strong>{c.status.replace(/_/g, " ")}</strong>.
+          ✓ <strong>Approved &amp; onboarded.</strong> The merchant has confirmed and the case has been signed off.
+        </div>
+      ) : alreadyComplete ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-900">
+          ✓ Internal onboarding complete (<strong>{c.status.replace(/_/g, " ")}</strong>) — <strong>not yet approved</strong>.
+          The merchant still needs to confirm their details below, then it goes for final sign-off before the customer is onboarded.
         </div>
       ) : (
         <form action={completeInternalAction}>
@@ -376,9 +399,12 @@ function FinishStep({ c, stakeholders, locked }: { c: OnboardingCase; stakeholde
           ) : (
             <div className="text-sm">
               <p className="text-neutral-700">Status: <strong>{c.status.replace(/_/g, " ")}</strong></p>
-              <p className="mt-1 break-all text-xs text-neutral-500">
-                Form link: <a href={merchantFormUrl(c.merchant_form_token)} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">{merchantFormUrl(c.merchant_form_token)}</a>
-              </p>
+              <div className="mt-1 flex items-start gap-2">
+                <p className="break-all text-xs text-neutral-500">
+                  Form link: <a href={merchantFormUrl(c.merchant_form_token)} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">{merchantFormUrl(c.merchant_form_token)}</a>
+                </p>
+                <CopyButton text={merchantFormUrl(c.merchant_form_token)} label="Copy link" />
+              </div>
               <Link href={`/onboarding/${c.id}/review`} className="mt-1 inline-block text-blue-700 hover:underline">Review submission →</Link>
               {(c.status === "merchant_invited" || c.status === "merchant_in_progress") && (
                 <form action={inviteMerchantAction} className="mt-2">
@@ -390,6 +416,25 @@ function FinishStep({ c, stakeholders, locked }: { c: OnboardingCase; stakeholde
           )}
         </section>
       )}
+
+      {/* Supporting documents generated for this onboarding */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-4">
+        <h3 className="mb-1 font-semibold text-neutral-800">Supporting documents</h3>
+        {generatedDocs.length === 0 ? (
+          <p className="text-sm text-neutral-500">No documents generated yet — they&apos;re produced from the product selection + merchant submission.</p>
+        ) : (
+          <ul className="divide-y divide-neutral-100">
+            {generatedDocs.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-center gap-2 py-1.5 text-sm">
+                <span className="text-neutral-800">📄 {d.filename}</span>
+                <span className="text-xs text-neutral-400">{DOC_LABELS[d.doc_kind as OnboardingDocKind] ?? d.doc_kind}</span>
+                <span className="text-xs text-neutral-400">· {fmtDate(d.generated_at)}</span>
+                <a href={`/onboarding/${c.id}/doc/${d.id}`} className="ml-auto text-blue-700 hover:underline">Download ↓</a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {!locked && (
         <form action={cancelCaseAction} className="pt-2">

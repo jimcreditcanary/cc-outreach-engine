@@ -759,6 +759,13 @@ async function setContactCompany(contactId: string, companyId: string): Promise<
   await hsFetch(`/crm/v4/objects/contacts/${contactId}/associations/default/companies/${companyId}`, { method: "PUT" });
 }
 
+/** Associate a contact to a deal (default association). Best-effort: throws are
+ *  swallowed by callers. Used when adding a brand-new onboarding stakeholder. */
+export async function associateDealContact(dealId: string, contactId: string): Promise<void> {
+  await hsFetch(`/crm/v4/objects/deals/${dealId}/associations/default/contacts/${contactId}`, { method: "PUT" });
+  invalidateCache();
+}
+
 function isNotFound(e: unknown): boolean {
   return typeof e === "object" && e !== null && "status" in e && (e as { status: number }).status === 404;
 }
