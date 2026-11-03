@@ -117,6 +117,8 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
       {error === "account" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please add at least one bank account before continuing.</p>}
       {error === "save" && <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">Something went wrong saving — please try again.</p>}
 
+      {(() => { const a = attributionLine(answers[`_page_${current}`]); return a ? <p className="mt-3 text-[11px] text-neutral-400">This page — {a.replace(/^Updated/, "last updated")}</p> : null; })()}
+
       <div className="mt-5">
         {current === "company" && <CompanyPage token={token} c={c} answers={answers} v2={v2} />}
         {current === "ubos" && <UbosPage token={token} c={c} enrichment={enrichment} merchant={merchant} answers={answers} v2={v2} />}

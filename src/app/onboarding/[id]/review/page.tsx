@@ -279,6 +279,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                         {u.extracted.security_controls?.length > 0 && <p className="mt-1">Controls: {u.extracted.security_controls.join(", ")}</p>}
                         {u.extracted.dates?.length > 0 && <p className="mt-0.5">Dates: {u.extracted.dates.join(", ")}</p>}
                         {u.extracted.flags?.length > 0 && <p className="mt-0.5 text-amber-700">Flags: {u.extracted.flags.join("; ")}</p>}
+                        {u.extracted.executive_summary && <p className="mt-1 rounded bg-neutral-50 p-1.5 text-neutral-700"><span className="font-medium">Exec summary:</span> {u.extracted.executive_summary}</p>}
                       </div>
                     )}
                   </li>

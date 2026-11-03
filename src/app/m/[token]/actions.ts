@@ -11,7 +11,7 @@ import {
   addBankAccounts, removeBankAccount, countBankAccounts, saveDirectDebit, finalizeMerchantSubmission,
   type MerchantFormData, type UboKycInput, type BankAccountInput,
 } from "@/lib/onboarding/merchantForm";
-import { saveUpload } from "@/lib/onboarding/uploads";
+import { saveUpload, extractPendingUploads } from "@/lib/onboarding/uploads";
 import { notifyMerchantSubmitted } from "@/lib/onboarding/notify";
 import { generateDocsForCase } from "@/lib/onboarding/docgen";
 import { getFormEditor, setFormEditor } from "@/lib/onboarding/formEditor";
@@ -229,6 +229,8 @@ export async function savePageAction(formData: FormData) {
   let dest = `${back}?page=${page}${qp(v2)}`;
   let failed = false;
   try {
+    // Per-page "last saved by {editor}" marker (covers the typed sections too).
+    await setAnswers(db, c.id, [{ field_key: `_page_${page}`, value: "saved" }], ed);
     if (page === "company") {
       const tuCredit = c.product_groups.includes("tu_credit");
       const entries: AnswerInput[] = [];
@@ -380,6 +382,9 @@ export async function submitForApprovalAction(formData: FormData) {
       db.from("onboarding_bank_accounts").select("id", { count: "exact", head: true }).eq("case_id", c.id),
     ]);
     await finalizeMerchantSubmission(db, c.id, { ubos: uboRes.count ?? 0, bankAccounts: bankRes.count ?? 0 });
+    // Behind-the-scenes: AI-extract the uploaded infosec docs (age flags,
+    // pen-test exec summaries) so ops reviews them ready-analysed.
+    await extractPendingUploads(db, c.id).catch(() => {});
     await generateDocsForCase(db, c.id, { id: null, email: "merchant" }, { advanceStatus: false }).catch(() => {});
     await notifyMerchantSubmitted(db, c.id).catch(() => {});
   } catch (e) {
