@@ -24,6 +24,12 @@ interface Row {
   attendees: unknown;
   organisation: { id: string; name: string | null } | null;
   primary_contact: { id: string; full_name: string | null } | null;
+  // HubSpot linkage (migration 066) — attached best-effort below; preferred
+  // over the Supabase join for display when present.
+  hs_company_id?: string | null;
+  hs_company_name?: string | null;
+  hs_contact_id?: string | null;
+  hs_contact_name?: string | null;
 }
 
 export default async function MeetingsPage({ searchParams }: { searchParams: Promise<{ show?: string; ms_connected?: string; ms_error?: string }> }) {
@@ -68,6 +74,23 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
     if (!cur || (cur.owner_id !== me.id && r.owner_id === me.id)) byKey.set(key, r);
   }
   const rows = [...byKey.values()];
+
+  // HubSpot linkage, fetched separately so a missing migration 066 can't take
+  // the whole list down (the column set just isn't there yet). Attach onto the
+  // rows for display; it's preferred over the Supabase join when present.
+  if (rows.length > 0) {
+    const { data: hsRows, error: hsErr } = await db
+      .from("meetings")
+      .select("id, hs_company_id, hs_company_name, hs_contact_id, hs_contact_name")
+      .in("id", rows.map((r) => r.id));
+    if (!hsErr && hsRows) {
+      const byId = new Map(hsRows.map((h) => [h.id as string, h]));
+      for (const r of rows) {
+        const h = byId.get(r.id);
+        if (h) Object.assign(r, { hs_company_id: h.hs_company_id, hs_company_name: h.hs_company_name, hs_contact_id: h.hs_contact_id, hs_contact_name: h.hs_contact_name });
+      }
+    }
+  }
 
   const now = Date.now();
   // Query orders ascending so Upcoming reads soonest-first (Today before
@@ -161,12 +184,22 @@ function Section({ title, rows, emptyMsg }: { title: string; rows: Row[]; emptyM
                 </div>
                 <div className="flex-1">
                   <Link href={`/meetings/${m.id}`} className="font-medium text-blue-700 hover:underline">{m.subject ?? "(no subject)"}</Link>
-                  <div className="text-xs text-neutral-500">
-                    {m.organisation && <Link href={`/companies/${m.organisation.id}`} className="hover:underline">{m.organisation.name}</Link>}
-                    {m.organisation && m.primary_contact && " · "}
-                    {m.primary_contact && <Link href={`/contacts/${m.primary_contact.id}`} className="hover:underline">{m.primary_contact.full_name}</Link>}
-                    {!m.organisation && !m.primary_contact && <span className="text-neutral-400">No CRM match — open to link</span>}
-                  </div>
+                  {(() => {
+                    // Prefer the HubSpot link (what the picker now writes); fall
+                    // back to the legacy Supabase join for older meetings.
+                    const coName = m.hs_company_name || m.organisation?.name || null;
+                    const coHref = m.hs_company_id ? `/companies/${m.hs_company_id}` : m.organisation ? `/companies/${m.organisation.id}` : null;
+                    const ctName = m.hs_contact_name || m.primary_contact?.full_name || null;
+                    const ctHref = m.hs_contact_id ? `/contacts/${m.hs_contact_id}` : m.primary_contact ? `/contacts/${m.primary_contact.id}` : null;
+                    return (
+                      <div className="text-xs text-neutral-500">
+                        {coName && (coHref ? <Link href={coHref} className="hover:underline">{coName}</Link> : coName)}
+                        {coName && ctName && " · "}
+                        {ctName && (ctHref ? <Link href={ctHref} className="hover:underline">{ctName}</Link> : ctName)}
+                        {!coName && !ctName && <span className="text-neutral-400">No CRM match — open to link</span>}
+                      </div>
+                    );
+                  })()}
                 </div>
                 {!m.sales_relevant && (
                   <span className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-xs font-medium text-neutral-600">

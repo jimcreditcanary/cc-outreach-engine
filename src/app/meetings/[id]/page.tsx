@@ -7,6 +7,7 @@ import { generateBriefAction, updateMeetingAction, deleteMeetingAction, setSales
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { Combobox } from "@/components/Combobox";
+import { HubspotPicker } from "@/components/HubspotPicker";
 import { fmtDateTime, fmtTime } from "@/lib/format/datetime";
 import { SECTORS, humanizeLabel } from "@/lib/format/sector";
 
@@ -86,16 +87,6 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
   // You're on the invite but it synced from a teammate's calendar — let
   // them know whose meeting record they're looking at.
   const notMine = m.owner_id && m.owner_id !== meUser.id;
-
-  const [{ data: orgs }, { data: orgContacts }, { data: orgDeals }] = await Promise.all([
-    db.from("organisations").select("id, name").order("name").limit(1000),
-    m.organisation_id ? db.from("contacts").select("id, full_name").eq("organisation_id", m.organisation_id).order("full_name") : Promise.resolve({ data: [] }),
-    // Load ALL deals + their company name as a sublabel. Used to scope
-    // to the meeting's org only, but the dropdown then read as broken
-    // before the operator had saved a company. Showing every deal +
-    // its company makes the picker work in one step from a blank meeting.
-    db.from("deals").select("id, title, status, organisation:organisations(name)").order("status").limit(2000),
-  ]);
 
   const attendees = (m.attendees ?? []) as { name: string | null; email: string | null; response: string | null; contact_id: string | null }[];
 
@@ -280,38 +271,18 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
               <input type="hidden" name="notes" value={m.notes ?? ""} />
               <div>
                 <label className={lbl}>Company</label>
-                <Combobox
-                  name="organisation_id"
-                  defaultValue={m.organisation_id ?? ""}
-                  options={(orgs ?? []).map((o) => ({ id: o.id, label: o.name ?? "(unnamed)" }))}
-                  placeholder="Type to search companies…"
-                />
+                <HubspotPicker type="company" idName="hs_company_id" nameName="hs_company_name"
+                  defaultId={m.hs_company_id} defaultLabel={m.hs_company_name} placeholder="Search HubSpot companies…" />
               </div>
               <div>
                 <label className={lbl}>Primary contact</label>
-                <Combobox
-                  name="primary_contact_id"
-                  defaultValue={m.primary_contact_id ?? ""}
-                  options={(orgContacts ?? []).map((c) => ({ id: c.id, label: c.full_name ?? "(unnamed)" }))}
-                  placeholder="Type to search contacts…"
-                />
+                <HubspotPicker type="contact" idName="hs_contact_id" nameName="hs_contact_name"
+                  defaultId={m.hs_contact_id} defaultLabel={m.hs_contact_name} placeholder="Search HubSpot contacts…" />
               </div>
               <div>
                 <label className={lbl}>Deal</label>
-                <Combobox
-                  name="deal_id"
-                  defaultValue={m.deal_id ?? ""}
-                  options={(orgDeals ?? []).map((d) => {
-                    const org = d.organisation as { name: string | null } | { name: string | null }[] | null;
-                    const orgName = (Array.isArray(org) ? org[0]?.name : org?.name) ?? null;
-                    return {
-                      id: d.id,
-                      label: d.title ?? "(untitled)",
-                      sublabel: [orgName, d.status].filter(Boolean).join(" · "),
-                    };
-                  })}
-                  placeholder="Type to search deals…"
-                />
+                <HubspotPicker type="deal" idName="hs_deal_id" nameName="hs_deal_name"
+                  defaultId={m.hs_deal_id} defaultLabel={m.hs_deal_name} placeholder="Search HubSpot deals…" />
               </div>
               <PendingButton className="rounded bg-neutral-700 px-3 py-1 text-sm font-medium text-white hover:bg-neutral-800" pendingLabel="Saving…">
                 Save linkage

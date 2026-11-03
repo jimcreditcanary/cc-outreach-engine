@@ -172,17 +172,31 @@ export async function updateMeetingAction(formData: FormData) {
   const id = String(formData.get("id"));
   if (!id) return;
   const db = serviceClient();
-  await db
-    .from("meetings")
-    .update({
-      organisation_id: str(formData.get("organisation_id")),
-      primary_contact_id: str(formData.get("primary_contact_id")),
-      deal_id: str(formData.get("deal_id")),
-      notes: str(formData.get("notes")),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id);
-  await flash("success", "Meeting saved");
+  // Only write fields the submitted form actually carries — the notes form and
+  // the linkage form each touch their own, so a missing field means "leave it",
+  // never "clear it". The linkage pickers now write the HubSpot id + a name
+  // snapshot; the Supabase *_id columns are left for the briefs / MEDDICC.
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (formData.has("notes")) patch.notes = str(formData.get("notes"));
+  if (formData.has("organisation_id")) patch.organisation_id = str(formData.get("organisation_id"));
+  if (formData.has("primary_contact_id")) patch.primary_contact_id = str(formData.get("primary_contact_id"));
+  if (formData.has("deal_id")) patch.deal_id = str(formData.get("deal_id"));
+  if (formData.has("hs_company_id")) { patch.hs_company_id = str(formData.get("hs_company_id")); patch.hs_company_name = str(formData.get("hs_company_name")); }
+  if (formData.has("hs_contact_id")) { patch.hs_contact_id = str(formData.get("hs_contact_id")); patch.hs_contact_name = str(formData.get("hs_contact_name")); }
+  if (formData.has("hs_deal_id")) { patch.hs_deal_id = str(formData.get("hs_deal_id")); patch.hs_deal_name = str(formData.get("hs_deal_name")); }
+
+  const { error } = await db.from("meetings").update(patch).eq("id", id);
+  if (error && /hs_(company|contact|deal)/.test(error.message)) {
+    // Migration 066 not applied yet — save everything except the HubSpot links
+    // so the form still works, and tell the operator why the link didn't stick.
+    for (const k of Object.keys(patch)) if (k.startsWith("hs_")) delete patch[k];
+    await db.from("meetings").update(patch).eq("id", id);
+    await flash("error", "Saved, but HubSpot links need migration 066 applied first.");
+  } else if (error) {
+    await flash("error", `Couldn't save: ${error.message}`);
+  } else {
+    await flash("success", "Meeting saved");
+  }
   revalidatePath(`/meetings/${id}`);
 }
 
