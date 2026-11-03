@@ -287,6 +287,35 @@ export async function listCustomerCompanies(max = 500): Promise<CompanyRecord[]>
   return withOwners(out);
 }
 
+/** Batch-update companies (HubSpot batch API, 100/call). Returns the count
+ *  touched. No-op if the patch resolves to no properties. */
+export async function bulkUpdateCompanies(ids: string[], patch: CompanyWrite): Promise<number> {
+  const props = toHubspotCompanyProps(patch);
+  if (!ids.length || Object.keys(props).length === 0) return 0;
+  for (let i = 0; i < ids.length; i += 100) {
+    await hsFetch(`/crm/v3/objects/companies/batch/update`, {
+      method: "POST",
+      body: { inputs: ids.slice(i, i + 100).map((id) => ({ id, properties: props })) },
+    });
+  }
+  invalidateCache();
+  return ids.length;
+}
+
+/** Batch-update contacts (HubSpot batch API, 100/call). Returns the count touched. */
+export async function bulkUpdateContacts(ids: string[], patch: ContactWrite): Promise<number> {
+  const props = toHubspotContactProps(patch);
+  if (!ids.length || Object.keys(props).length === 0) return 0;
+  for (let i = 0; i < ids.length; i += 100) {
+    await hsFetch(`/crm/v3/objects/contacts/batch/update`, {
+      method: "POST",
+      body: { inputs: ids.slice(i, i + 100).map((id) => ({ id, properties: props })) },
+    });
+  }
+  invalidateCache();
+  return ids.length;
+}
+
 /** Open deals owned by a HubSpot owner (for the weekly deal-nurture run). */
 export async function listOwnerOpenDeals(ownerId: string, limit = 50): Promise<DealRecord[]> {
   const labels = await dealLabels();

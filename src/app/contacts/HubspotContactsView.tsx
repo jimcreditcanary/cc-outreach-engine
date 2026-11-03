@@ -10,8 +10,11 @@ import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
 import { PageTabs, CRM_TABS } from "@/components/PageTabs";
 import { NavSelect } from "@/components/NavSelect";
+import { SelectAllCheckbox } from "@/components/SelectAllCheckbox";
+import { PendingButton } from "@/components/PendingButton";
 import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
 import { propOptions } from "@/lib/hubspot/schema";
+import { bulkUpdateContactsAction } from "./hubspotActions";
 
 const SORT_COLS = ["full_name", "job_title", "email", "created_at"] as const;
 
@@ -69,9 +72,22 @@ export async function HubspotContactsView({
           options={[{ value: "yes", label: "Bounced only" }]} />
       </div>
 
-      <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
+      <form action={bulkUpdateContactsAction}>
+      {/* Bulk-edit bar — applies to ticked rows. No delete. */}
+      <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-2 text-sm">
+        <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">Bulk edit ticked</span>
+        <select name="owner_id" defaultValue="" className="rounded border border-neutral-300 px-2 py-1 text-xs">
+          <option value="">Owner: leave</option>
+          <option value="__unassign__">— unassign —</option>
+          {ownerOptions(owners).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+        <label className="flex items-center gap-1 text-xs text-neutral-600"><input type="checkbox" name="mark_actioned" value="1" /> mark actioned (clear New)</label>
+        <PendingButton className="rounded bg-neutral-800 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-900" pendingLabel="Applying…">Apply to ticked</PendingButton>
+      </div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
           <tr>
+            <th className="w-8"><SelectAllCheckbox /></th>
             <SortableTh label="Name" col="full_name" sort={sort} basePath="/contacts" params={hdrParams} className="py-1" />
             <th>Company</th>
             <SortableTh label="Title" col="job_title" sort={sort} basePath="/contacts" params={hdrParams} />
@@ -82,6 +98,7 @@ export async function HubspotContactsView({
         <tbody>
           {page.records.map((c) => (
             <tr key={c.id} className={`border-t border-neutral-100 hover:bg-neutral-100 ${c.is_new ? "bg-emerald-50/40" : ""}`}>
+              <td><input type="checkbox" name="ids" value={c.id} aria-label={`Select ${c.full_name ?? c.id}`} /></td>
               <td className="py-1.5">
                 <Link href={`/contacts/${c.id}`} className="font-medium text-blue-700 hover:underline">{c.full_name || "—"}</Link>
                 {c.is_new && <span className="ml-2 rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">New</span>}
@@ -98,6 +115,7 @@ export async function HubspotContactsView({
           ))}
         </tbody>
       </table></div>
+      </form>
 
       <div className="mt-4 flex items-center justify-between text-sm">
         {after ? <Link href={`/contacts?${new URLSearchParams(hdrParams)}${sortRaw ? `&sort=${sortRaw}` : ""}`} className="text-blue-700 hover:underline">⟲ Start</Link> : <span />}

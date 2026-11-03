@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCrm } from "@/lib/crm";
+import { bulkUpdateCompanies } from "@/lib/hubspot/repo";
 import type { CompanyWrite } from "@/lib/crm/types";
 import { currentUser } from "@/lib/auth/server";
 
@@ -32,6 +33,26 @@ export async function updateHubspotCompany(formData: FormData) {
   if (name) patch.name = name;
   await getCrm().updateCompany(id, patch);
   revalidatePath(`/companies/${id}`);
+}
+
+/** Bulk-edit selected companies (owner / target group / tier). No delete.
+ *  Only the fields the operator actually set are applied. */
+export async function bulkUpdateCompaniesAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const ids = formData.getAll("ids").map(String).filter(Boolean);
+  if (!ids.length) return;
+  const patch: CompanyWrite = {};
+  const owner = String(formData.get("owner_id") ?? "");
+  const target = String(formData.get("target_group") ?? "");
+  const tier = String(formData.get("tier") ?? "").trim();
+  if (owner === "__unassign__") patch.owner_id = null;
+  else if (owner) patch.owner_id = owner;
+  if (target) patch.target_group = target;
+  if (tier) { const n = Number(tier); if (Number.isFinite(n)) patch.tier = n; }
+  if (Object.keys(patch).length === 0) return;
+  await bulkUpdateCompanies(ids, patch);
+  revalidatePath("/companies");
 }
 
 /** Mark / unmark a HubSpot company as a customer. Single source of truth is the

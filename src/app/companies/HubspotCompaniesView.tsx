@@ -10,8 +10,11 @@ import { parseSort } from "@/lib/table/sort";
 import { PageTabs, CRM_TABS } from "@/components/PageTabs";
 import { OnboardingBadge } from "@/components/OnboardingBadge";
 import { NavSelect } from "@/components/NavSelect";
+import { SelectAllCheckbox } from "@/components/SelectAllCheckbox";
+import { PendingButton } from "@/components/PendingButton";
 import { propOptions } from "@/lib/hubspot/schema";
 import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
+import { bulkUpdateCompaniesAction } from "./hubspotActions";
 
 const SORT_COLS = ["name", "industry", "created_at"] as const;
 
@@ -75,9 +78,26 @@ export async function HubspotCompaniesView({
           options={[{ value: "yes", label: "Partners" }, { value: "no", label: "Non-partners" }]} />
       </div>
 
-      <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
+      <form action={bulkUpdateCompaniesAction}>
+      {/* Bulk-edit bar — applies to the rows you tick. No delete. */}
+      <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-2 text-sm">
+        <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">Bulk edit ticked</span>
+        <select name="owner_id" defaultValue="" className="rounded border border-neutral-300 px-2 py-1 text-xs">
+          <option value="">Owner: leave</option>
+          <option value="__unassign__">— unassign —</option>
+          {ownerOptions(owners).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+        <select name="target_group" defaultValue="" className="rounded border border-neutral-300 px-2 py-1 text-xs">
+          <option value="">Target: leave</option>
+          {targetOpts.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <label className="text-xs text-neutral-600">Tier <input name="tier" type="number" min="1" placeholder="leave" className="ml-1 w-16 rounded border border-neutral-300 px-1 py-1 text-xs" /></label>
+        <PendingButton className="rounded bg-neutral-800 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-900" pendingLabel="Applying…">Apply to ticked</PendingButton>
+      </div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
           <tr>
+            <th className="w-8"><SelectAllCheckbox /></th>
             <SortableTh label="Name" col="name" sort={sort} basePath="/companies" params={hdrParams} className="py-1" />
             <th>Website</th>
             <th>Current client</th>
@@ -90,6 +110,7 @@ export async function HubspotCompaniesView({
         <tbody>
           {page.records.map((o) => (
             <tr key={o.id} className="border-t border-neutral-100 hover:bg-neutral-100">
+              <td><input type="checkbox" name="ids" value={o.id} aria-label={`Select ${o.name ?? o.id}`} /></td>
               <td className="py-1.5">
                 <Link href={`/companies/${o.id}`} className="font-medium text-blue-700 hover:underline">{o.name || "—"}</Link>
               </td>
@@ -109,6 +130,7 @@ export async function HubspotCompaniesView({
           ))}
         </tbody>
       </table></div>
+      </form>
 
       <div className="mt-4 flex items-center justify-between text-sm">
         {after ? <Link href={`/companies?${new URLSearchParams(hdrParams)}${sortRaw ? `&sort=${sortRaw}` : ""}`} className="text-blue-700 hover:underline">⟲ Start</Link> : <span />}
