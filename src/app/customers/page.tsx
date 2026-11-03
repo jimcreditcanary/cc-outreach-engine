@@ -5,7 +5,7 @@
 
 import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
-import { listCustomerCompanyIds } from "@/lib/crm/customer";
+import { listCustomerCompanies } from "@/lib/hubspot/repo";
 import { formatPence } from "@/lib/billing/money";
 import { fmtDate } from "@/lib/format/datetime";
 
@@ -26,15 +26,17 @@ const BILL_STYLE: Record<string, string> = {
 
 export default async function CustomersPage() {
   const db = serviceClient();
-  const ids = await listCustomerCompanyIds(db);
+  // Single source of truth: companies flagged current_client=true in HubSpot.
+  const customers = await listCustomerCompanies();
+  const ids = customers.map((c) => c.id);
+  const nameFor = new Map(customers.filter((c) => c.name).map((c) => [c.id, c.name!]));
 
   const grab = async <T,>(table: string, cols: string, col: string, vals: string[]): Promise<T[]> => {
     if (!vals.length) return [];
     const { data } = await db.from(table).select(cols).in(col, vals);
     return (data ?? []) as T[];
   };
-  const [names, cases, accounts, invoices] = await Promise.all([
-    grab<{ id: string; name: string | null }>("hs_mirror_companies", "id, name", "id", ids),
+  const [cases, accounts, invoices] = await Promise.all([
     grab<{ hubspot_company_id: string | null; status: string; updated_at: string }>("onboarding_cases", "hubspot_company_id, status, updated_at", "hubspot_company_id", ids),
     grab<{ id: string; hubspot_company_id: string | null; status: string }>("billing_accounts", "id, hubspot_company_id, status", "hubspot_company_id", ids),
     (async () => {
@@ -46,7 +48,6 @@ export default async function CustomersPage() {
     })(),
   ]);
 
-  const nameFor = new Map(names.filter((n) => n.name).map((n) => [n.id, n.name!]));
   const latestCase = new Map<string, string>();
   for (const c of [...cases].sort((a, b) => a.updated_at.localeCompare(b.updated_at))) if (c.hubspot_company_id) latestCase.set(c.hubspot_company_id, c.status);
   const acctFor = new Map(accounts.filter((a) => a.hubspot_company_id).map((a) => [a.hubspot_company_id!, a]));

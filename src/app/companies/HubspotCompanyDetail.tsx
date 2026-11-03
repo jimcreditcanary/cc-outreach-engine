@@ -13,8 +13,8 @@ import { OnboardingBadge } from "@/components/OnboardingBadge";
 import { fmtDate } from "@/lib/format/datetime";
 import { updateHubspotCompany, toggleCustomerAction } from "./hubspotActions";
 import { serviceClient } from "@/lib/db/client";
-import { isCustomer } from "@/lib/crm/customer";
 import { companyDeals } from "@/lib/hubspot/repo";
+import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
 import { startOnboardingAction } from "@/app/onboarding/actions";
 import { setUpBillingAction } from "../billing/actions";
 
@@ -23,28 +23,33 @@ const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 
 
 export async function HubspotCompanyDetail({ id }: { id: string }) {
   const crm = getCrm();
-  const [co, contacts, onboardingOpts, targetOpts] = await Promise.all([
+  const [co, contacts, onboardingOpts, targetOpts, deals, owners] = await Promise.all([
     crm.getCompany(id),
     crm.listCompanyContacts(id, 100),
     propOptions("companies", "onboarding_status"),
     propOptions("companies", "target_group"),
+    companyDeals(id),
+    listOwners(),
   ]);
   if (!co) notFound();
+  const ownerList = ownerOptions(owners);
 
   // Billing affordance: link to the account if one exists, else offer "Set up
   // billing" when the company has an onboarded case (normally auto-created on
   // approval). Scoped to this file — the Supabase detail page is unaffected.
   const bdb = serviceClient();
-  const [{ data: billingAccts }, { data: caseRows }, customer] = await Promise.all([
+  const [{ data: billingAccts }, { data: caseRows }] = await Promise.all([
     bdb.from("billing_accounts").select("id, status").eq("hubspot_company_id", id).order("created_at", { ascending: false }).limit(1),
     bdb.from("onboarding_cases").select("id, status").eq("hubspot_company_id", id).neq("status", "cancelled").order("updated_at", { ascending: false }).limit(1),
-    isCustomer(bdb, id),
   ]);
+  // Customer status IS current_client (single source of truth) — no local flag.
+  const customer = co.current_client === true;
   const billingAcct = (billingAccts ?? [])[0] ?? null;
   const onboardingCase = (caseRows ?? [])[0] ?? null;
   const hasOnboardedCase = onboardingCase?.status === "onboarded";
-  // Deal picker for "Start onboarding" — only needed when no case exists yet.
-  const deals = onboardingCase ? [] : await companyDeals(id);
+  // Deal picker for "Start onboarding" uses these only when no case exists yet;
+  // the full list is also shown in the Deals section below.
+  const onboardDeals = onboardingCase ? [] : deals;
 
   // HubSpot option values can differ from labels — show the label.
   const onboardingText = co.onboarding_status ? (onboardingOpts.find((o) => o.value === co.onboarding_status)?.label ?? co.onboarding_status) : null;
@@ -61,23 +66,21 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold">{co.name || "Company"}</h1>
           {customer && <span className="rounded bg-teal-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Customer</span>}
-          {co.current_client && <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Client</span>}
           {onboardingText && <OnboardingBadge status={onboardingText} />}
           {co.is_partner && <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">partner</span>}
           {co.icp && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">ICP</span>}
-          {co.tier != null && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">Tier {co.tier}</span>}
           {/* Onboarding — stateful: Continue+stage once a case exists, else Start (deal picker). */}
           {onboardingCase ? (
             <Link href={`/onboarding/${onboardingCase.id}`} className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 hover:underline">Onboarding: {onboardingCase.status} →</Link>
-          ) : deals.length === 1 ? (
+          ) : onboardDeals.length === 1 ? (
             <form action={startOnboardingAction}>
-              <input type="hidden" name="deal_id" value={deals[0]!.id} />
+              <input type="hidden" name="deal_id" value={onboardDeals[0]!.id} />
               <PendingButton className="rounded border border-amber-300 px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-50" pendingLabel="Starting…">Start onboarding</PendingButton>
             </form>
-          ) : deals.length > 1 ? (
+          ) : onboardDeals.length > 1 ? (
             <form action={startOnboardingAction} className="flex items-center gap-1">
-              <select name="deal_id" defaultValue={deals[0]!.id} className="rounded border border-amber-300 px-1 py-0.5 text-xs">
-                {deals.map((d) => <option key={d.id} value={d.id}>{d.name ?? d.id}{d.stage ? ` · ${d.stage}` : ""}</option>)}
+              <select name="deal_id" defaultValue={onboardDeals[0]!.id} className="rounded border border-amber-300 px-1 py-0.5 text-xs">
+                {onboardDeals.map((d) => <option key={d.id} value={d.id}>{d.name ?? d.id}{d.stage ? ` · ${d.stage}` : ""}</option>)}
               </select>
               <PendingButton className="rounded border border-amber-300 px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-50" pendingLabel="Starting…">Start onboarding</PendingButton>
             </form>
@@ -125,23 +128,12 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
           <input name="website" defaultValue={co.website ?? ""} className={field} />
         </div>
         <div>
-          <label className={lbl}>Current client</label>
-          <select name="current_client" defaultValue={co.current_client == null ? "" : co.current_client ? "true" : "false"} className={field}>
-            <option value="">—</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
-          </select>
-        </div>
-        <div>
           <label className={lbl}>Onboarding status</label>
-          {onboardingOpts.length > 0 ? (
-            <select name="onboarding_status" defaultValue={co.onboarding_status ?? ""} className={field}>
-              <option value="">—</option>
-              {onboardingOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          ) : (
-            <input name="onboarding_status" defaultValue={co.onboarding_status ?? ""} placeholder="Add the onboarding_status property in HubSpot" className={field} disabled />
-          )}
+          {/* Read-only — a result of the onboarding case, not a free-edit field.
+              Change it by running the onboarding, not by picking here. */}
+          <div className={`${field} flex items-center bg-neutral-100 text-neutral-600`}>
+            {onboardingCase ? onboardingCase.status : onboardingText ?? "—"}
+          </div>
         </div>
         <div>
           <label className={lbl}>Target group</label>
@@ -151,8 +143,11 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
           </select>
         </div>
         <div>
-          <label className={lbl}>Tier</label>
-          <input name="tier" type="number" min="1" defaultValue={co.tier ?? ""} className={field} />
+          <label className={lbl}>Owner</label>
+          <select name="owner_id" defaultValue={co.owner_id ?? ""} className={field}>
+            <option value="">— unassigned —</option>
+            {ownerList.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
         </div>
         <div className="flex items-center gap-4 sm:col-span-2">
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_partner" value="true" defaultChecked={co.is_partner} /> Partner</label>
@@ -162,6 +157,26 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
           <PendingButton className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">Save</PendingButton>
         </div>
       </form>
+
+      {/* Associated deals */}
+      <section className="mt-6">
+        <h2 className="mb-2 text-sm font-semibold text-neutral-700">Deals <span className="text-neutral-400">({deals.length})</span></h2>
+        {deals.length === 0 ? (
+          <p className="text-sm text-neutral-500">No deals linked in HubSpot.</p>
+        ) : (
+          <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200">
+            {deals.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-sm">
+                <Link href={`/hot/${d.id}`} className="font-medium text-blue-700 hover:underline">{d.name || "(untitled deal)"}</Link>
+                {d.stage && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-600">{d.stage}</span>}
+                {d.amount != null && <span className="text-neutral-500">{new Intl.NumberFormat("en-GB", { style: "currency", currency: d.currency || "GBP", maximumFractionDigits: 0 }).format(d.amount)}</span>}
+                {d.owner_name && <span className="text-neutral-400">· {d.owner_name}</span>}
+                <a href={d.url} target="_blank" rel="noopener noreferrer" className="ml-auto text-neutral-400 hover:text-orange-600" title="Open in HubSpot">↗</a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {/* Associated contacts */}
       <section className="mt-6">

@@ -254,6 +254,26 @@ export const hubspotRepo: CrmRepository = {
   },
 };
 
+/** Companies flagged as current clients (HubSpot current_client=true) — the
+ *  single source for the Customers list. Paginates up to `max`, name-sorted. */
+export async function listCustomerCompanies(max = 500): Promise<CompanyRecord[]> {
+  const out: CompanyRecord[] = [];
+  let after: string | undefined;
+  for (let guard = 0; guard < 10 && out.length < max; guard++) {
+    const res = await search("companies", {
+      properties: await safeProps("companies", COMPANY_READ_PROPS),
+      limit: 100,
+      after,
+      filterGroups: [{ filters: [{ propertyName: "current_client", operator: "EQ", value: "true" }] }],
+      sorts: [{ propertyName: "name", direction: "ASCENDING" }],
+    });
+    for (const r of res.results ?? []) out.push(fromHubspotCompany(r));
+    after = res.paging?.next?.after;
+    if (!after) break;
+  }
+  return withOwners(out);
+}
+
 /** Open deals owned by a HubSpot owner (for the weekly deal-nurture run). */
 export async function listOwnerOpenDeals(ownerId: string, limit = 50): Promise<DealRecord[]> {
   const labels = await dealLabels();

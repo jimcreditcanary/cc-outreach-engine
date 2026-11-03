@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
-import { isCustomer } from "@/lib/crm/customer";
+import { getCrm } from "@/lib/crm";
 import { toggleCustomerAction } from "../../companies/hubspotActions";
 import { formatPence } from "@/lib/billing/money";
 import { fmtDate } from "@/lib/format/datetime";
@@ -20,12 +20,13 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
   const { id } = await params;
   const db = serviceClient();
 
-  const [{ data: mirror }, customer, { data: cases }, { data: accounts }] = await Promise.all([
-    db.from("hs_mirror_companies").select("name").eq("id", id).maybeSingle(),
-    isCustomer(db, id),
+  const [co, { data: cases }, { data: accounts }] = await Promise.all([
+    getCrm().getCompany(id).catch(() => null),
     db.from("onboarding_cases").select("id, status, product_groups, hubspot_deal_id, updated_at").eq("hubspot_company_id", id).order("updated_at", { ascending: false }),
     db.from("billing_accounts").select("id, status, contract_start_date").eq("hubspot_company_id", id).order("created_at", { ascending: false }),
   ]);
+  // Customer status IS current_client (single source of truth).
+  const customer = co?.current_client === true;
 
   // Nothing links this company to a customer record, onboarding, or billing.
   if (!customer && !(cases?.length) && !(accounts?.length)) notFound();
@@ -45,7 +46,7 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
     (invByAcct.get(inv.account_id) ?? invByAcct.set(inv.account_id, []).get(inv.account_id)!).push(inv);
   }
 
-  const name = mirror?.name ?? id;
+  const name = co?.name ?? id;
 
   return (
     <main className="px-4 py-6 md:px-8">
