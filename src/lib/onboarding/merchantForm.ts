@@ -131,78 +131,106 @@ export async function loadMerchantForm(db: DB, caseId: string): Promise<{
   }
 }
 
-/** Save the merchant submission: upsert the form (submitted), replace the KYC
- *  rows, advance the case to merchant_submitted, log the event. */
-export async function saveMerchantForm(db: DB, caseId: string, data: MerchantFormData): Promise<void> {
-  const now = new Date().toISOString();
+// ── Slice savers ────────────────────────────────────────────────────────────
+// Each persists one part of the submission. The single-page form calls them all
+// via saveMerchantForm; the multi-page wizard (Step 6 build) calls them per page
+// so Save-and-Continue can persist incrementally. Status stays "draft" until
+// finalizeMerchantSubmission.
+
+/** Business / compliance / signatory block. Leaves the form row status "draft". */
+export async function saveBusinessComplianceSignatory(
+  db: DB, caseId: string,
+  data: { business: MerchantBusiness; compliance: MerchantCompliance; signatory: MerchantSignatory },
+): Promise<void> {
   const up = await db.from("onboarding_merchant_form").upsert(
-    { case_id: caseId, business: data.business, compliance: data.compliance, signatory: data.signatory, status: "submitted", submitted_at: now },
+    { case_id: caseId, business: data.business, compliance: data.compliance, signatory: data.signatory, status: "draft" },
     { onConflict: "case_id" },
   );
   if (up.error) throw up.error;
+}
 
-  // Replace KYC rows (clean resubmit — avoids null-ubo_id upsert ambiguity).
+/** Replace the per-UBO KYC rows (clean resubmit — avoids null-ubo_id ambiguity). */
+export async function saveUboKyc(db: DB, caseId: string, uboKyc: UboKycInput[]): Promise<void> {
   await db.from("onboarding_ubo_kyc").delete().eq("case_id", caseId);
-  if (data.uboKyc.length) {
-    const ins = await db.from("onboarding_ubo_kyc").insert(
-      data.uboKyc.map((u) => ({
-        case_id: caseId,
-        ubo_id: u.ubo_id,
-        ubo_name: u.ubo_name,
-        date_of_birth: u.date_of_birth || null,
-        exact_ownership_percent: u.exact_ownership_percent ?? null,
-        residential_address: u.residential_address ?? null,
-        is_pep: u.is_pep,
-        pep_detail: u.pep_detail ?? null,
-        consent_given: u.consent_given,
-      })),
-    );
+  if (!uboKyc.length) return;
+  const ins = await db.from("onboarding_ubo_kyc").insert(
+    uboKyc.map((u) => ({
+      case_id: caseId,
+      ubo_id: u.ubo_id,
+      ubo_name: u.ubo_name,
+      date_of_birth: u.date_of_birth || null,
+      exact_ownership_percent: u.exact_ownership_percent ?? null,
+      residential_address: u.residential_address ?? null,
+      is_pep: u.is_pep,
+      pep_detail: u.pep_detail ?? null,
+      consent_given: u.consent_given,
+    })),
+  );
+  if (ins.error) throw ins.error;
+}
+
+/** Replace the bank accounts — sort code + number encrypted at rest, CoP per
+ *  account (best-effort → "unavailable"). Throws if encryption isn't configured
+ *  and real accounts are supplied. */
+export async function saveBankAccounts(db: DB, caseId: string, bankAccounts: BankAccountInput[]): Promise<number> {
+  const accounts = bankAccounts.filter((a) => (a.account_number ?? "").trim());
+  await db.from("onboarding_bank_accounts").delete().eq("case_id", caseId);
+  if (!accounts.length) return 0;
+  if (!encryptionConfigured()) throw new Error("Payment capture isn't configured yet — please contact us to complete this.");
+  const cop = getCop();
+  for (const a of accounts) {
+    const sort = (a.sort_code ?? "").trim();
+    const num = (a.account_number ?? "").trim();
+    let cop_result: string | null = null;
+    let cop_matched_name: string | null = null;
+    try {
+      const r = await cop.check({ sortCode: sort, accountNumber: num, name: a.account_name ?? "", accountType: "business" });
+      cop_result = r.result;
+      cop_matched_name = r.matchedName;
+    } catch {
+      cop_result = "unavailable";
+    }
+    const ins = await db.from("onboarding_bank_accounts").insert({
+      case_id: caseId,
+      purpose: a.purpose,
+      account_name: a.account_name ?? null,
+      bank_name: a.bank_name ?? null,
+      sort_code_enc: encryptField(sort),
+      account_number_enc: encryptField(num),
+      account_tail: num.replace(/\D/g, "").slice(-4) || null,
+      cop_result,
+      cop_matched_name,
+      cop_checked_at: new Date().toISOString(),
+    });
     if (ins.error) throw ins.error;
   }
+  return accounts.length;
+}
 
-  // Bank accounts — sort code + number encrypted at rest; CoP per account
-  // (best-effort → "unavailable" if the PSP isn't wired yet). Replace on resubmit.
-  const accounts = (data.bankAccounts ?? []).filter((a) => (a.account_number ?? "").trim());
-  await db.from("onboarding_bank_accounts").delete().eq("case_id", caseId);
-  if (accounts.length) {
-    if (!encryptionConfigured()) throw new Error("Payment capture isn't configured yet — please contact us to complete this.");
-    const cop = getCop();
-    for (const a of accounts) {
-      const sort = (a.sort_code ?? "").trim();
-      const num = (a.account_number ?? "").trim();
-      let cop_result: string | null = null;
-      let cop_matched_name: string | null = null;
-      try {
-        const r = await cop.check({ sortCode: sort, accountNumber: num, name: a.account_name ?? "", accountType: "business" });
-        cop_result = r.result;
-        cop_matched_name = r.matchedName;
-      } catch {
-        cop_result = "unavailable";
-      }
-      const ins = await db.from("onboarding_bank_accounts").insert({
-        case_id: caseId,
-        purpose: a.purpose,
-        account_name: a.account_name ?? null,
-        bank_name: a.bank_name ?? null,
-        sort_code_enc: encryptField(sort),
-        account_number_enc: encryptField(num),
-        account_tail: num.replace(/\D/g, "").slice(-4) || null,
-        cop_result,
-        cop_matched_name,
-        cop_checked_at: new Date().toISOString(),
-      });
-      if (ins.error) throw ins.error;
-    }
-  }
+/** Upsert the Direct Debit sub-form (non-sensitive questionnaire fields). */
+export async function saveDirectDebit(db: DB, caseId: string, directDebit: DirectDebitDetails | undefined): Promise<void> {
+  if (!directDebit || !Object.values(directDebit).some((v) => (v ?? "").trim())) return;
+  const ddUp = await db.from("onboarding_direct_debit").upsert({ case_id: caseId, details: directDebit }, { onConflict: "case_id" });
+  if (ddUp.error) throw ddUp.error;
+}
 
-  // Direct Debit sub-form (non-sensitive questionnaire fields).
-  if (data.directDebit && Object.values(data.directDebit).some((v) => (v ?? "").trim())) {
-    const ddUp = await db.from("onboarding_direct_debit").upsert({ case_id: caseId, details: data.directDebit }, { onConflict: "case_id" });
-    if (ddUp.error) throw ddUp.error;
-  }
-
+/** Finalise: mark the form submitted, advance the case to merchant_submitted,
+ *  log the event. */
+export async function finalizeMerchantSubmission(db: DB, caseId: string, meta: { ubos: number; bankAccounts: number }): Promise<void> {
+  const now = new Date().toISOString();
+  await db.from("onboarding_merchant_form").update({ status: "submitted", submitted_at: now }).eq("case_id", caseId);
   await db.from("onboarding_cases").update({ status: "merchant_submitted" }).eq("id", caseId);
-  await logCaseEvent(db, caseId, "merchant_submitted", { email: "merchant" }, { ubos: data.uboKyc.length, bankAccounts: accounts.length });
+  await logCaseEvent(db, caseId, "merchant_submitted", { email: "merchant" }, meta);
+}
+
+/** Save the full merchant submission in one shot (the single-page form path).
+ *  Delegates to the slice savers the multi-page wizard also uses. */
+export async function saveMerchantForm(db: DB, caseId: string, data: MerchantFormData): Promise<void> {
+  await saveBusinessComplianceSignatory(db, caseId, { business: data.business, compliance: data.compliance, signatory: data.signatory });
+  await saveUboKyc(db, caseId, data.uboKyc);
+  const bankCount = await saveBankAccounts(db, caseId, data.bankAccounts ?? []);
+  await saveDirectDebit(db, caseId, data.directDebit);
+  await finalizeMerchantSubmission(db, caseId, { ubos: data.uboKyc.length, bankAccounts: bankCount });
 }
 
 /** Mark the case merchant_in_progress the first time the merchant opens the
