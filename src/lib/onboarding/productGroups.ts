@@ -14,6 +14,7 @@
 export type ProductGroupKey =
   | "tu_credit"
   | "tu_monevo"
+  | "communications"
   | "direct_debits"
   | "pay_by_bank"
   | "sweeping_vrp"
@@ -68,6 +69,13 @@ export const PRODUCT_GROUPS: Record<ProductGroupKey, ProductGroup> = {
     weight: "full",
     triggersTuSection: true,
     documents: ["tu_monevo_eua", "tu_due_diligence_xlsx"],
+  },
+  // Light-touch: Email / SMS / WhatsApp messaging. Basic CH check only, no
+  // document, no KYC/infosec. Full groups (if also selected) still win the path.
+  communications: {
+    key: "communications",
+    label: "Communications (Email / SMS / WhatsApp)",
+    weight: "light",
   },
   direct_debits: {
     key: "direct_debits",

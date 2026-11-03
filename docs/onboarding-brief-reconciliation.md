@@ -32,8 +32,8 @@ Legend: ✅ built · 🟡 partial · ❌ missing · ↪ changed by feedback.
 ### Step 1 — Confirm company ✅
 CH search → pick entity, shows number/status/address. `status_detail` shows on the enrichment page. Fine.
 
-### Step 2 — Product groups 🟡
-- ❌ **"Communications (Email / SMS / WhatsApp)" is missing** — the catalog has 10 groups, the brief lists 11. This also shifts the brief's payment-type numbering (the code gates by key, not number, so logic is safe, but the product itself can't be selected).
+### Step 2 — Product groups ✅
+- ✅ **Communications (Email / SMS / WhatsApp)** added (light-touch, no document) — catalog now has all 11 groups.
 - ✅ Settlement Accounts → Faster Payments auto-select works.
 
 ### Step 3 — Roles ✅ / 🟡
@@ -82,7 +82,7 @@ The email/nudge machinery is **intentionally removed** (↪ feedback: link not e
 ## 3. Prioritised gaps (your call on what to build next)
 
 **Quick, bounded:**
-1. Add the **Communications (Email/SMS/WhatsApp)** product group (needs its weight + doc mapping decided).
+1. ✅ ~~Add the **Communications** product group~~ — done (light-touch, no document).
 2. New-contact **LinkedIn + Mobile** fields.
 3. Include **technical contacts** in the API-sandbox request.
 4. Surface **Drive links + "Onboarded by/date"** on the company page.
