@@ -19,7 +19,11 @@ import { getAnswers, setAnswers, setPageComplete, type FormEditor, type AnswerIn
 import { listStakeholders, ONBOARDING_ROLES } from "@/lib/onboarding/cases";
 import { hubspotRepo } from "@/lib/hubspot/repo";
 import { requiresFcaFrn } from "@/lib/onboarding/productGroups";
-import { COMPANY_FIELDS, projectCompanyAnswers, missingCompanyFields, nextFormPage } from "./fields";
+import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
+import {
+  COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, projectCompanyAnswers,
+  missingCompanyFields, hasValidDpo, isPersonalEmailDomain, nextFormPage,
+} from "./fields";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 
@@ -235,12 +239,28 @@ export async function savePageAction(formData: FormData) {
         if (f.onlyIfTuCredit && !tuCredit) continue;
         entries.push({ field_key: f.key, value: str(formData.get(f.key)), is_unknown: str(formData.get(`${f.key}__unknown`)) === "on" });
       }
+      for (const s of SOCIAL_FIELDS) entries.push({ field_key: s.key, value: str(formData.get(s.key)) });
+      const dpoCount = Math.min(Number(str(formData.get("dpo_count")) || 0), 20);
+      for (let i = 0; i < dpoCount; i++) {
+        for (const d of DPO_FIELDS) entries.push({ field_key: `dpo_${i}_${d.key}`, value: str(formData.get(`dpo_${i}_${d.key}`)) });
+      }
       await setAnswers(db, c.id, entries, ed);
+      // Keep the typed merchant form in sync so /review, docgen and the privacy
+      // assessment read current data.
+      const answers = await getAnswers(db, c.id);
+      await saveBusinessComplianceSignatory(db, c.id, projectCompanyAnswers(answers));
       if (mode === "continue") {
-        const answers = await getAnswers(db, c.id);
         const missing = missingCompanyFields(answers, { fcaRequired: requiresFcaFrn(c.product_groups), tuCredit });
+        if (!hasValidDpo(answers)) missing.push("Data protection officer");
+        const email = answers["email"]?.value ?? "";
         if (missing.length) dest = `${back}?page=company&error=required${qp(v2)}`;
-        else { await setPageComplete(db, c.id, "company", true); dest = advance(); }
+        else if (email && isPersonalEmailDomain(email)) dest = `${back}?page=company&error=email${qp(v2)}`;
+        else {
+          await setPageComplete(db, c.id, "company", true);
+          // Behind the scenes: assess the privacy policy from the provided URL.
+          await assessPrivacyPolicy(db, c.id, { id: null, email: "merchant" }).catch(() => {});
+          dest = advance();
+        }
       }
     } else if (page === "ubos") {
       await saveUboKyc(db, c.id, parseUbos(formData));

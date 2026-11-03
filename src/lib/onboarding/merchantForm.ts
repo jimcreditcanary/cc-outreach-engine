@@ -29,9 +29,18 @@ export interface TokenCase {
 export interface MerchantBusiness {
   trading_name?: string; trading_address?: string; principal_office?: string;
   phone?: string; email?: string; website?: string;
+  socials?: { facebook?: string; linkedin?: string; twitter?: string; instagram?: string };
+}
+/** A data protection officer — the brief allows several per merchant. */
+export interface DpoRecord {
+  first?: string; last?: string; title?: string; email?: string; phone?: string;
 }
 export interface MerchantCompliance {
-  ico_number?: string; fca_frn?: string; dpo?: string;
+  ico_number?: string; fca_frn?: string; vat_number?: string;
+  /** Human-readable summary (kept for the typed form + docs). */
+  dpo?: string;
+  /** Structured DPOs (source for the summary). */
+  dpos?: DpoRecord[];
   privacy_policy_url?: string; trade_body?: string;
 }
 export interface MerchantSignatory { name?: string; title?: string; email?: string }

@@ -17,7 +17,7 @@ import { loadUploads } from "@/lib/onboarding/uploads";
 import { requiresFcaFrn, requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
 import { PendingButton } from "@/components/PendingButton";
 import { AddressLookup } from "@/components/AddressLookup";
-import { COMPANY_FIELDS, visibleFormPages, type AnswerFieldDef } from "./fields";
+import { COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, collectDpos, dpoSummary, visibleFormPages, type AnswerFieldDef } from "./fields";
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
 import { setEditorAction, savePageAction, submitForApprovalAction } from "./actions";
 
@@ -108,6 +108,7 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
       </ol>
 
       {error === "required" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please complete the required fields, or tick &ldquo;don&apos;t know&rdquo; where offered, before continuing.</p>}
+      {error === "email" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please use a company email address, not a personal one (e.g. not gmail/outlook/yahoo).</p>}
       {error === "save" && <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">Something went wrong saving — please try again.</p>}
 
       <div className="mt-5">
@@ -169,10 +170,50 @@ function CompanyPage({ token, c, answers, v2 }: { token: string; c: TokenCase; a
   const fcaRequired = requiresFcaFrn(c.product_groups);
   const tuCredit = c.product_groups.includes("tu_credit");
   const fields = COMPANY_FIELDS.filter((f) => !f.onlyIfTuCredit || tuCredit);
+  // Render existing DPOs plus two blank slots to add more.
+  const existing: number[] = [];
+  for (let i = 0; i < 20; i++) if (answers[`dpo_${i}_first`]?.value || answers[`dpo_${i}_last`]?.value || answers[`dpo_${i}_email`]?.value) existing.push(i);
+  const dpoCount = (existing.length ? Math.max(...existing) + 1 : 0) + 2;
   return (
     <PageForm token={token} page="company" v2={v2} title="Company details" intro="Confirm your business, compliance and authorised-signatory details.">
       <fieldset className="grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
         {fields.map((f) => <AnswerField key={f.key} def={f} answers={answers} fcaRequired={fcaRequired} />)}
+      </fieldset>
+
+      {/* Data protection officers (required; can add several) */}
+      <fieldset className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
+        <legend className="px-1 text-sm font-semibold text-[#003566]">Data protection officer(s) <span className="text-red-600">*</span></legend>
+        <input type="hidden" name="dpo_count" value={dpoCount} />
+        <div className="mt-2 space-y-3">
+          {Array.from({ length: dpoCount }).map((_, i) => {
+            const attr = attributionLine(answers[`dpo_${i}_email`] ?? answers[`dpo_${i}_first`]);
+            return (
+              <div key={i} className="rounded border border-neutral-200 p-3">
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400">Officer {i + 1}</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {DPO_FIELDS.map((d) => (
+                    <div key={d.key}>
+                      <label htmlFor={`dpo_${i}_${d.key}`} className={lbl}>{d.label}</label>
+                      <input id={`dpo_${i}_${d.key}`} name={`dpo_${i}_${d.key}`} type={d.type ?? "text"} defaultValue={answers[`dpo_${i}_${d.key}`]?.value ?? ""} className={field} />
+                    </div>
+                  ))}
+                </div>
+                {attr && <p className="mt-1 text-[11px] text-neutral-400">{attr}</p>}
+              </div>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      {/* Social media (optional) */}
+      <fieldset className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
+        <legend className="px-1 text-sm font-semibold text-[#003566]">Social media <span className="font-normal text-neutral-400">(optional)</span></legend>
+        {SOCIAL_FIELDS.map((s) => (
+          <div key={s.key}>
+            <label htmlFor={s.key} className={lbl}>{s.label}</label>
+            <input id={s.key} name={s.key} type="url" placeholder="https://" defaultValue={answers[s.key]?.value ?? ""} className={field} />
+          </div>
+        ))}
       </fieldset>
     </PageForm>
   );
@@ -323,6 +364,14 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
               <dd className="text-neutral-800">{shown(answers[f.key])}</dd>
             </div>
           ))}
+          <div className="flex items-baseline gap-3 px-4 py-1.5 text-sm">
+            <dt className="w-56 shrink-0 text-neutral-500">Data protection officer(s)</dt>
+            <dd className="text-neutral-800">{dpoSummary(collectDpos(answers)) || <span className="text-neutral-400">—</span>}</dd>
+          </div>
+          <div className="flex items-baseline gap-3 px-4 py-1.5 text-sm">
+            <dt className="w-56 shrink-0 text-neutral-500">Social media</dt>
+            <dd className="text-neutral-800">{SOCIAL_FIELDS.filter((s) => answers[s.key]?.value).map((s) => s.label).join(", ") || <span className="text-neutral-400">—</span>}</dd>
+          </div>
         </dl>
       </section>
 
