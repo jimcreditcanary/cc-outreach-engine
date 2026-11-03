@@ -8,6 +8,8 @@ import { getCrm } from "@/lib/crm";
 import { dealPipelines } from "@/lib/hubspot/repo";
 import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
 import { DealOwnerFilter } from "./DealOwnerFilter";
+import { refreshDealsAction } from "./boardActions";
+import { PendingButton } from "@/components/PendingButton";
 import { fmtDate } from "@/lib/format/datetime";
 
 const DUE_DAYS = 14; // the "engage every 2 weeks" rule, inherited from Hot
@@ -77,6 +79,9 @@ export async function HubspotDealsBoard({ pipelineId, q, ownerId }: { pipelineId
           </Link>
         ))}
         <div className="ml-auto flex items-center gap-2">
+          <form action={refreshDealsAction}>
+            <PendingButton className="rounded border border-neutral-300 px-2 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100" pendingLabel="Refreshing…" title="Re-query HubSpot">↻ Refresh</PendingButton>
+          </form>
           <DealOwnerFilter owners={ownerPickList} value={ownerId} />
           <form>
             <input type="hidden" name="pipeline" value={selected.id} />

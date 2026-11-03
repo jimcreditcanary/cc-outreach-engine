@@ -523,6 +523,52 @@ export async function dealRecentNotes(dealId: string, limit = 5): Promise<{ ts: 
   }
 }
 
+/** Move a deal to a different stage (writes dealstage). */
+export async function setDealStage(dealId: string, stageId: string): Promise<void> {
+  await hsFetch(`/crm/v3/objects/deals/${dealId}`, { method: "PATCH", body: { properties: { dealstage: stageId } } });
+  invalidateCache();
+}
+
+/** Reassign a deal's owner (writes hubspot_owner_id; "" unassigns). */
+export async function setDealOwner(dealId: string, ownerId: string | null): Promise<void> {
+  await hsFetch(`/crm/v3/objects/deals/${dealId}`, { method: "PATCH", body: { properties: { hubspot_owner_id: ownerId ?? "" } } });
+  invalidateCache();
+}
+
+export interface DealMeeting { id: string; title: string | null; start: string | null; outcome: string | null }
+
+/** Meeting engagements on a deal (newest first). Best-effort: [] on any failure
+ *  (e.g. the token lacks the meetings scope). HubSpot-sourced, so it works for a
+ *  HubSpot deal id even though the local meetings table is Supabase-keyed. */
+export async function dealMeetings(dealId: string, limit = 10): Promise<DealMeeting[]> {
+  try {
+    const assoc = await hsFetch<{ results: { toObjectId: string | number }[] }>(
+      `/crm/v4/objects/deals/${dealId}/associations/meetings?limit=${Math.min(limit * 2, 50)}`, { cacheTtl: READ_TTL },
+    );
+    const ids = (assoc.results ?? []).map((r) => String(r.toObjectId));
+    if (ids.length === 0) return [];
+    const read = await hsFetch<{ results: HsObj[] }>(
+      `/crm/v3/objects/meetings/batch/read`,
+      { method: "POST", body: { properties: ["hs_meeting_title", "hs_meeting_start_time", "hs_meeting_outcome", "hs_timestamp"], inputs: ids.map((id) => ({ id })) }, cacheTtl: READ_TTL },
+    );
+    const nz = (v: string | null | undefined) => { const t = (v ?? "").trim(); return t === "" ? null : t; };
+    const meetings = (read.results ?? []).map((o) => {
+      const p = o.properties;
+      const start = p.hs_meeting_start_time ?? p.hs_timestamp ?? null;
+      return {
+        id: String(o.id),
+        title: nz(p.hs_meeting_title),
+        start: start ? (/^\d+$/.test(String(start)) ? new Date(Number(start)).toISOString() : String(start)) : null,
+        outcome: nz(p.hs_meeting_outcome),
+      };
+    });
+    meetings.sort((a, b) => (b.start ?? "").localeCompare(a.start ?? ""));
+    return meetings.slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
 const DEAL_SORT: Record<string, string> = {
   name: "dealname", amount: "amount", close_date: "closedate",
   created_at: "createdate", last_contacted: "notes_last_contacted",
