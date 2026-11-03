@@ -231,3 +231,74 @@ export function projectPaymentAnswers(answers: AnswerMap): DirectDebitDetails {
     average_value: v("pay_avg_value"),
   };
 }
+
+// ─── Infosec / TU questionnaire page (P5) ────────────────────────────────────
+
+const INFOSEC_TOP_YN = [
+  "infosec_cmc_pi", "infosec_search_type_ok", "infosec_shared_email", "infosec_ico_notice",
+  "infosec_data_transfer", "infosec_industry_body", "infosec_membership_valid",
+  "infosec_iso27001", "infosec_pci", "infosec_soc2", "infosec_iso27001_intending", "infosec_align_other",
+];
+const INFOSEC_TEXT = [
+  "infosec_iso27001_expiry", "infosec_iso27001_assessor", "infosec_pci_expiry", "infosec_pci_assessor",
+  "infosec_soc2_expiry", "infosec_soc2_assessor", "infosec_align_detail", "infosec_align_explain",
+];
+
+/** ≤10-employee (small business) security questions: [key, label]. */
+export const INFOSEC_SMALL: ReadonlyArray<readonly [string, string]> = [
+  ["s_antivirus", "Antivirus installed + host-based intrusion detection (HIDS)?"],
+  ["s_own_login", "Employees using the TU product have their own username/password?"],
+  ["s_password_policy", "Enforce minimum password requirements (14 chars + 3 of specials/upper/numeric)?"],
+  ["s_router", "Router default settings changed in the last 3 months?"],
+  ["s_mfa", "Enforce multi-factor authentication to access emails?"],
+  ["s_defender", "Windows Defender + auto-update active (if using Windows)?"],
+  ["s_personal_devices", "Are employees allowed to use personal devices to access your data?"],
+  ["s_vpn", "Require a VPN to access company data?"],
+  ["s_removable_media", "Prevent external hard drives / USB / removable media?"],
+];
+/** >10-employee (large business) security questions: [key, label]. */
+export const INFOSEC_LARGE: ReadonlyArray<readonly [string, string]> = [
+  ["l_infosec_policy", "Documented Information Security Policy (standards, passwords, wireless, incident response)?"],
+  ["l_training", "Annual security-awareness training with testing / attestation?"],
+  ["l_antivirus", "Up-to-date antivirus + HIDS on all servers and workstations?"],
+  ["l_logging", "Systems configured to log errors, security events, login attempts?"],
+  ["l_personal_devices", "Are employees allowed to use personal devices to access your data?"],
+  ["l_vpn", "Require a VPN to access company data?"],
+  ["l_patching", "Regular, prompt patching (7 days emergency, 14 days critical)?"],
+  ["l_encryption_256", "Minimum 256-bit encryption for TU data before it leaves your environment?"],
+  ["l_pentest", "Annual penetration testing of all internet-facing applications/systems?"],
+  ["l_cyber_insurance", "Maintain Cyber Insurance coverage?"],
+];
+
+export const INFOSEC_ANSWER_KEYS = [
+  ...INFOSEC_TOP_YN, "infosec_over_10",
+  ...INFOSEC_SMALL.map(([k]) => k), ...INFOSEC_LARGE.map(([k]) => k),
+  ...INFOSEC_SMALL.map(([k]) => `${k}_explain`), ...INFOSEC_LARGE.map(([k]) => `${k}_explain`),
+  ...INFOSEC_TEXT, "l_encryption_detail",
+];
+
+export function missingInfosecFields(answers: AnswerMap): string[] {
+  const miss: string[] = [];
+  const val = (k: string) => (answers[k]?.value ?? "").trim();
+  const need = (k: string, label: string) => { if (!val(k)) miss.push(label); };
+  need("infosec_cmc_pi", "CMC / PI firm?");
+  need("infosec_search_type_ok", "Search type in keeping with business?");
+  need("infosec_shared_email", "Shared email account?");
+  need("infosec_ico_notice", "ICO enforcement / decision notice?");
+  need("infosec_data_transfer", "Data transfer outside UK/EEA?");
+  need("infosec_industry_body", "Industry-body membership required?");
+  if (val("infosec_industry_body") === "yes") need("infosec_membership_valid", "Membership valid & current?");
+  for (const [cert, label] of [["iso27001", "ISO 27001"], ["pci", "PCI DSS"], ["soc2", "SOC2"]] as const) {
+    need(`infosec_${cert}`, `${label}?`);
+    if (val(`infosec_${cert}`) === "yes") { need(`infosec_${cert}_expiry`, `${label} expiry date`); need(`infosec_${cert}_assessor`, `${label} assessor`); }
+  }
+  need("infosec_iso27001_intending", "Intending ISO 27001?");
+  need("infosec_align_other", "Other security arrangements?");
+  if (val("infosec_align_other") === "yes") need("infosec_align_detail", "Security arrangements detail");
+  if (val("infosec_align_other") === "no") need("infosec_align_explain", "Security arrangements explanation");
+  need("infosec_over_10", "More than 10 employees?");
+  const over = val("infosec_over_10");
+  if (over === "no") for (const [k, l] of INFOSEC_SMALL) need(k, l);
+  else if (over === "yes") { for (const [k, l] of INFOSEC_LARGE) need(k, l); need("l_encryption_detail", "Encryption standards detail"); }
+  return miss;
+}

@@ -19,7 +19,8 @@ import { PendingButton } from "@/components/PendingButton";
 import { AddressLookup } from "@/components/AddressLookup";
 import {
   COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, collectDpos, dpoSummary, visibleFormPages,
-  requiresTransactionProfile, paymentReasonProducts, productLabel, isCharityType, type AnswerFieldDef,
+  requiresTransactionProfile, paymentReasonProducts, productLabel, isCharityType,
+  INFOSEC_SMALL, INFOSEC_LARGE, type AnswerFieldDef,
 } from "./fields";
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
 import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAccountAction } from "./actions";
@@ -121,7 +122,7 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
         {current === "ubos" && <UbosPage token={token} c={c} enrichment={enrichment} merchant={merchant} answers={answers} v2={v2} />}
         {current === "accounts" && <AccountsPage token={token} c={c} merchant={merchant} v2={v2} />}
         {current === "payments" && <PaymentsPage token={token} c={c} answers={answers} companyName={enrichment.snapshot?.company_name ?? ""} charity={isCharityType(enrichment.snapshot?.company_type)} v2={v2} />}
-        {current === "infosec" && <InfosecPage token={token} uploadCount={uploads.length} v2={v2} />}
+        {current === "infosec" && <InfosecPage token={token} answers={answers} uploadCount={uploads.length} v2={v2} />}
         {current === "review" && <ReviewPage token={token} c={c} answers={answers} merchant={merchant} v2={v2} />}
       </div>
     </>
@@ -493,12 +494,89 @@ function PaymentsPage({ token, c, answers, companyName, charity, v2 }: {
   );
 }
 
-function InfosecPage({ token, uploadCount, v2 }: { token: string; uploadCount: number; v2?: string }) {
+const fileInput = "mt-1 block w-full text-sm text-neutral-700 file:mr-3 file:rounded file:border-0 file:bg-[#003566] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-[#002a52]";
+
+/** A yes/no question with an optional conditional "explain" field below. */
+function YnRow({ name, label, answers, dflt, explainLabel, options = YN }: {
+  name: string; label: string; answers: AnswerMap; dflt?: string; explainLabel?: string; options?: { value: string; label: string }[];
+}) {
   return (
-    <PageForm token={token} page="infosec" v2={v2} title="Information security" intro="Upload any security certifications, policies or penetration-test summaries. Optional, but it speeds up review.">
-      <fieldset className="rounded-lg border border-neutral-200 bg-white p-4">
-        {uploadCount > 0 && <p className="mb-2 text-sm text-neutral-500">{uploadCount} already uploaded.</p>}
-        <input type="file" name="infosec_files" multiple accept=".pdf,.doc,.docx,.txt,.md" className="block w-full text-sm text-neutral-700 file:mr-3 file:rounded file:border-0 file:bg-[#003566] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-[#002a52]" />
+    <div className="border-t border-neutral-100 pt-3 first:border-0 first:pt-0">
+      <RadioA name={name} label={label} answers={answers} options={options} dflt={dflt} required />
+      {explainLabel && <div className="mt-1"><TextA name={`${name}_explain`} label={explainLabel} answers={answers} /></div>}
+    </div>
+  );
+}
+
+function InfosecPage({ token, answers, uploadCount, v2 }: { token: string; answers: AnswerMap; uploadCount: number; v2?: string }) {
+  const over = answers["infosec_over_10"]?.value ?? "";
+  const cert = (key: string, label: string) => (
+    <div className="border-t border-neutral-100 pt-3 first:border-0 first:pt-0">
+      <RadioA name={`infosec_${key}`} label={label} answers={answers} options={YN} required />
+      <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <TextA name={`infosec_${key}_expiry`} label="If yes — expiry date" answers={answers} type="date" />
+        <TextA name={`infosec_${key}_assessor`} label="If yes — assessor (e.g. BSI)" answers={answers} />
+      </div>
+    </div>
+  );
+  return (
+    <PageForm token={token} page="infosec" v2={v2} title="Information security" intro="A few questions about how you keep data secure (required for TransUnion products).">
+      <fieldset className="space-y-1 rounded-lg border border-neutral-200 bg-white p-4">
+        <legend className="px-1 text-sm font-semibold text-[#003566]">About your business</legend>
+        <YnRow name="infosec_cmc_pi" label="Is your business a Claims Management Company or Private Investigator firm?" answers={answers} />
+        <YnRow name="infosec_search_type_ok" label="Is the intended search type in keeping with the nature of your business?" answers={answers} dflt="yes" />
+        <YnRow name="infosec_shared_email" label="Is the company email a shared account used by multiple individuals?" answers={answers} />
+        <YnRow name="infosec_ico_notice" label="Have you ever received an Enforcement or Decision Notice from the ICO?" answers={answers} />
+        <YnRow name="infosec_data_transfer" label="Do you intend to transfer any data outside the UK and EEA?" answers={answers} />
+        <YnRow name="infosec_industry_body" label="Do you require membership of a recognised industry body / trade association?" answers={answers} />
+        <YnRow name="infosec_membership_valid" label="If a member — is the membership valid and current?" answers={answers} />
+      </fieldset>
+
+      <fieldset className="mt-4 space-y-1 rounded-lg border border-neutral-200 bg-white p-4">
+        <legend className="px-1 text-sm font-semibold text-[#003566]">Certifications</legend>
+        {cert("iso27001", "ISO 27001?")}
+        {cert("pci", "PCI DSS?")}
+        {cert("soc2", "SOC2?")}
+        <YnRow name="infosec_iso27001_intending" label="Intending to become ISO 27001 accredited (audit scheduled in next 3 months)?" answers={answers} />
+        <YnRow name="infosec_align_other" label="Do you align to other required security arrangements?" answers={answers} explainLabel="If no, please explain why" />
+        <TextA name="infosec_align_detail" label="If yes — please provide detail" answers={answers} full />
+      </fieldset>
+
+      <fieldset className="mt-4 space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
+        <legend className="px-1 text-sm font-semibold text-[#003566]">Your security controls</legend>
+        <RadioA name="infosec_over_10" label="Does your business have more than 10 employees?" answers={answers} options={YN} required />
+        {!over ? (
+          <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Answer the question above and click <strong>Save &amp; finish later</strong> — we&apos;ll then show the security questions for your business size.</p>
+        ) : over === "no" ? (
+          <div className="space-y-1">
+            {INFOSEC_SMALL.map(([k, l]) => (
+              <YnRow key={k} name={k} label={l} answers={answers}
+                dflt={k === "s_own_login" ? "yes" : undefined}
+                options={k === "s_own_login" ? [{ value: "yes", label: "Yes" }] : YN}
+                explainLabel={k === "s_personal_devices" ? "If yes, please explain why" : k === "s_own_login" ? undefined : "If no, please explain why"} />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {INFOSEC_LARGE.map(([k, l]) => (
+              <div key={k}>
+                <YnRow name={k} label={l} answers={answers} explainLabel={k === "l_personal_devices" ? "If yes, please explain why" : "If no, please explain why"} />
+                {k === "l_infosec_policy" && <div><label className="text-xs text-neutral-500">If yes — upload the policy</label><input name="infosec_policy_file" type="file" accept=".pdf,.doc,.docx,.txt" className={fileInput} /></div>}
+                {k === "l_pentest" && <div><label className="text-xs text-neutral-500">If yes — upload the report</label><input name="pentest_file" type="file" accept=".pdf,.doc,.docx,.txt" className={fileInput} /></div>}
+                {k === "l_cyber_insurance" && <div><label className="text-xs text-neutral-500">If yes — upload the certificate</label><input name="cyber_insurance_file" type="file" accept=".pdf,.doc,.docx,.txt" className={fileInput} /></div>}
+              </div>
+            ))}
+            <div className="border-t border-neutral-100 pt-3">
+              <TextA name="l_encryption_detail" label="Confirm data is encrypted at rest and in transit — detail the standards / technologies used" answers={answers} required full />
+            </div>
+          </div>
+        )}
+      </fieldset>
+
+      <fieldset className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
+        <legend className="px-1 text-sm font-semibold text-[#003566]">Other documents <span className="font-normal text-neutral-400">(optional)</span></legend>
+        {uploadCount > 0 && <p className="mb-1 text-sm text-neutral-500">{uploadCount} already uploaded.</p>}
+        <input type="file" name="infosec_files" multiple accept=".pdf,.doc,.docx,.txt,.md" className={fileInput} />
       </fieldset>
     </PageForm>
   );
@@ -574,6 +652,19 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
             {answers["pay_b2b_b2c"]?.value && <div>Model: {answers["pay_b2b_b2c"].value.toUpperCase()}</div>}
             {answers["dd_frequency"]?.value && <div>DD frequency: {answers["dd_frequency"].value}</div>}
           </dl>
+        </section>
+      )}
+
+      {requiresTuSection(c.product_groups) && (
+        <section className="rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-neutral-700">Information security</h3>
+            <Link href={changeHref("infosec")} className="text-xs text-blue-700 hover:underline">Change</Link>
+          </div>
+          <p className="mt-1 text-neutral-600">
+            {answers["infosec_over_10"]?.value === "yes" ? "More than 10 employees" : answers["infosec_over_10"]?.value === "no" ? "10 or fewer employees" : <span className="text-amber-600">employee size not set</span>}
+            {" · "}certifications: {["iso27001", "pci", "soc2"].filter((k) => answers[`infosec_${k}`]?.value === "yes").map((k) => k.toUpperCase()).join(", ") || "none"}
+          </p>
         </section>
       )}
 

@@ -18,13 +18,13 @@ import { getFormEditor, setFormEditor } from "@/lib/onboarding/formEditor";
 import { getAnswers, setAnswers, setPageComplete, type FormEditor, type AnswerInput } from "@/lib/onboarding/formAnswers";
 import { listStakeholders, ONBOARDING_ROLES } from "@/lib/onboarding/cases";
 import { hubspotRepo } from "@/lib/hubspot/repo";
-import { requiresFcaFrn, requiresDirectDebit } from "@/lib/onboarding/productGroups";
+import { requiresFcaFrn, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
 import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
 import { loadEnrichment } from "@/lib/onboarding/enrich";
 import {
-  COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, PAYMENT_ANSWER_KEYS, projectCompanyAnswers,
+  COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, PAYMENT_ANSWER_KEYS, INFOSEC_ANSWER_KEYS, projectCompanyAnswers,
   missingCompanyFields, hasValidDpo, isPersonalEmailDomain, requiresTransactionProfile,
-  paymentReasonProducts, missingPaymentFields, projectPaymentAnswers, isCharityType, nextFormPage,
+  paymentReasonProducts, missingPaymentFields, projectPaymentAnswers, isCharityType, missingInfosecFields, nextFormPage,
 } from "./fields";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
@@ -302,12 +302,24 @@ export async function savePageAction(formData: FormData) {
         else { await setPageComplete(db, c.id, "payments", true); dest = advance(); }
       }
     } else if (page === "infosec") {
-      const files = formData.getAll("infosec_files").filter((f): f is File => f instanceof File && f.size > 0);
-      for (const f of files.slice(0, 10)) {
-        if (f.size > 20 * 1024 * 1024) continue;
-        try { await saveUpload(db, c.id, { name: f.name, type: f.type, bytes: new Uint8Array(await f.arrayBuffer()) }); } catch { /* best-effort */ }
+      const entries: AnswerInput[] = INFOSEC_ANSWER_KEYS.map((k) => ({ field_key: k, value: str(formData.get(k)) }));
+      await setAnswers(db, c.id, entries, ed);
+      const uploadGroups: [string, string][] = [
+        ["infosec_policy_file", "infosec_policy"], ["pentest_file", "pentest"],
+        ["cyber_insurance_file", "cyber_insurance"], ["infosec_files", "infosec"],
+      ];
+      for (const [fieldName, kind] of uploadGroups) {
+        const files = formData.getAll(fieldName).filter((f): f is File => f instanceof File && f.size > 0);
+        for (const f of files.slice(0, 5)) {
+          if (f.size > 20 * 1024 * 1024) continue;
+          try { await saveUpload(db, c.id, { name: f.name, type: f.type, bytes: new Uint8Array(await f.arrayBuffer()) }, kind); } catch { /* best-effort */ }
+        }
       }
-      if (mode === "continue") { await setPageComplete(db, c.id, "infosec", true); dest = advance(); }
+      if (mode === "continue") {
+        const missing = missingInfosecFields(await getAnswers(db, c.id));
+        if (missing.length) dest = `${back}?page=infosec&error=required${qp(v2)}`;
+        else { await setPageComplete(db, c.id, "infosec", true); dest = advance(); }
+      }
     }
   } catch (e) {
     console.error(`[merchant-page-save] ${page} failed for case ${c.id}:`, e);
@@ -355,6 +367,9 @@ export async function submitForApprovalAction(formData: FormData) {
       reasonProducts: paymentReasonProducts(c.product_groups),
     });
     if (payMissing.length) redirect(`${back}?page=payments&error=required${qp(v2)}`);
+  }
+  if (requiresTuSection(c.product_groups) && missingInfosecFields(answers).length) {
+    redirect(`${back}?page=infosec&error=required${qp(v2)}`);
   }
 
   let failed = false;
