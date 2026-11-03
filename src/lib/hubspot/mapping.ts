@@ -18,6 +18,7 @@ export const CONTACT_READ_PROPS = [
   "hs_lead_status", "email_status", "lifecyclestage", "lead_source", "context",
   "hs_email_hard_bounce_reason_enum",
   "type", // account roles (multi-select) — Technical, Decision Maker, etc.
+  "hubspot_owner_id",
   "createdate", "lastmodifieddate",
 ] as const;
 
@@ -26,6 +27,7 @@ export const COMPANY_READ_PROPS = [
   "tier", "is_partner", "icp", "context",
   "company_number", // Companies House number (custom prop, group companyinformation)
   "current_client", "onboarding_status", "target_group",
+  "hubspot_owner_id",
   "createdate", "hs_lastmodifieddate",
 ] as const;
 
@@ -89,6 +91,8 @@ export function fromHubspotContact(obj: HsObject, company?: { id: string; name: 
     lead_source: str(p.lead_source),
     context: str(p.context),
     contact_type: (p.type ?? "").split(";").map((s) => s.trim()).filter(Boolean),
+    owner_id: str(p.hubspot_owner_id),
+    owner_name: null, // resolved by the repo off the owners map
     created_at: str(p.createdate),
     updated_at: str(p.lastmodifieddate),
     url: recordUrl("contacts", id),
@@ -113,6 +117,8 @@ export function fromHubspotCompany(obj: HsObject): CompanyRecord {
     current_client: p.current_client === "true" ? true : p.current_client === "false" ? false : null,
     onboarding_status: str(p.onboarding_status),
     target_group: str(p.target_group),
+    owner_id: str(p.hubspot_owner_id),
+    owner_name: null, // resolved by the repo off the owners map
     created_at: str(p.createdate),
     updated_at: str(p.hs_lastmodifieddate),
     url: recordUrl("companies", id),
@@ -141,6 +147,8 @@ export function fromHubspotDeal(
     next_meeting_at: str(p.hs_next_meeting_start_time),
     next_meeting_name: str(p.hs_next_meeting_name),
     next_step: str(p.hs_next_step),
+    owner_id: str(p.hubspot_owner_id),
+    owner_name: null, // resolved by the repo off the owners map
     created_at: str(p.createdate),
     updated_at: str(p.hs_lastmodifieddate),
     url: recordUrl("deals", id),

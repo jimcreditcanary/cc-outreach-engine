@@ -53,7 +53,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
   // cards into the Work-Deal page. Isolated; the Supabase page below (MEDDICC
   // nudges etc.) is untouched and used when CRM_BACKEND=supabase.
   if (activeBackend() === "hubspot") {
-    return <HubspotDealsBoard pipelineId={pipeline} q={q} />;
+    return <HubspotDealsBoard pipelineId={pipeline} q={q} ownerId={owner} />;
   }
 
   const db = serviceClient();

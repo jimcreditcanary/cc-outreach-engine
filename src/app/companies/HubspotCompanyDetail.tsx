@@ -106,6 +106,7 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
         <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-neutral-500">
           {co.website && <a href={/^https?:\/\//.test(co.website) ? co.website : `https://${co.website}`} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">{co.website} ↗</a>}
           {targetText && <span>{targetText}</span>}
+          {co.owner_name && <span>Owner: <span className="text-neutral-600">{co.owner_name}</span></span>}
           {co.company_number && <span>Co. no. <span className="font-mono text-neutral-600">{co.company_number}</span></span>}
           {co.created_at && <span>Added {fmtDate(co.created_at)}</span>}
           <a href={co.url} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">Open in HubSpot ↗</a>

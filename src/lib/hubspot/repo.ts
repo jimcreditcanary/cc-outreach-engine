@@ -13,6 +13,7 @@
 
 import { hsFetch, invalidateCache, recordUrl } from "./client";
 import { safeProps } from "./schema";
+import { listOwners } from "./owners";
 import {
   CONTACT_READ_PROPS, COMPANY_READ_PROPS, DEAL_READ_PROPS,
   fromHubspotContact, fromHubspotCompany, fromHubspotDeal,
@@ -25,6 +26,15 @@ import type {
 
 const READ_TTL = Number(process.env.HUBSPOT_CACHE_TTL_MS ?? 15_000);
 
+/** Fill owner_name on records off the cached owners map (one lookup, map reads
+ *  per record). Records already carry owner_id from mapping. */
+async function withOwners<T extends { owner_id: string | null; owner_name: string | null }>(records: T[]): Promise<T[]> {
+  if (records.length === 0) return records;
+  const owners = await listOwners();
+  for (const r of records) r.owner_name = r.owner_id ? owners.get(r.owner_id)?.name ?? null : null;
+  return records;
+}
+
 interface HsObj { id: string | number; properties: Record<string, string | null | undefined>; }
 interface SearchResponse { total: number; results: HsObj[]; paging?: { next?: { after?: string } }; }
 
@@ -35,9 +45,10 @@ const COMPANY_SORT: Record<string, string> = {
   name: "name", industry: "industry", created_at: "createdate",
 };
 
+interface SearchFilter { propertyName: string; operator: string; value?: string; values?: string[]; }
 interface SearchBody {
   query?: string;
-  filterGroups?: { filters: { propertyName: string; operator: string; value?: string; values?: string[] }[] }[];
+  filterGroups?: { filters: SearchFilter[] }[];
   sorts?: { propertyName: string; direction: "ASCENDING" | "DESCENDING" }[];
   properties: string[];
   limit: number;
@@ -110,7 +121,7 @@ export const hubspotRepo: CrmRepository = {
 
     const res = await search("contacts", body);
     return {
-      records: await attachCompanies(res.results ?? []),
+      records: await withOwners(await attachCompanies(res.results ?? [])),
       total: res.total ?? 0,
       after: res.paging?.next?.after,
     };
@@ -128,7 +139,7 @@ export const hubspotRepo: CrmRepository = {
         const names = await companyNames([String(companyId)]);
         company = { id: String(companyId), name: names.get(String(companyId)) ?? null };
       }
-      return fromHubspotContact(obj, company);
+      return (await withOwners([fromHubspotContact(obj, company)]))[0]!;
     } catch (e) {
       if (isNotFound(e)) return null;
       throw e;
@@ -170,7 +181,7 @@ export const hubspotRepo: CrmRepository = {
     if (opts.q?.trim()) body.query = opts.q.trim();
     const res = await search("companies", body);
     return {
-      records: (res.results ?? []).map(fromHubspotCompany),
+      records: await withOwners((res.results ?? []).map(fromHubspotCompany)),
       total: res.total ?? 0,
       after: res.paging?.next?.after,
     };
@@ -182,7 +193,7 @@ export const hubspotRepo: CrmRepository = {
         `/crm/v3/objects/companies/${id}?properties=${(await safeProps("companies", COMPANY_READ_PROPS)).join(",")}`,
         { cacheTtl: READ_TTL },
       );
-      return fromHubspotCompany(obj);
+      return (await withOwners([fromHubspotCompany(obj)]))[0]!;
     } catch (e) {
       if (isNotFound(e)) return null;
       throw e;
@@ -211,7 +222,7 @@ export const hubspotRepo: CrmRepository = {
     );
     const names = await companyNames([companyId]);
     const company = { id: companyId, name: names.get(companyId) ?? null };
-    return (read.results ?? []).map((o) => fromHubspotContact(o, company));
+    return withOwners((read.results ?? []).map((o) => fromHubspotContact(o, company)));
   },
 
   async listDeals(opts: ListDealsOpts): Promise<Page<DealRecord>> {
@@ -227,7 +238,10 @@ export const hubspotRepo: CrmRepository = {
       }],
     };
     if (opts.q?.trim()) body.query = opts.q.trim();
-    if (opts.stages?.length) body.filterGroups = [{ filters: [{ propertyName: "dealstage", operator: "IN", values: opts.stages }] }];
+    const dealFilters: SearchFilter[] = [];
+    if (opts.stages?.length) dealFilters.push({ propertyName: "dealstage", operator: "IN", values: opts.stages });
+    if (opts.ownerId) dealFilters.push({ propertyName: "hubspot_owner_id", operator: "EQ", value: opts.ownerId });
+    if (dealFilters.length) body.filterGroups = [{ filters: dealFilters }];
     const [res, labels] = await Promise.all([search("deals", body), dealLabels()]);
     const records = (res.results ?? []).map((d) =>
       fromHubspotDeal(
@@ -236,7 +250,7 @@ export const hubspotRepo: CrmRepository = {
         labels.stages.get(d.properties.dealstage ?? "") ?? null,
       ),
     );
-    return { records, total: res.total ?? 0, after: res.paging?.next?.after };
+    return { records: await withOwners(records), total: res.total ?? 0, after: res.paging?.next?.after };
   },
 };
 
@@ -376,11 +390,11 @@ export async function getDeal(id: string): Promise<DealRecord | null> {
       hsFetch<HsObj>(`/crm/v3/objects/deals/${id}?properties=${[...DEAL_READ_PROPS].join(",")}`, { cacheTtl: READ_TTL }),
       dealLabels(),
     ]);
-    return fromHubspotDeal(
+    return (await withOwners([fromHubspotDeal(
       obj,
       labels.pipelines.get(obj.properties.pipeline ?? "") ?? null,
       labels.stages.get(obj.properties.dealstage ?? "") ?? null,
-    );
+    )]))[0]!;
   } catch (e) {
     if (isNotFound(e)) return null;
     throw e;

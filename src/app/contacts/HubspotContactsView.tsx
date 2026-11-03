@@ -55,6 +55,7 @@ export async function HubspotContactsView({
             <th>Company</th>
             <SortableTh label="Title" col="job_title" sort={sort} basePath="/contacts" params={hdrParams} />
             <SortableTh label="Email" col="email" sort={sort} basePath="/contacts" params={hdrParams} />
+            <th>Owner</th>
           </tr>
         </thead>
         <tbody>
@@ -71,6 +72,7 @@ export async function HubspotContactsView({
                 {c.email_bounced && <span className="ml-1 rounded bg-red-100 px-1 text-xs text-red-700">bounced</span>}
                 {c.email_guessed && <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-700" title="Inferred (email_status = Extrapolated) — unverified">guessed</span>}
               </td>
+              <td className="text-neutral-600">{c.owner_name ?? <span className="text-neutral-300">—</span>}</td>
             </tr>
           ))}
         </tbody>

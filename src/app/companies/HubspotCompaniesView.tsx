@@ -54,6 +54,7 @@ export async function HubspotCompaniesView({
             <th>Current client</th>
             <th>Onboarding</th>
             <th>Target group</th>
+            <th>Owner</th>
             <th></th>
           </tr>
         </thead>
@@ -71,6 +72,7 @@ export async function HubspotCompaniesView({
               </td>
               <td className="text-neutral-600">{o.onboarding_status ? <OnboardingBadge status={onboardingLabel.get(o.onboarding_status) ?? o.onboarding_status} /> : <span className="text-neutral-300">—</span>}</td>
               <td className="text-neutral-600">{o.target_group ? (targetLabel.get(o.target_group) ?? o.target_group) : <span className="text-neutral-300">—</span>}</td>
+              <td className="text-neutral-600">{o.owner_name ?? <span className="text-neutral-300">—</span>}</td>
               <td className="w-10 text-right">
                 <a href={o.url} target="_blank" rel="noopener noreferrer" title="Open in HubSpot" className="text-neutral-400 hover:text-orange-600">↗</a>
               </td>

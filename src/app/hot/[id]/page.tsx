@@ -75,6 +75,7 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
         <p className="mt-1 text-sm text-neutral-500">
           {deal.stage ?? "—"} · {money(deal.amount, deal.currency)}
           {" · "}last contacted {deal.last_contacted ? fmtDate(deal.last_contacted) : "never"}
+          {deal.owner_name && <> · owner {deal.owner_name}</>}
           {contact && <> · {contact.full_name}{contact.job_title ? `, ${contact.job_title}` : ""}{company?.name ? ` (${company.name})` : ""}</>}
         </p>
         <div className="mt-2">

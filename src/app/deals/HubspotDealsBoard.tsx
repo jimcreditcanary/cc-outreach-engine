@@ -6,6 +6,8 @@
 import Link from "next/link";
 import { getCrm } from "@/lib/crm";
 import { dealPipelines } from "@/lib/hubspot/repo";
+import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
+import { DealOwnerFilter } from "./DealOwnerFilter";
 import { fmtDate } from "@/lib/format/datetime";
 
 const DUE_DAYS = 14; // the "engage every 2 weeks" rule, inherited from Hot
@@ -24,7 +26,7 @@ function daysSince(iso: string | null): number | null {
   return Number.isNaN(t) ? null : Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
 }
 
-export async function HubspotDealsBoard({ pipelineId, q }: { pipelineId?: string; q?: string }) {
+export async function HubspotDealsBoard({ pipelineId, q, ownerId }: { pipelineId?: string; q?: string; ownerId?: string }) {
   const pipelines = await dealPipelines();
   if (!pipelines.length) {
     return (
@@ -40,7 +42,11 @@ export async function HubspotDealsBoard({ pipelineId, q }: { pipelineId?: string
   const openStages = selected.stages.filter((s) => !s.isClosed);
   const stageIds = openStages.map((s) => s.id);
 
-  const page = await getCrm().listDeals({ q, stages: stageIds, limit: 100, sort: { col: "last_contacted", dir: "asc" } });
+  const [page, owners] = await Promise.all([
+    getCrm().listDeals({ q, stages: stageIds, ownerId, limit: 100, sort: { col: "last_contacted", dir: "asc" } }),
+    listOwners(),
+  ]);
+  const ownerPickList = ownerOptions(owners).map((o) => ({ id: o.id, name: o.name }));
 
   // Group the page's deals by stage label (labels are unique within a pipeline).
   const byStage = new Map<string, typeof page.records>();
@@ -64,16 +70,20 @@ export async function HubspotDealsBoard({ pipelineId, q }: { pipelineId?: string
         {pipelines.map((p) => (
           <Link
             key={p.id}
-            href={`/deals?pipeline=${p.id}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+            href={`/deals?pipeline=${p.id}${q ? `&q=${encodeURIComponent(q)}` : ""}${ownerId ? `&owner=${encodeURIComponent(ownerId)}` : ""}`}
             className={`rounded-full px-3 py-1 text-xs font-medium ${p.id === selected.id ? "bg-neutral-900 text-white" : "border border-neutral-300 text-neutral-600 hover:bg-neutral-100"}`}
           >
             {p.label}
           </Link>
         ))}
-        <form className="ml-auto">
-          <input type="hidden" name="pipeline" value={selected.id} />
-          <input name="q" defaultValue={q ?? ""} placeholder="Search deals…" className="rounded border border-neutral-300 px-3 py-1.5 text-sm" />
-        </form>
+        <div className="ml-auto flex items-center gap-2">
+          <DealOwnerFilter owners={ownerPickList} value={ownerId} />
+          <form>
+            <input type="hidden" name="pipeline" value={selected.id} />
+            {ownerId && <input type="hidden" name="owner" value={ownerId} />}
+            <input name="q" defaultValue={q ?? ""} placeholder="Search deals…" className="rounded border border-neutral-300 px-3 py-1.5 text-sm" />
+          </form>
+        </div>
       </div>
 
       {/* Board: one column per OPEN stage, in HubSpot display order */}
@@ -107,6 +117,7 @@ export async function HubspotDealsBoard({ pipelineId, q }: { pipelineId?: string
                         {d.last_contacted ? <span className={days != null && days > 30 ? "text-red-600" : ""}>· {days}d</span> : <span>· never</span>}
                         {d.next_meeting_at && <span title={d.next_meeting_name ?? undefined}>· 📅 {fmtDate(d.next_meeting_at)}</span>}
                       </div>
+                      {d.owner_name && <div className="mt-0.5 text-[11px] text-neutral-400">👤 {d.owner_name}</div>}
                     </Link>
                   );
                 })}

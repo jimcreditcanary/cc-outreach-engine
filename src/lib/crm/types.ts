@@ -14,6 +14,9 @@ export interface ContactRecord {
   /** The associated company, when known (name is enough for list rows). */
   company_id: string | null;
   company_name: string | null;
+  /** HubSpot owner (hubspot_owner_id) + resolved display name. */
+  owner_id: string | null;
+  owner_name: string | null;
   /** True when this is an un-actioned new lead (HubSpot hs_lead_status=NEW). */
   is_new: boolean;
   /** Raw outreach status (HubSpot hs_lead_status), for detail views. */
@@ -55,6 +58,9 @@ export interface CompanyRecord {
   onboarding_status: string | null;
   /** HubSpot target_group enum value (Banks, Consumer Lending, …). */
   target_group: string | null;
+  /** HubSpot owner (hubspot_owner_id) + resolved display name. */
+  owner_id: string | null;
+  owner_name: string | null;
   created_at: string | null;
   updated_at: string | null;
   url: string;
@@ -95,6 +101,9 @@ export interface DealRecord {
   next_meeting_at: string | null;
   next_meeting_name: string | null;
   next_step: string | null;
+  /** HubSpot owner (hubspot_owner_id) + resolved display name. */
+  owner_id: string | null;
+  owner_name: string | null;
   created_at: string | null;
   updated_at: string | null;
   url: string;
@@ -145,6 +154,8 @@ export interface ListDealsOpts {
   q?: string;
   /** Filter to these HubSpot stage ids (multi-select). */
   stages?: string[];
+  /** Filter to a single HubSpot owner id. */
+  ownerId?: string;
   limit?: number;
   after?: string;
   sort?: { col: "name" | "amount" | "close_date" | "created_at" | "last_contacted"; dir: SortDir };

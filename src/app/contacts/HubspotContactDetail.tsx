@@ -48,6 +48,7 @@ export async function HubspotContactDetail({ id }: { id: string }) {
           )}
           {c.lead_status && <span>Status: {c.is_new ? "New" : c.lead_status}</span>}
           {c.lead_source && <span>Source: {c.lead_source}</span>}
+          {c.owner_name && <span>Owner: <span className="text-neutral-600">{c.owner_name}</span></span>}
           {c.created_at && <span>Added {fmtDate(c.created_at)}</span>}
           <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">Open in HubSpot ↗</a>
         </div>
