@@ -10,6 +10,7 @@ import {
   skipContact,
 } from "../actions";
 import { SKIP_REASONS } from "@/lib/contacts/skipReasons";
+import { SECTORS, humanizeLabel } from "@/lib/format/sector";
 import { SectorBadge } from "@/components/SectorBadge";
 import { currentUserId } from "@/lib/auth/owner";
 import { PendingButton } from "@/components/PendingButton";
@@ -27,7 +28,6 @@ export const dynamic = "force-dynamic";
 const DAILY_CAP_REQUESTS = 15;
 const DAILY_TARGET_TOUCHES = 30;
 
-const SECTORS = ["bank", "broker", "building_society", "credit_union", "direct_lender", "marketplace", "sme_lender", "utility"];
 
 /** Most recent 08:00 UK time, expressed as a UTC ISO string. Used to count
  *  today's LinkedIn touches against the daily cap. Approximation: uses
@@ -486,7 +486,7 @@ function ContactCard({
           </div>
           <select name="org_sector" defaultValue={r.organisation?.sector ?? ""} className={`${fld} w-44`}>
             <option value="">sector…</option>
-            {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
+            {SECTORS.map((s) => <option key={s} value={s}>{humanizeLabel(s)}</option>)}
           </select>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -507,7 +507,7 @@ function ContactCard({
         <input type="hidden" name="contact_id" value={r.id} />
         <span className="uppercase tracking-wide text-neutral-400">Skip:</span>
         <select name="skip_reason" defaultValue={SKIP_REASONS[0]} className={`${fld} w-52 !text-xs`}>
-          {SKIP_REASONS.map((s) => <option key={s} value={s}>{s}</option>)}
+          {SKIP_REASONS.map((s) => <option key={s} value={s}>{humanizeLabel(s)}</option>)}
         </select>
         <input
           name="skip_note"

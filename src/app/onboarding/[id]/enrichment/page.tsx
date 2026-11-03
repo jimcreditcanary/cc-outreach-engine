@@ -12,6 +12,7 @@ import { getCase } from "@/lib/onboarding/cases";
 import { loadEnrichment, type UboRow } from "@/lib/onboarding/enrich";
 import { loadAccounts } from "@/lib/onboarding/accounts";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
+import { humanizeLabel } from "@/lib/format/sector";
 import { PendingButton } from "@/components/PendingButton";
 import { enrichCaseAction, parseAccountsAction } from "../../actions";
 
@@ -120,11 +121,10 @@ export default async function EnrichmentPage({ params }: { params: Promise<{ id:
                 // green, and spell the detail out.
                 const detail = snapshot.company_status_detail;
                 const trulyActive = snapshot.company_status === "active" && !detail;
-                const humanize = (s: string) => s.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
                 return (
                   <span className={`rounded px-2 py-0.5 text-xs font-medium ${trulyActive ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-                    Status: {snapshot.company_status ? humanize(snapshot.company_status) : "—"}
-                    {detail && ` — ${humanize(detail)}`}
+                    Status: {snapshot.company_status ? humanizeLabel(snapshot.company_status) : "—"}
+                    {detail && ` — ${humanizeLabel(detail)}`}
                   </span>
                 );
               })()}

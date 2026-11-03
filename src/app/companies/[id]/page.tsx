@@ -12,13 +12,13 @@ import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { DemoWizard } from "@/components/DemoWizard";
 import { activeBackend } from "@/lib/crm";
 import { HubspotCompanyDetail } from "../HubspotCompanyDetail";
+import { SECTORS, humanizeLabel } from "@/lib/format/sector";
 
 // Enrichment takes 15-30s (homepage scrape + AI summary + feed discovery).
 export const maxDuration = 60;
 
 export const dynamic = "force-dynamic";
 
-const SECTORS = ["bank", "broker", "building_society", "credit_union", "direct_lender", "marketplace", "sme_lender", "utility"];
 const ORG_LABELS = ["Prospect", "Customer", "Partner", "Potential introducer", "Investor", "Lapsed"];
 const DEAL_STATUS = ["open", "won", "lost"];
 
@@ -116,7 +116,7 @@ export default async function CompanyDetail({
           <label className={lbl}>Sector</label>
           <select name="sector" defaultValue={org.sector ?? ""} className={field}>
             <option value="">—</option>
-            {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
+            {SECTORS.map((s) => <option key={s} value={s}>{humanizeLabel(s)}</option>)}
           </select>
         </div>
         <div>
@@ -169,7 +169,7 @@ export default async function CompanyDetail({
                 <form action={setDealStatus} className="flex items-center gap-1">
                   <input type="hidden" name="id" value={d.id} />
                   <select name="status" defaultValue={d.status} className="rounded border border-neutral-200 px-1 py-0.5 text-xs">
-                    {DEAL_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {DEAL_STATUS.map((s) => <option key={s} value={s}>{humanizeLabel(s)}</option>)}
                   </select>
                   <PendingButton className="rounded bg-neutral-100 px-2 py-0.5 text-xs hover:bg-neutral-200" pendingLabel="…">set</PendingButton>
                 </form>

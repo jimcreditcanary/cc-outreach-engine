@@ -10,12 +10,11 @@ import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
 import { activeBackend } from "@/lib/crm";
 import { HubspotCompaniesView } from "./HubspotCompaniesView";
+import { SECTORS, humanizeLabel } from "@/lib/format/sector";
 
 export const dynamic = "force-dynamic";
 
 const SORT_COLS = ["name", "sector", "tier", "label"] as const;
-
-const SECTORS = ["bank", "broker", "building_society", "credit_union", "direct_lender", "marketplace", "sme_lender", "utility"];
 
 interface OrgRow {
   id: string;
@@ -77,7 +76,7 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
         <input name="name" placeholder="New company name…" className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" required />
         <select name="sector" className="rounded border border-neutral-300 px-2 py-1.5 text-sm" defaultValue="">
           <option value="">sector…</option>
-          {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
+          {SECTORS.map((s) => <option key={s} value={s}>{humanizeLabel(s)}</option>)}
         </select>
         <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Adding…">+ Add company</PendingButton>
       </form>

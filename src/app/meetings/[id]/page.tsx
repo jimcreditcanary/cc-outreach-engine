@@ -8,15 +8,13 @@ import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import { Combobox } from "@/components/Combobox";
 import { fmtDateTime, fmtTime } from "@/lib/format/datetime";
+import { SECTORS, humanizeLabel } from "@/lib/format/sector";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
 const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 mb-1";
-// Inline-duplicated SECTORS — see /companies, /linkedin which do the same.
-// Worth a future cleanup into a central const.
-const SECTORS = ["bank", "broker", "building_society", "credit_union", "direct_lender", "marketplace", "sme_lender", "utility"];
 
 export default async function MeetingDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -405,7 +403,7 @@ export default async function MeetingDetail({ params }: { params: Promise<{ id: 
                                 <label className={lbl}>Sector (if new)</label>
                                 <select name="sector" defaultValue="" className={field}>
                                   <option value="">—</option>
-                                  {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
+                                  {SECTORS.map((s) => <option key={s} value={s}>{humanizeLabel(s)}</option>)}
                                 </select>
                               </div>
                             </div>
