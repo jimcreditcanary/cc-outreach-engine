@@ -22,9 +22,12 @@ export async function updateHubspotContact(formData: FormData) {
     job_title: s(formData.get("job_title")),
     mobile: s(formData.get("mobile")),
   };
-  const fullName = s(formData.get("full_name"));
+  // First/last are separate fields now. They're always present in the form, so
+  // send them (first name required; last name may be cleared).
+  const first = s(formData.get("first_name"));
+  if (first) patch.first_name = first;
+  patch.last_name = s(formData.get("last_name"));
   const email = s(formData.get("email"));
-  if (fullName) patch.full_name = fullName;
   if (email) patch.email = email;
   // Only touch `type` when the editor was rendered (property exists), so we
   // never PATCH a non-existent property. Empty selection clears the roles.

@@ -8,6 +8,9 @@
 export interface ContactRecord {
   id: string;
   full_name: string;
+  /** HubSpot firstname / lastname, kept separate for editing. */
+  first_name: string | null;
+  last_name: string | null;
   email: string | null;
   job_title: string | null;
   mobile: string | null;
@@ -112,6 +115,9 @@ export interface DealRecord {
 /** Fields the console can write to a contact. All optional on update. */
 export interface ContactWrite {
   full_name?: string;
+  /** Edit firstname / lastname directly (preferred over full_name splitting). */
+  first_name?: string | null;
+  last_name?: string | null;
   email?: string;
   job_title?: string | null;
   mobile?: string | null;

@@ -79,6 +79,8 @@ export function fromHubspotContact(obj: HsObject, company?: { id: string; name: 
   return {
     id,
     full_name: fullName(p.firstname, p.lastname, email),
+    first_name: str(p.firstname),
+    last_name: str(p.lastname),
     email,
     job_title: str(p.jobtitle),
     mobile: str(p.mobilephone) ?? str(p.phone),
@@ -179,7 +181,11 @@ export function toHubspotCompanyProps(input: CompanyWrite): Props {
  *  the caller actually set (so update doesn't clobber untouched fields). */
 export function toHubspotContactProps(input: ContactWrite): Props {
   const props: Props = {};
-  if (input.full_name !== undefined) {
+  // Prefer explicit first/last (the detail form's split fields); fall back to
+  // splitting a single full_name for callers that still send one.
+  if (input.first_name !== undefined) props.firstname = input.first_name ?? "";
+  if (input.last_name !== undefined) props.lastname = input.last_name ?? "";
+  if (input.full_name !== undefined && input.first_name === undefined && input.last_name === undefined) {
     const { firstname, lastname } = splitName(input.full_name);
     props.firstname = firstname ?? "";
     props.lastname = lastname ?? "";

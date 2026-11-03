@@ -402,6 +402,34 @@ export async function companyDeals(companyId: string): Promise<DealRecord[]> {
   }
 }
 
+/** All company ids associated with a contact (a contact can belong to several).
+ *  Best-effort: [] on any failure. */
+export async function contactCompanyIdList(contactId: string): Promise<string[]> {
+  try {
+    const res = await hsFetch<{ results: { toObjectId: string | number }[] }>(
+      `/crm/v4/objects/contacts/${contactId}/associations/companies?limit=25`, { cacheTtl: READ_TTL },
+    );
+    return (res.results ?? []).map((r) => String(r.toObjectId));
+  } catch {
+    return [];
+  }
+}
+
+/** Deals associated with a contact (for the contact-view associations panel).
+ *  Best-effort: [] on any failure. */
+export async function contactDeals(contactId: string): Promise<DealRecord[]> {
+  try {
+    const res = await hsFetch<{ results: { toObjectId: string | number }[] }>(
+      `/crm/v4/objects/contacts/${contactId}/associations/deals?limit=25`, { cacheTtl: READ_TTL },
+    );
+    const ids = (res.results ?? []).map((r) => String(r.toObjectId));
+    const deals = await Promise.all(ids.map((id) => getDeal(id).catch(() => null)));
+    return deals.filter((d): d is DealRecord => d != null);
+  } catch {
+    return [];
+  }
+}
+
 /** A single deal by id, with pipeline/stage resolved to labels. For the Hot
  *  "work this deal" view. */
 export async function getDeal(id: string): Promise<DealRecord | null> {
