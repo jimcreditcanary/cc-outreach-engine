@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import {
   getCaseByToken, saveMerchantForm, saveBusinessComplianceSignatory, saveUboKyc,
-  saveBankAccounts, saveDirectDebit, finalizeMerchantSubmission,
+  addBankAccounts, removeBankAccount, countBankAccounts, saveDirectDebit, finalizeMerchantSubmission,
   type MerchantFormData, type UboKycInput, type BankAccountInput, type DirectDebitDetails,
 } from "@/lib/onboarding/merchantForm";
 import { saveUpload } from "@/lib/onboarding/uploads";
@@ -159,20 +159,20 @@ function parseUbos(formData: FormData): UboKycInput[] {
   return out;
 }
 
-function parseBankAccounts(formData: FormData): BankAccountInput[] {
+const BANK_PURPOSES = new Set(["settlement", "disbursal", "direct_debit"]);
+function parseAddBankAccounts(formData: FormData): BankAccountInput[] {
+  const count = Math.min(Number(str(formData.get("add_count")) || 0), 10);
   const out: BankAccountInput[] = [];
-  const settlement: BankAccountInput = {
-    purpose: "settlement",
-    account_name: str(formData.get("settle_account_name")), bank_name: str(formData.get("settle_bank_name")),
-    sort_code: str(formData.get("settle_sort_code")), account_number: str(formData.get("settle_account_number")),
-  };
-  if (settlement.account_number) out.push(settlement);
-  const dd: BankAccountInput = {
-    purpose: "direct_debit",
-    account_name: str(formData.get("dd_account_name")), bank_name: str(formData.get("dd_bank_name")),
-    sort_code: str(formData.get("dd_sort_code")), account_number: str(formData.get("dd_account_number")),
-  };
-  if (dd.account_number) out.push(dd);
+  for (let i = 0; i < count; i++) {
+    const number = str(formData.get(`add_${i}_number`));
+    if (!number) continue;
+    const p = str(formData.get(`add_${i}_purpose`));
+    out.push({
+      purpose: (BANK_PURPOSES.has(p) ? p : "disbursal") as BankAccountInput["purpose"],
+      account_name: str(formData.get(`add_${i}_name`)), bank_name: str(formData.get(`add_${i}_bank`)),
+      sort_code: str(formData.get(`add_${i}_sort`)), account_number: number,
+    });
+  }
   return out;
 }
 
@@ -273,8 +273,13 @@ export async function savePageAction(formData: FormData) {
         else { await setPageComplete(db, c.id, "ubos", true); dest = advance(); }
       }
     } else if (page === "accounts") {
-      await saveBankAccounts(db, c.id, parseBankAccounts(formData));
-      if (mode === "continue") { await setPageComplete(db, c.id, "accounts", true); dest = advance(); }
+      // Append newly-entered accounts (each CoP-checked); existing ones are kept.
+      const toAdd = parseAddBankAccounts(formData);
+      if (toAdd.length) await addBankAccounts(db, c.id, toAdd);
+      if (mode === "continue") {
+        if ((await countBankAccounts(db, c.id)) === 0) dest = `${back}?page=accounts&error=account${qp(v2)}`;
+        else { await setPageComplete(db, c.id, "accounts", true); dest = advance(); }
+      }
     } else if (page === "payments") {
       await saveDirectDebit(db, c.id, parseDd(formData));
       if (mode === "continue") { await setPageComplete(db, c.id, "payments", true); dest = advance(); }
@@ -292,6 +297,19 @@ export async function savePageAction(formData: FormData) {
   }
   if (failed) redirect(`${back}?page=${page}&error=save${qp(v2)}`);
   redirect(dest);
+}
+
+/** Remove one saved bank account from the accounts page. */
+export async function removeBankAccountAction(formData: FormData) {
+  const token = str(formData.get("token"));
+  const v2 = str(formData.get("v2"));
+  const accountId = str(formData.get("account_id"));
+  const back = `/m/${encodeURIComponent(token)}`;
+  const db = serviceClient();
+  const c = await getCaseByToken(db, token);
+  if (!c) redirect(`${back}?error=token`);
+  if (accountId) await removeBankAccount(db, c.id, accountId).catch(() => {});
+  redirect(`${back}?page=accounts${qp(v2)}`);
 }
 
 /** Submit for Approval (from the review page): project the company answers into

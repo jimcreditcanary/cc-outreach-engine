@@ -188,39 +188,64 @@ export async function saveUboKyc(db: DB, caseId: string, uboKyc: UboKycInput[]):
 /** Replace the bank accounts — sort code + number encrypted at rest, CoP per
  *  account (best-effort → "unavailable"). Throws if encryption isn't configured
  *  and real accounts are supplied. */
+/** Encrypt + CoP-check + insert one bank account. */
+async function insertBankAccount(db: DB, caseId: string, a: BankAccountInput): Promise<void> {
+  const sort = (a.sort_code ?? "").trim();
+  const num = (a.account_number ?? "").trim();
+  let cop_result: string | null = null;
+  let cop_matched_name: string | null = null;
+  try {
+    const r = await getCop().check({ sortCode: sort, accountNumber: num, name: a.account_name ?? "", accountType: "business" });
+    cop_result = r.result;
+    cop_matched_name = r.matchedName;
+  } catch {
+    cop_result = "unavailable";
+  }
+  const ins = await db.from("onboarding_bank_accounts").insert({
+    case_id: caseId,
+    purpose: a.purpose,
+    account_name: a.account_name ?? null,
+    bank_name: a.bank_name ?? null,
+    sort_code_enc: encryptField(sort),
+    account_number_enc: encryptField(num),
+    account_tail: num.replace(/\D/g, "").slice(-4) || null,
+    cop_result,
+    cop_matched_name,
+    cop_checked_at: new Date().toISOString(),
+  });
+  if (ins.error) throw ins.error;
+}
+
+/** Replace ALL bank accounts for a case (the one-shot single-page form path). */
 export async function saveBankAccounts(db: DB, caseId: string, bankAccounts: BankAccountInput[]): Promise<number> {
   const accounts = bankAccounts.filter((a) => (a.account_number ?? "").trim());
   await db.from("onboarding_bank_accounts").delete().eq("case_id", caseId);
   if (!accounts.length) return 0;
   if (!encryptionConfigured()) throw new Error("Payment capture isn't configured yet — please contact us to complete this.");
-  const cop = getCop();
-  for (const a of accounts) {
-    const sort = (a.sort_code ?? "").trim();
-    const num = (a.account_number ?? "").trim();
-    let cop_result: string | null = null;
-    let cop_matched_name: string | null = null;
-    try {
-      const r = await cop.check({ sortCode: sort, accountNumber: num, name: a.account_name ?? "", accountType: "business" });
-      cop_result = r.result;
-      cop_matched_name = r.matchedName;
-    } catch {
-      cop_result = "unavailable";
-    }
-    const ins = await db.from("onboarding_bank_accounts").insert({
-      case_id: caseId,
-      purpose: a.purpose,
-      account_name: a.account_name ?? null,
-      bank_name: a.bank_name ?? null,
-      sort_code_enc: encryptField(sort),
-      account_number_enc: encryptField(num),
-      account_tail: num.replace(/\D/g, "").slice(-4) || null,
-      cop_result,
-      cop_matched_name,
-      cop_checked_at: new Date().toISOString(),
-    });
-    if (ins.error) throw ins.error;
-  }
+  for (const a of accounts) await insertBankAccount(db, caseId, a);
   return accounts.length;
+}
+
+/** APPEND bank accounts (the wizard's "add a disbursal account" path — never
+ *  deletes, so revisiting the page can't wipe accounts whose numbers can't be
+ *  prefilled). */
+export async function addBankAccounts(db: DB, caseId: string, bankAccounts: BankAccountInput[]): Promise<number> {
+  const accounts = bankAccounts.filter((a) => (a.account_number ?? "").trim());
+  if (!accounts.length) return 0;
+  if (!encryptionConfigured()) throw new Error("Payment capture isn't configured yet — please contact us to complete this.");
+  for (const a of accounts) await insertBankAccount(db, caseId, a);
+  return accounts.length;
+}
+
+/** Remove one bank account (scoped to the case). */
+export async function removeBankAccount(db: DB, caseId: string, accountId: string): Promise<void> {
+  await db.from("onboarding_bank_accounts").delete().eq("case_id", caseId).eq("id", accountId);
+}
+
+/** How many bank accounts the case has on file. */
+export async function countBankAccounts(db: DB, caseId: string): Promise<number> {
+  const { count } = await db.from("onboarding_bank_accounts").select("id", { count: "exact", head: true }).eq("case_id", caseId);
+  return count ?? 0;
 }
 
 /** Upsert the Direct Debit sub-form (non-sensitive questionnaire fields). */

@@ -19,7 +19,7 @@ import { PendingButton } from "@/components/PendingButton";
 import { AddressLookup } from "@/components/AddressLookup";
 import { COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, collectDpos, dpoSummary, visibleFormPages, type AnswerFieldDef } from "./fields";
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
-import { setEditorAction, savePageAction, submitForApprovalAction } from "./actions";
+import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAccountAction } from "./actions";
 
 const field = "w-full rounded border border-neutral-300 px-3 py-2 text-sm focus:border-[#003566] focus:outline-none focus:ring-1 focus:ring-[#003566]";
 const lbl = "block text-sm font-medium text-neutral-800 mb-1";
@@ -110,6 +110,7 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
       {error === "required" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please complete the required fields, or tick &ldquo;don&apos;t know&rdquo; where offered, before continuing.</p>}
       {error === "email" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please use a company email address, not a personal one (e.g. not gmail/outlook/yahoo).</p>}
       {error === "attest" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please confirm the beneficial-owner list is complete before continuing.</p>}
+      {error === "account" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please add at least one bank account before continuing.</p>}
       {error === "save" && <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">Something went wrong saving — please try again.</p>}
 
       <div className="mt-5">
@@ -280,38 +281,84 @@ function UbosPage({ token, c, enrichment, merchant, answers, v2 }: {
   );
 }
 
+function CopBadge({ result, matched }: { result: string; matched: string | null }) {
+  const r = result.toLowerCase();
+  const cls = r.includes("full") ? "bg-emerald-100 text-emerald-700"
+    : r.includes("close") ? "bg-amber-100 text-amber-800"
+    : r.includes("no") ? "bg-red-100 text-red-700"
+    : "bg-neutral-100 text-neutral-500";
+  return <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${cls}`} title={matched ?? undefined}>CoP: {result}</span>;
+}
+
 function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; v2?: string }) {
-  const showSettle = requiresPayments(c.product_groups);
-  const showDd = requiresDirectDebit(c.product_groups);
-  const settleTail = merchant.bankAccounts.find((a) => a.purpose === "settlement")?.account_tail;
-  const ddTail = merchant.bankAccounts.find((a) => a.purpose === "direct_debit")?.account_tail;
+  const purposeOpts: { value: string; label: string }[] = [];
+  if (requiresPayments(c.product_groups)) purposeOpts.push({ value: "settlement", label: "Settlement" });
+  purposeOpts.push({ value: "disbursal", label: "Disbursal" });
+  if (requiresDirectDebit(c.product_groups)) purposeOpts.push({ value: "direct_debit", label: "Direct Debit collection" });
+  const purposeLabel = (p: string) => purposeOpts.find((o) => o.value === p)?.label ?? p.replace(/_/g, " ");
+  const addCount = 2;
   return (
-    <PageForm token={token} page="accounts" v2={v2} title="Bank accounts" intro="Stored encrypted and verified with Confirmation of Payee.">
-      {showSettle && (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-[#003566]">Bank accounts</h2>
+        <p className="mt-0.5 text-sm text-neutral-500">Add the account(s) we&apos;ll disburse to / settle with. Each is stored encrypted and checked with Confirmation of Payee — you can add several.</p>
+      </div>
+
+      {merchant.bankAccounts.length > 0 && (
+        <section className="rounded-lg border border-neutral-200 bg-white p-4">
+          <h3 className="mb-2 text-sm font-semibold text-neutral-700">On file</h3>
+          <ul className="space-y-2">
+            {merchant.bankAccounts.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center gap-2 rounded border border-neutral-200 p-2 text-sm">
+                <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] font-medium text-neutral-600">{purposeLabel(a.purpose)}</span>
+                <span className="text-neutral-800">{a.account_name || "—"}</span>
+                <span className="font-mono text-neutral-500">••••{a.account_tail ?? "----"}</span>
+                {a.cop_result && <CopBadge result={a.cop_result} matched={a.cop_matched_name} />}
+                <form action={removeBankAccountAction} className="ml-auto">
+                  <input type="hidden" name="token" value={token} />
+                  <input type="hidden" name="v2" value={v2 ?? ""} />
+                  <input type="hidden" name="account_id" value={a.id} />
+                  <button type="submit" className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100">Remove</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <form action={savePageAction} className="space-y-4">
+        <input type="hidden" name="token" value={token} />
+        <input type="hidden" name="page" value="accounts" />
+        <input type="hidden" name="v2" value={v2 ?? ""} />
+        <input type="hidden" name="add_count" value={addCount} />
         <fieldset className="rounded-lg border border-neutral-200 bg-white p-4">
-          <legend className="px-1 text-sm font-semibold text-[#003566]">Settlement account</legend>
-          <p className="mt-1 text-xs text-neutral-500">{settleTail ? `On file: ••••${settleTail} — re-enter to change.` : "The business bank account we'll settle funds to."}</p>
-          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div><label htmlFor="settle_account_name" className={lbl}>Account name</label><input id="settle_account_name" name="settle_account_name" className={field} /></div>
-            <div><label htmlFor="settle_bank_name" className={lbl}>Bank</label><input id="settle_bank_name" name="settle_bank_name" className={field} /></div>
-            <div><label htmlFor="settle_sort_code" className={lbl}>Sort code</label><input id="settle_sort_code" name="settle_sort_code" inputMode="numeric" placeholder="00-00-00" className={field} /></div>
-            <div><label htmlFor="settle_account_number" className={lbl}>Account number</label><input id="settle_account_number" name="settle_account_number" inputMode="numeric" placeholder="8 digits" className={field} /></div>
+          <legend className="px-1 text-sm font-semibold text-[#003566]">Add account(s)</legend>
+          <div className="mt-2 space-y-4">
+            {Array.from({ length: addCount }).map((_, i) => (
+              <div key={i} className="grid grid-cols-1 gap-3 border-t border-neutral-100 pt-3 first:border-0 first:pt-0 sm:grid-cols-2">
+                <div>
+                  <label htmlFor={`add_${i}_purpose`} className={lbl}>Account type</label>
+                  <select id={`add_${i}_purpose`} name={`add_${i}_purpose`} defaultValue={purposeOpts[0]?.value} className={field}>
+                    {purposeOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div><label htmlFor={`add_${i}_name`} className={lbl}>Account name</label><input id={`add_${i}_name`} name={`add_${i}_name`} className={field} /></div>
+                <div><label htmlFor={`add_${i}_bank`} className={lbl}>Bank</label><input id={`add_${i}_bank`} name={`add_${i}_bank`} className={field} /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label htmlFor={`add_${i}_sort`} className={lbl}>Sort code</label><input id={`add_${i}_sort`} name={`add_${i}_sort`} inputMode="numeric" placeholder="00-00-00" className={field} /></div>
+                  <div><label htmlFor={`add_${i}_number`} className={lbl}>Account number</label><input id={`add_${i}_number`} name={`add_${i}_number`} inputMode="numeric" placeholder="8 digits" className={field} /></div>
+                </div>
+              </div>
+            ))}
           </div>
+          <p className="mt-2 text-xs text-neutral-400">Leave rows blank if not needed. Save to add more rows.</p>
         </fieldset>
-      )}
-      {showDd && (
-        <fieldset className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
-          <legend className="px-1 text-sm font-semibold text-[#003566]">Direct Debit collection account</legend>
-          <p className="mt-1 text-xs text-neutral-500">{ddTail ? `On file: ••••${ddTail} — re-enter to change.` : "The account Direct Debit collections are paid into."}</p>
-          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div><label htmlFor="dd_account_name" className={lbl}>Account name</label><input id="dd_account_name" name="dd_account_name" className={field} /></div>
-            <div><label htmlFor="dd_bank_name" className={lbl}>Bank</label><input id="dd_bank_name" name="dd_bank_name" className={field} /></div>
-            <div><label htmlFor="dd_sort_code" className={lbl}>Sort code</label><input id="dd_sort_code" name="dd_sort_code" inputMode="numeric" placeholder="00-00-00" className={field} /></div>
-            <div><label htmlFor="dd_account_number" className={lbl}>Account number</label><input id="dd_account_number" name="dd_account_number" inputMode="numeric" placeholder="8 digits" className={field} /></div>
-          </div>
-        </fieldset>
-      )}
-    </PageForm>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="submit" name="mode" value="draft" className="rounded border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100">Save &amp; finish later</button>
+          <button type="submit" name="mode" value="continue" className="rounded bg-[#003566] px-5 py-2 text-sm font-semibold text-white hover:bg-[#002a52]">Continue →</button>
+        </div>
+      </form>
+    </div>
   );
 }
 
