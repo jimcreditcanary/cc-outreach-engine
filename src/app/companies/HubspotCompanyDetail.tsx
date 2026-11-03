@@ -18,6 +18,8 @@ import { companyDeals } from "@/lib/hubspot/repo";
 import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
 import { startOnboardingAction } from "@/app/onboarding/actions";
 import { setUpBillingAction } from "../billing/actions";
+import { merchantFormUrl } from "@/lib/onboarding/merchantForm";
+import { CopyButton } from "@/components/CopyButton";
 
 const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
 const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 mb-1";
@@ -41,7 +43,7 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
   const bdb = serviceClient();
   const [{ data: billingAccts }, { data: caseRows }, customer] = await Promise.all([
     bdb.from("billing_accounts").select("id, status").eq("hubspot_company_id", id).order("created_at", { ascending: false }).limit(1),
-    bdb.from("onboarding_cases").select("id, status").eq("hubspot_company_id", id).neq("status", "cancelled").order("updated_at", { ascending: false }).limit(1),
+    bdb.from("onboarding_cases").select("id, status, merchant_form_token").eq("hubspot_company_id", id).neq("status", "cancelled").order("updated_at", { ascending: false }).limit(1),
     isCustomer(bdb, id),
   ]);
   // Customer status = the local "Active Customer" flag (the button), NOT
@@ -72,32 +74,6 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
           {onboardingText && <OnboardingBadge status={onboardingText} />}
           {co.is_partner && <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">partner</span>}
           {co.icp && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">ICP</span>}
-          {/* Onboarding — stateful: Continue+stage once a case exists, else Start (deal picker). */}
-          {onboardingCase ? (
-            <Link href={`/onboarding/${onboardingCase.id}`} className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 hover:underline">Onboarding: {onboardingCase.status} →</Link>
-          ) : onboardDeals.length === 1 ? (
-            <form action={startOnboardingAction}>
-              <input type="hidden" name="deal_id" value={onboardDeals[0]!.id} />
-              <PendingButton className="rounded border border-amber-300 px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-50" pendingLabel="Starting…">Start onboarding</PendingButton>
-            </form>
-          ) : onboardDeals.length > 1 ? (
-            <form action={startOnboardingAction} className="flex items-center gap-1">
-              <select name="deal_id" defaultValue={onboardDeals[0]!.id} className="rounded border border-amber-300 px-1 py-0.5 text-xs">
-                {onboardDeals.map((d) => <option key={d.id} value={d.id}>{d.name ?? d.id}{d.stage ? ` · ${d.stage}` : ""}</option>)}
-              </select>
-              <PendingButton className="rounded border border-amber-300 px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-50" pendingLabel="Starting…">Start onboarding</PendingButton>
-            </form>
-          ) : (
-            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-400">No deal to onboard</span>
-          )}
-          {billingAcct ? (
-            <Link href={`/billing/${billingAcct.id}`} className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-700 hover:underline">Billing: {billingAcct.status} →</Link>
-          ) : hasOnboardedCase ? (
-            <form action={setUpBillingAction}>
-              <input type="hidden" name="company_id" value={id} />
-              <button type="submit" className="rounded border border-indigo-300 px-1.5 py-0.5 text-xs text-indigo-700 hover:bg-indigo-50">Set up billing</button>
-            </form>
-          ) : null}
           <form action={toggleCustomerAction} className="ml-auto">
             <input type="hidden" name="company_id" value={id} />
             <input type="hidden" name="on" value={customer ? "false" : "true"} />
@@ -118,6 +94,66 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
           <a href={co.url} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">Open in HubSpot ↗</a>
         </div>
       </header>
+
+      {/* Onboarding + billing blocks — appear once the company is an Active Customer.
+          The onboarding block carries the shareable customer link (salesperson sends
+          it; no email ever goes to the customer). */}
+      {customer && (
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <section className="rounded-lg border border-neutral-200 bg-white p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-700">Onboarding</h2>
+              {onboardingCase && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">{onboardingCase.status.replace(/_/g, " ")}</span>}
+            </div>
+            {onboardingCase ? (
+              <div className="space-y-2">
+                <Link href={`/onboarding/${onboardingCase.id}`} className="inline-block rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">Open onboarding case →</Link>
+                {onboardingCase.merchant_form_token && (
+                  <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 p-2">
+                    <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Customer onboarding link</p>
+                    <div className="flex items-start gap-2">
+                      <a href={merchantFormUrl(onboardingCase.merchant_form_token)} target="_blank" rel="noopener noreferrer" className="break-all text-xs text-blue-700 hover:underline">{merchantFormUrl(onboardingCase.merchant_form_token)}</a>
+                      <CopyButton text={merchantFormUrl(onboardingCase.merchant_form_token)} label="Copy" />
+                    </div>
+                    <p className="mt-1 text-[11px] text-neutral-400">Send this to the customer to complete their onboarding form.</p>
+                  </div>
+                )}
+              </div>
+            ) : onboardDeals.length === 0 ? (
+              <p className="text-sm text-neutral-500">No deal to onboard — link a deal in HubSpot to start.</p>
+            ) : onboardDeals.length === 1 ? (
+              <form action={startOnboardingAction}>
+                <input type="hidden" name="deal_id" value={onboardDeals[0]!.id} />
+                <PendingButton className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700" pendingLabel="Starting…">Start onboarding</PendingButton>
+              </form>
+            ) : (
+              <form action={startOnboardingAction} className="flex flex-wrap items-center gap-2">
+                <select name="deal_id" defaultValue={onboardDeals[0]!.id} className="rounded border border-neutral-300 px-2 py-1 text-xs">
+                  {onboardDeals.map((d) => <option key={d.id} value={d.id}>{d.name ?? d.id}{d.stage ? ` · ${d.stage}` : ""}</option>)}
+                </select>
+                <PendingButton className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700" pendingLabel="Starting…">Start onboarding</PendingButton>
+              </form>
+            )}
+          </section>
+
+          <section className="rounded-lg border border-neutral-200 bg-white p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-700">Billing</h2>
+              {billingAcct && <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">{billingAcct.status.replace(/_/g, " ")}</span>}
+            </div>
+            {billingAcct ? (
+              <Link href={`/billing/${billingAcct.id}`} className="inline-block rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">Open billing →</Link>
+            ) : hasOnboardedCase ? (
+              <form action={setUpBillingAction}>
+                <input type="hidden" name="company_id" value={id} />
+                <PendingButton className="rounded border border-indigo-300 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50" pendingLabel="Setting up…">Set up billing →</PendingButton>
+              </form>
+            ) : (
+              <p className="text-sm text-neutral-500">Billing opens once onboarding is approved.</p>
+            )}
+          </section>
+        </div>
+      )}
 
       {/* Edit */}
       <form action={updateHubspotCompany} className="grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 sm:grid-cols-2">

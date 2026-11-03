@@ -91,7 +91,7 @@ export default async function CustomersPage() {
                   <td className="py-2">{onb ? <span className={`rounded px-1.5 py-0.5 text-xs ${ONB_STYLE[onb] ?? "bg-neutral-100 text-neutral-600"}`}>{onb}</span> : <span className="text-neutral-400">—</span>}</td>
                   <td className="py-2">{acct ? <span className={`rounded px-1.5 py-0.5 text-xs ${BILL_STYLE[acct.status] ?? "bg-neutral-100 text-neutral-600"}`}>{acct.status}</span> : <span className="text-neutral-400">—</span>}</td>
                   <td className="py-2 text-neutral-600">{inv ? `${formatPence(inv.total_pence)} · ${inv.period_month.slice(0, 7)}` : "—"}</td>
-                  <td className="py-2 text-right"><Link href={`/customers/${id}`} className="text-blue-600 hover:underline">View →</Link></td>
+                  <td className="py-2 text-right"><Link href={`/companies/${id}`} className="text-blue-600 hover:underline">View →</Link></td>
                 </tr>
               );
             })}
