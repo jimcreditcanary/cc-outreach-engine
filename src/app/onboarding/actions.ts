@@ -16,7 +16,7 @@ import {
   addStakeholder, removeStakeholder, listStakeholders, logCaseEvent,
   readyToComplete, isOnboardingRole, ONBOARDING_ROLES,
 } from "@/lib/onboarding/cases";
-import { requestApiSandbox, sendMerchantInvite } from "@/lib/onboarding/notify";
+import { requestApiSandbox } from "@/lib/onboarding/notify";
 import { enrichCompanyForCase } from "@/lib/onboarding/enrich";
 import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
 import { extractUpload } from "@/lib/onboarding/uploads";
@@ -182,20 +182,10 @@ export async function removeStakeholderAction(formData: FormData) {
   redirect(`/onboarding/${id}?step=stakeholders`);
 }
 
-export async function setSandboxAction(formData: FormData) {
-  const me = await currentUser();
-  if (!me) redirect("/login");
-  const id = str(formData.get("case_id"));
-  if (!id) return redirect("/onboarding");
-  const required = str(formData.get("api_sandbox_required")) === "on";
-  const db = serviceClient();
-  await updateCase(db, id, { api_sandbox_required: required });
-  await logCaseEvent(db, id, "sandbox_toggled", actorOf(me), { api_sandbox_required: required });
-  revalidatePath(`/onboarding/${id}?step=finish`);
-  redirect(`/onboarding/${id}?step=finish`);
-}
-
-/** Finish — mark the internal stage complete; fire the API-sandbox request if asked. */
+/** Finish — complete internal onboarding (feedback item 7a): generate the
+ *  document pack (item 6) and make the customer onboarding link live. No email
+ *  is ever sent to the customer — the salesperson shares the link. Folds in the
+ *  API-sandbox toggle (the separate "Save toggle" button is gone). */
 export async function completeInternalAction(formData: FormData) {
   const me = await currentUser();
   if (!me) redirect("/login");
@@ -211,60 +201,35 @@ export async function completeInternalAction(formData: FormData) {
     return redirect(`/onboarding/${id}`);
   }
 
-  await updateCase(db, id, { status: "internal_complete" });
-  await logCaseEvent(db, id, "internal_complete", actorOf(me), { product_groups: c.product_groups });
-  if (c.hubspot_deal_id) await syncDealOnboardingStatus(c.hubspot_deal_id, "internal_complete").catch(() => {});
+  // API-sandbox toggle folded into this action (no separate Save button).
+  const sandbox = str(formData.get("api_sandbox_required")) === "on";
+  await updateCase(db, id, { api_sandbox_required: sandbox });
 
-  if (c.api_sandbox_required) {
+  // Generate the onboarding document pack now (item 6), decoupled from the late
+  // docs_generated status so it doesn't skip the customer step.
+  let docsMsg = "";
+  try {
+    const r = await generateDocsForCase(db, id, actorOf(me), { advanceStatus: false });
+    docsMsg = ` · ${r.generated} document${r.generated === 1 ? "" : "s"} generated`;
+  } catch (e) {
+    docsMsg = ` · documents not generated (${(e as Error).message})`;
+  }
+
+  // Internal complete → the customer onboarding link is now live. The merchant
+  // form advances itself to in-progress / submitted as the customer uses it.
+  await updateCase(db, id, { status: "merchant_invited" });
+  await logCaseEvent(db, id, "internal_complete", actorOf(me), { product_groups: c.product_groups, sandbox });
+  await logCaseEvent(db, id, "customer_link_ready", actorOf(me), {});
+  if (c.hubspot_deal_id) await syncDealOnboardingStatus(c.hubspot_deal_id, "merchant_invited").catch(() => {});
+
+  if (sandbox) {
     await requestApiSandbox(db, id).catch(() => {});
     await logCaseEvent(db, id, "api_sandbox_requested", actorOf(me), {});
   }
 
-  await flash("success", "Internal onboarding complete. Merchant invite comes in Phase 3.");
+  await flash("success", `Internal onboarding complete — share the customer link below${docsMsg}.`);
   revalidatePath(`/onboarding/${id}`);
-  redirect(`/onboarding/${id}`);
-}
-
-/** Phase 3 — invite the merchant to complete the public onboarding form. */
-export async function inviteMerchantAction(formData: FormData) {
-  const me = await currentUser();
-  if (!me) redirect("/login");
-  const id = str(formData.get("case_id"));
-  if (!id) return redirect("/onboarding");
-  const emailOverride = str(formData.get("email")).toLowerCase();
-  const db = serviceClient();
-  const c = await getCase(db, id);
-  if (!c) { await flash("error", "Case not found."); return redirect("/onboarding"); }
-
-  // Merchant email: explicit override, else the authorised-signatory
-  // stakeholder's contact email, else the first stakeholder's.
-  let toEmail = emailOverride;
-  let firstName: string | null = null;
-  if (!toEmail) {
-    const stakeholders = await listStakeholders(db, id);
-    const sig = stakeholders.find((s) => s.role === "authorised_signatory") ?? stakeholders[0];
-    if (sig) {
-      const ct = await hubspotRepo.getContact(sig.hubspot_contact_id).catch(() => null);
-      toEmail = (ct?.email ?? "").toLowerCase();
-      firstName = ct?.full_name ? ct.full_name.split(/\s+/)[0]! : null;
-    }
-  }
-  if (!toEmail) {
-    await flash("error", "No merchant email — add an authorised signatory (step 3) or enter an email.");
-    return redirect(`/onboarding/${id}?step=finish`);
-  }
-
-  try {
-    await sendMerchantInvite(db, { token: c.merchant_form_token, toEmail, firstName });
-    await updateCase(db, id, { status: "merchant_invited" });
-    await logCaseEvent(db, id, "merchant_invited", actorOf(me), { to: toEmail });
-    if (c.hubspot_deal_id) await syncDealOnboardingStatus(c.hubspot_deal_id, "merchant_invited").catch(() => {});
-    await flash("success", `Merchant invite sent to ${toEmail}.`);
-  } catch (e) {
-    await flash("error", `Invite failed: ${(e as Error).message}`);
-  }
-  revalidatePath(`/onboarding/${id}`);
-  redirect(`/onboarding/${id}`);
+  redirect(`/onboarding/${id}?step=finish`);
 }
 
 /** Phase 2b — fetch + parse the latest filed iXBRL accounts for a case. */

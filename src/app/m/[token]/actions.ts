@@ -9,6 +9,7 @@ import { serviceClient } from "@/lib/db/client";
 import { getCaseByToken, saveMerchantForm, type MerchantFormData, type UboKycInput, type BankAccountInput } from "@/lib/onboarding/merchantForm";
 import { saveUpload } from "@/lib/onboarding/uploads";
 import { notifyMerchantSubmitted } from "@/lib/onboarding/notify";
+import { generateDocsForCase } from "@/lib/onboarding/docgen";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 
@@ -103,6 +104,10 @@ export async function submitMerchantFormAction(formData: FormData) {
         await saveUpload(db, c.id, { name: f.name, type: f.type, bytes });
       } catch { /* best-effort */ }
     }
+    // Regenerate the document pack with the customer's submitted data so ops
+    // reviews a complete set (best-effort; keeps the merchant_submitted status).
+    await generateDocsForCase(db, c.id, { id: null, email: "merchant" }, { advanceStatus: false }).catch(() => {});
+    // Route to ops@ for internal review (feedback item 7b).
     await notifyMerchantSubmitted(db, c.id).catch(() => {});
   } catch (e) {
     console.error(`[merchant-submit] save failed for case ${c.id}:`, e);

@@ -16,8 +16,8 @@ import { fmtDate } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
 import type { ContactRecord } from "@/lib/crm/types";
 import {
-  getCase, listStakeholders, stepStatus, firstIncompleteStep, readyToComplete,
-  WIZARD_STEPS, ONBOARDING_ROLES, type WizardStepId, type OnboardingCase, type Stakeholder,
+  getCase, listStakeholders, listCaseEvents, stepStatus, firstIncompleteStep, readyToComplete,
+  WIZARD_STEPS, ONBOARDING_ROLES, type WizardStepId, type OnboardingCase, type Stakeholder, type CaseEvent,
 } from "@/lib/onboarding/cases";
 import {
   PRODUCT_GROUPS, PRODUCT_GROUP_KEYS, lockedSelections,
@@ -26,7 +26,7 @@ import {
 } from "@/lib/onboarding/productGroups";
 import {
   saveCompanyAction, saveProductsAction, addStakeholderAction, removeStakeholderAction,
-  setSandboxAction, completeInternalAction, cancelCaseAction, inviteMerchantAction,
+  completeInternalAction, cancelCaseAction,
   addContactToCompanyAction, pullOfficersUbosAction,
 } from "../actions";
 import { merchantFormUrl } from "@/lib/onboarding/merchantForm";
@@ -47,6 +47,29 @@ const DOC_LABELS: Record<OnboardingDocKind, string> = {
   merchant_onboarding_form: "Merchant Onboarding Form",
   dd_questionnaire: "DD Questionnaire",
 };
+
+// Readable labels for the case-history timeline (onboarding_events).
+const EVENT_LABELS: Record<string, string> = {
+  case_created: "Case created",
+  company_confirmed: "Company confirmed",
+  products_set: "Products selected",
+  stakeholder_added: "Stakeholder added",
+  stakeholder_removed: "Stakeholder removed",
+  contact_created: "Contact created",
+  ch_enriched: "Companies House enrichment",
+  accounts_parsed: "Accounts parsed",
+  internal_complete: "Internal onboarding completed",
+  customer_link_ready: "Customer link created",
+  api_sandbox_requested: "API sandbox requested",
+  merchant_submitted: "Customer submitted form",
+  privacy_assessed: "Privacy policy assessed",
+  docs_generated: "Documents generated",
+  drive_filed: "Filed to Google Drive",
+  ubo_checks_run: "UBO checks run",
+  approved: "Approved & onboarded",
+  cancelled: "Cancelled",
+};
+const humanEvent = (e: string): string => EVENT_LABELS[e] ?? e.replace(/_/g, " ");
 
 export default async function CaseWizardPage({
   params, searchParams,
@@ -433,7 +456,7 @@ function PersonRow({ caseId, rawName, subtitle, match, jobTitle }: {
 
 // ─── Step 4: Finish ──────────────────────────────────────────────────────────────
 
-function FinishStep({ c, stakeholders, locked, generatedDocs }: { c: OnboardingCase; stakeholders: Stakeholder[]; locked: boolean; generatedDocs: GeneratedDoc[] }) {
+async function FinishStep({ c, stakeholders, locked, generatedDocs }: { c: OnboardingCase; stakeholders: Stakeholder[]; locked: boolean; generatedDocs: GeneratedDoc[] }) {
   const groups = c.product_groups;
   const ready = readyToComplete(c, stakeholders.length);
   const weight = isLightTouch(groups) ? "light-touch" : requiresFullKyc(groups) ? "full KYC" : "—";
@@ -444,14 +467,15 @@ function FinishStep({ c, stakeholders, locked, generatedDocs }: { c: OnboardingC
   if (requiresFcaFrn(groups)) checks.push("FCA FRN (required)");
   if (requiresFullKyc(groups)) checks.push("UBO chain + ID&V + PEP");
   const docs = documentsFor(groups);
+  const events = await listCaseEvents(serviceClient(), c.id);
 
-  const alreadyComplete = c.status !== "started";
+  const formLink = merchantFormUrl(c.merchant_form_token);
 
   return (
     <section className="max-w-2xl space-y-5">
       <div>
         <h2 className="mb-1 font-semibold">Review &amp; finish</h2>
-        <p className="text-sm text-neutral-500">What the selection implies downstream (built out in the next phases):</p>
+        <p className="text-sm text-neutral-500">What the selection implies downstream:</p>
       </div>
 
       <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -463,72 +487,43 @@ function FinishStep({ c, stakeholders, locked, generatedDocs }: { c: OnboardingC
         <Summary label="Documents">{docs.length ? docs.map((d) => DOC_LABELS[d]).join(", ") : <span className="text-neutral-400">none</span>}</Summary>
       </dl>
 
-      {/* API sandbox toggle */}
-      <form action={setSandboxAction} className="rounded-lg border border-neutral-200 bg-white p-3">
-        <input type="hidden" name="case_id" value={c.id} />
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="api_sandbox_required" defaultChecked={c.api_sandbox_required} className="h-4 w-4" />
-          <span className="font-medium text-neutral-800">API sandbox access required</span>
-        </label>
-        <p className="mt-1 text-xs text-neutral-500">On completing internal onboarding, this fires a request to set them up with API sandbox access.</p>
-        <div className="mt-2">
-          <PendingButton className="rounded border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Saving…">Save toggle</PendingButton>
-        </div>
-      </form>
-
-      {c.status === "onboarded" ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-sm text-emerald-800">
-          ✓ <strong>Approved &amp; onboarded.</strong> The merchant has confirmed and the case has been signed off.
-        </div>
-      ) : alreadyComplete ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-900">
-          ✓ Internal onboarding complete (<strong>{c.status.replace(/_/g, " ")}</strong>) — <strong>not yet approved</strong>.
-          The merchant still needs to confirm their details below, then it goes for final sign-off before the customer is onboarded.
-        </div>
-      ) : (
-        <form action={completeInternalAction}>
+      {c.status === "started" ? (
+        /* Complete internal onboarding → generate the document pack + create the
+           customer link. No email is sent to the customer. */
+        <form action={completeInternalAction} className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
           <input type="hidden" name="case_id" value={c.id} />
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="api_sandbox_required" defaultChecked={c.api_sandbox_required} className="h-4 w-4" />
+            <span className="font-medium text-neutral-800">API sandbox access required</span>
+          </label>
+          <p className="text-xs text-neutral-500">Completing generates the onboarding document pack and creates the customer onboarding link (no email is sent — you share the link). If sandbox is ticked, it also files an internal sandbox request.</p>
           <PendingButton
             className="rounded bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50"
             pendingLabel="Completing…"
             disabled={!ready}
           >
-            ✓ Complete internal onboarding
+            ✓ Complete internal onboarding &amp; create customer link
           </PendingButton>
-          {!ready && <p className="mt-1 text-xs text-neutral-500">Finish the company, products and stakeholders steps first.</p>}
+          {!ready && <p className="text-xs text-neutral-500">Finish the company, products and stakeholders steps first.</p>}
         </form>
-      )}
-
-      {(c.status === "internal_complete" || c.status.startsWith("merchant")) && (
-        <section className="rounded-lg border border-neutral-200 bg-white p-4">
-          <h3 className="mb-1 font-semibold text-neutral-800">Merchant form</h3>
-          {c.status === "internal_complete" ? (
-            <>
-              <p className="mb-2 text-sm text-neutral-500">Invite the merchant to confirm their business details + ownership. Goes to the authorised signatory, or enter an email.</p>
-              <form action={inviteMerchantAction} className="flex flex-wrap items-end gap-2">
-                <input type="hidden" name="case_id" value={c.id} />
-                <input name="email" type="email" placeholder="merchant@company.com (optional)" className="flex-1 rounded border border-neutral-300 px-2 py-1.5 text-sm" />
-                <PendingButton className="rounded bg-[#003566] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#002a52]" pendingLabel="Sending…">Invite merchant →</PendingButton>
-              </form>
-            </>
+      ) : (
+        <section className="space-y-2 rounded-lg border border-neutral-200 bg-white p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-semibold text-neutral-800">Customer onboarding link</h3>
+            <StatusBadge status={c.status} />
+          </div>
+          {c.status === "onboarded" ? (
+            <p className="text-sm text-emerald-800">✓ <strong>Approved &amp; onboarded.</strong> The customer has confirmed and the case has been signed off.</p>
           ) : (
-            <div className="text-sm">
-              <p className="text-neutral-700">Status: <strong>{c.status.replace(/_/g, " ")}</strong></p>
-              <div className="mt-1 flex items-start gap-2">
-                <p className="break-all text-xs text-neutral-500">
-                  Form link: <a href={merchantFormUrl(c.merchant_form_token)} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">{merchantFormUrl(c.merchant_form_token)}</a>
-                </p>
-                <CopyButton text={merchantFormUrl(c.merchant_form_token)} label="Copy link" />
+            <>
+              <p className="text-sm text-neutral-500">Send this secure link to the customer so they can complete their onboarding form (product-specific to this deal). No email is sent automatically — share it yourself.</p>
+              <div className="flex items-start gap-2 rounded border border-dashed border-neutral-300 bg-neutral-50 p-2">
+                <a href={formLink} target="_blank" rel="noopener noreferrer" className="break-all text-xs text-blue-700 hover:underline">{formLink}</a>
+                <CopyButton text={formLink} label="Copy link" />
               </div>
-              <Link href={`/onboarding/${c.id}/review`} className="mt-1 inline-block text-blue-700 hover:underline">Review submission →</Link>
-              {(c.status === "merchant_invited" || c.status === "merchant_in_progress") && (
-                <form action={inviteMerchantAction} className="mt-2">
-                  <input type="hidden" name="case_id" value={c.id} />
-                  <PendingButton className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100" pendingLabel="…">Resend invite</PendingButton>
-                </form>
-              )}
-            </div>
+            </>
           )}
+          <Link href={`/onboarding/${c.id}/review`} className="inline-block text-sm text-blue-700 hover:underline">Review submission &amp; approve →</Link>
         </section>
       )}
 
@@ -536,7 +531,7 @@ function FinishStep({ c, stakeholders, locked, generatedDocs }: { c: OnboardingC
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
         <h3 className="mb-1 font-semibold text-neutral-800">Supporting documents</h3>
         {generatedDocs.length === 0 ? (
-          <p className="text-sm text-neutral-500">No documents generated yet — they&apos;re produced from the product selection + merchant submission.</p>
+          <p className="text-sm text-neutral-500">No documents generated yet — they&apos;re produced when you complete internal onboarding, and refreshed when the customer submits.</p>
         ) : (
           <ul className="divide-y divide-neutral-100">
             {generatedDocs.map((d) => (
@@ -545,6 +540,24 @@ function FinishStep({ c, stakeholders, locked, generatedDocs }: { c: OnboardingC
                 <span className="text-xs text-neutral-400">{DOC_LABELS[d.doc_kind as OnboardingDocKind] ?? d.doc_kind}</span>
                 <span className="text-xs text-neutral-400">· {fmtDate(d.generated_at)}</span>
                 <a href={`/onboarding/${c.id}/doc/${d.id}`} className="ml-auto text-blue-700 hover:underline">Download ↓</a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Case history — the append-only audit of every interaction. */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-4">
+        <h3 className="mb-2 font-semibold text-neutral-800">Case history</h3>
+        {events.length === 0 ? (
+          <p className="text-sm text-neutral-500">No activity logged yet.</p>
+        ) : (
+          <ul className="space-y-1.5 text-sm">
+            {events.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-baseline gap-2">
+                <span className="w-32 shrink-0 text-xs text-neutral-400">{fmtDate(e.created_at)}</span>
+                <span className="font-medium text-neutral-700">{humanEvent(e.event)}</span>
+                {e.actor_email && <span className="text-xs text-neutral-400">by {e.actor_email}</span>}
               </li>
             ))}
           </ul>

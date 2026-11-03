@@ -179,7 +179,11 @@ export async function loadGeneratedDocs(db: DB, caseId: string): Promise<Generat
 
 /** Generate every document the case's product groups call for. Replaces any
  *  prior set. Returns the number generated. */
-export async function generateDocsForCase(db: DB, caseId: string, actor: { id?: string | null; email?: string | null }): Promise<{ generated: number; kinds: OnboardingDocKind[] }> {
+export async function generateDocsForCase(
+  db: DB, caseId: string, actor: { id?: string | null; email?: string | null },
+  opts: { advanceStatus?: boolean } = {},
+): Promise<{ generated: number; kinds: OnboardingDocKind[] }> {
+  const { advanceStatus = true } = opts;
   const c = await getCase(db, caseId);
   if (!c) throw new Error("Case not found.");
   const kinds = documentsFor(c.product_groups);
@@ -206,8 +210,10 @@ export async function generateDocsForCase(db: DB, caseId: string, actor: { id?: 
     if (ins.error) throw ins.error;
   }
 
-  await logCaseEvent(db, caseId, "docs_generated", actor, { kinds });
-  await db.from("onboarding_cases").update({ status: "docs_generated" }).eq("id", caseId);
+  await logCaseEvent(db, caseId, "docs_generated", actor, { kinds, advanceStatus });
+  // Finish-time generation (advanceStatus:false) must not jump the case to the
+  // late docs_generated status and skip the merchant step; /review keeps advancing.
+  if (advanceStatus) await db.from("onboarding_cases").update({ status: "docs_generated" }).eq("id", caseId);
   return { generated: kinds.length, kinds };
 }
 

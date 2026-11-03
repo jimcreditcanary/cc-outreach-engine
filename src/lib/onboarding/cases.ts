@@ -109,6 +109,30 @@ export async function getCase(db: DB, id: string): Promise<OnboardingCase | null
   return (data as OnboardingCase | null) ?? null;
 }
 
+export interface CaseEvent {
+  id: string;
+  event: string;
+  actor_email: string | null;
+  payload: unknown;
+  created_at: string;
+}
+
+/** Case history — the append-only onboarding_events log, newest first. Degrades
+ *  to empty (never throws) so a display never takes the page down. */
+export async function listCaseEvents(db: DB, caseId: string, limit = 50): Promise<CaseEvent[]> {
+  try {
+    const { data } = await db
+      .from("onboarding_events")
+      .select("id, event, actor_email, payload, created_at")
+      .eq("case_id", caseId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    return (data as CaseEvent[] | null) ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /** The live (non-cancelled) case for a deal, if any — used to dedupe "Start
  *  onboarding" and the closedwon auto-create. */
 export async function liveCaseForDeal(db: DB, dealId: string): Promise<OnboardingCase | null> {
