@@ -213,9 +213,35 @@ function DraftCard({ r, editable }: { r: Row; editable?: boolean }) {
               <PendingButton className="rounded border border-blue-300 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50" pendingLabel="…" title="You'll send this from your own inbox — marks it done; the system won't send it">I'll send it myself</PendingButton>
             </form>
           )}
-          <form action={discardDraftAction}><input type="hidden" name="id" value={r.id} />
-            <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100" pendingLabel="…">Discard</PendingButton>
-          </form>
+          <details className="relative">
+            <summary className="cursor-pointer list-none rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 [&::-webkit-details-marker]:hidden">Discard ▾</summary>
+            <form action={discardDraftAction} className="absolute right-0 z-10 mt-1 w-72 space-y-2 rounded-lg border border-neutral-200 bg-white p-3 text-xs shadow-lg">
+              <input type="hidden" name="id" value={r.id} />
+              <input type="hidden" name="hs_contact_id" value={r.hs_contact_id} />
+              <input type="hidden" name="email" value={r.email} />
+              <div>
+                <label className="mb-1 block font-medium uppercase tracking-wide text-neutral-500">Outcome</label>
+                <select name="disposition" defaultValue="removed" className="w-full rounded border border-neutral-300 px-2 py-1">
+                  <option value="removed">Remove from workflow (still a lead)</option>
+                  <option value="disqualified">Disqualify — do not contact</option>
+                  <option value="snoozed">Snooze for…</option>
+                </select>
+              </div>
+              <label className="flex items-center justify-between gap-2 text-neutral-600">
+                <span>Snooze length</span>
+                <select name="months" defaultValue="3" className="rounded border border-neutral-300 px-2 py-1">
+                  {[1, 2, 3, 6, 12].map((m) => <option key={m} value={m}>{m} month{m === 1 ? "" : "s"}</option>)}
+                </select>
+              </label>
+              <div>
+                <label className="mb-1 block font-medium uppercase tracking-wide text-neutral-500">Reason (optional)</label>
+                <textarea name="reason" rows={2} placeholder="Why are you discarding this?" className="w-full rounded border border-neutral-300 px-2 py-1" />
+              </div>
+              <div className="flex justify-end">
+                <PendingButton className="rounded bg-neutral-800 px-3 py-1 font-medium text-white hover:bg-neutral-900" pendingLabel="…">Discard draft</PendingButton>
+              </div>
+            </form>
+          </details>
         </div>
       </div>
       <div className="px-4 py-2 text-sm">

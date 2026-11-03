@@ -10,6 +10,7 @@ import { researchContact } from "./research";
 import { draftEmail, DEFAULT_DRAFT_CONFIG, type DraftConfig } from "./draft";
 import { textToHtml } from "./render";
 import { hubspotRepo } from "../hubspot/repo";
+import { blockedContactIds } from "../outreach/dispositions";
 import type { Segment } from "./types";
 
 type DB = ReturnType<typeof serviceClient>;
@@ -51,6 +52,9 @@ export async function runDraftWorkflow(db: DB, opts: WorkflowOpts): Promise<Work
 
   const { data: supp } = await db.from("suppressions").select("email");
   const suppressed = new Set((supp ?? []).map((s) => String((s as { email: string }).email).toLowerCase()));
+  // Workflow dispositions: contacts disqualified / removed / currently snoozed
+  // are skipped (keyed by HubSpot contact id). Empty before migration 065.
+  const blocked = await blockedContactIds(db);
   const cutoff = new Date(Date.now() - cooldownDays * 86_400_000).toISOString();
   const { data: recent } = await db.from("hs_sends").select("hs_contact_id").eq("status", "sent").gte("sent_at", cutoff);
   const recentIds = new Set((recent ?? []).map((r) => String((r as { hs_contact_id: string }).hs_contact_id)));
@@ -61,7 +65,7 @@ export async function runDraftWorkflow(db: DB, opts: WorkflowOpts): Promise<Work
 
   for (const a of audience) {
     if (res.processed >= limit) break;
-    if (suppressed.has(a.email)) { res.skippedSuppressed++; continue; }
+    if (suppressed.has(a.email) || blocked.has(a.hs_contact_id)) { res.skippedSuppressed++; continue; }
     if (recentIds.has(a.hs_contact_id) || activeIds.has(a.hs_contact_id)) { res.skippedRecent++; continue; }
 
     try {

@@ -17,6 +17,8 @@ import { loadDraftConfig } from "@/lib/mailer/config";
 import { resolveHubspotOwner } from "@/lib/hubspot/owner";
 import { parseSegment, segmentLabel } from "@/lib/mailer/types";
 import { textToHtml } from "@/lib/mailer/render";
+import { recordDisposition, monthsFromNow, type Disposition } from "@/lib/outreach/dispositions";
+import { setContactLeadStatus } from "@/lib/hubspot/repo";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
 const UI_RUN_CAP = 6; // keep in-app runs within the request budget
@@ -72,9 +74,48 @@ export async function approveDraftAction(formData: FormData) {
   revalidatePath("/outreach");
 }
 
+/** Discard a drafted email, recording why + what happens to the contact:
+ *  - disqualified → hard do-not-contact (suppressions + HubSpot UNQUALIFIED)
+ *  - removed      → out of the automated workflow, still a lead
+ *  - snoozed      → skipped until now + N months (HubSpot BAD_TIMING), re-enters after
+ *  The draft is always deleted. The disposition drives who the draft workflow
+ *  skips next run. Everything past the delete is best-effort. */
 export async function discardDraftAction(formData: FormData) {
+  const me = await currentUser();
+  const db = serviceClient();
   const id = str(formData.get("id"));
-  if (id) await serviceClient().from("hs_sends").delete().eq("id", id).in("status", ["queued", "approved"]);
+  if (!id) { revalidatePath("/outreach"); return; }
+
+  const hsContactId = str(formData.get("hs_contact_id"));
+  const email = str(formData.get("email")) || null;
+  const reason = str(formData.get("reason")) || null;
+  const raw = str(formData.get("disposition"));
+  const disposition: Disposition = raw === "disqualified" || raw === "snoozed" ? raw : "removed";
+  const months = Math.min(Math.max(1, Number(str(formData.get("months")) || 3)), 24);
+
+  // Always drop the draft from the queue.
+  await db.from("hs_sends").delete().eq("id", id).in("status", ["queued", "approved"]);
+
+  if (hsContactId) {
+    const snoozeUntil = disposition === "snoozed" ? monthsFromNow(months) : null;
+    await recordDisposition(db, { hsContactId, email, disposition, reason, snoozeUntil, userId: me?.id ?? null });
+
+    if (disposition === "disqualified") {
+      if (email) {
+        // Unique index is on lower(email); a plain insert + swallow handles the
+        // "already suppressed" case (no bare-column constraint for upsert).
+        await db.from("suppressions")
+          .insert({ email, reason: "manual", note: reason ?? "Disqualified from Workflow" })
+          .then(undefined, () => {});
+      }
+      try { await setContactLeadStatus(hsContactId, "UNQUALIFIED"); } catch { /* best-effort */ }
+    } else if (disposition === "snoozed") {
+      try { await setContactLeadStatus(hsContactId, "BAD_TIMING"); } catch { /* best-effort */ }
+    }
+  }
+
+  const label = disposition === "disqualified" ? "disqualified" : disposition === "snoozed" ? `snoozed ${months} month${months === 1 ? "" : "s"}` : "removed from workflow";
+  await flash("success", `Draft discarded — ${label}.`);
   revalidatePath("/outreach");
 }
 

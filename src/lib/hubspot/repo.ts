@@ -316,6 +316,16 @@ export async function bulkUpdateContacts(ids: string[], patch: ContactWrite): Pr
   return ids.length;
 }
 
+/** Set a contact's hs_lead_status directly (e.g. UNQUALIFIED when disqualifying
+ *  from the Workflow, BAD_TIMING when snoozing). Best-effort; the caller wraps. */
+export async function setContactLeadStatus(contactId: string, status: string): Promise<void> {
+  await hsFetch(`/crm/v3/objects/contacts/${contactId}`, {
+    method: "PATCH",
+    body: { properties: { hs_lead_status: status } },
+  });
+  invalidateCache();
+}
+
 /** Open deals owned by a HubSpot owner (for the weekly deal-nurture run). */
 export async function listOwnerOpenDeals(ownerId: string, limit = 50): Promise<DealRecord[]> {
   const labels = await dealLabels();
