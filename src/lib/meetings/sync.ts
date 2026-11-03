@@ -104,14 +104,14 @@ export function inferMeetingLinks(opts: {
    *  Use to preserve operator-set picks during re-sync. */
   existing?: ExistingLinks | null;
 }): ExistingLinks {
-  const externalMatched = opts.attendees.find((a) => {
+  // Only ever auto-link to an EXTERNAL (non-team) attendee. We deliberately
+  // do NOT fall back to a team member: an internal-only meeting would then
+  // auto-assign itself to the operator's own email (or a teammate's), which
+  // is noise. Leaving it unlinked is better — the operator links it by hand.
+  const primary = opts.attendees.find((a) => {
     if (!a.contact_id || !a.email) return false;
     return !opts.teamEmails.has(a.email.toLowerCase());
-  });
-  // Fall back to ANY matched attendee (including team) if no external
-  // match found — better than nothing for internal-only meetings.
-  const fallback = opts.attendees.find((a) => !!a.contact_id);
-  const primary = externalMatched ?? fallback ?? null;
+  }) ?? null;
 
   const inferredContact = primary?.contact_id ?? null;
   const inferredOrg = primary
