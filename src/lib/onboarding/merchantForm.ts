@@ -54,6 +54,8 @@ export interface UboKycInput {
   is_pep: boolean;
   pep_detail?: string;
   consent_given: boolean;
+  email?: string;            // migration 068
+  mobile?: string;           // migration 068
 }
 
 export type BankPurpose = "settlement" | "disbursal" | "direct_debit";
@@ -125,7 +127,7 @@ export async function loadMerchantForm(db: DB, caseId: string): Promise<{
   try {
     const [f, k, banks, dd] = await Promise.all([
       db.from("onboarding_merchant_form").select("business, compliance, signatory, status, submitted_at").eq("case_id", caseId).maybeSingle(),
-      db.from("onboarding_ubo_kyc").select("id, ubo_id, ubo_name, date_of_birth, exact_ownership_percent, residential_address, is_pep, pep_detail, consent_given").eq("case_id", caseId),
+      db.from("onboarding_ubo_kyc").select("*").eq("case_id", caseId),
       db.from("onboarding_bank_accounts").select("id, purpose, account_name, bank_name, account_tail, cop_result, cop_matched_name").eq("case_id", caseId),
       db.from("onboarding_direct_debit").select("details").eq("case_id", caseId).maybeSingle(),
     ]);
@@ -158,23 +160,28 @@ export async function saveBusinessComplianceSignatory(
   if (up.error) throw up.error;
 }
 
-/** Replace the per-UBO KYC rows (clean resubmit — avoids null-ubo_id ambiguity). */
+/** Replace the per-UBO KYC rows (clean resubmit — avoids null-ubo_id ambiguity).
+ *  Resilient to migration 068 not being applied yet: if the email/mobile columns
+ *  are missing, it retries without them. */
 export async function saveUboKyc(db: DB, caseId: string, uboKyc: UboKycInput[]): Promise<void> {
   await db.from("onboarding_ubo_kyc").delete().eq("case_id", caseId);
   if (!uboKyc.length) return;
-  const ins = await db.from("onboarding_ubo_kyc").insert(
-    uboKyc.map((u) => ({
-      case_id: caseId,
-      ubo_id: u.ubo_id,
-      ubo_name: u.ubo_name,
-      date_of_birth: u.date_of_birth || null,
-      exact_ownership_percent: u.exact_ownership_percent ?? null,
-      residential_address: u.residential_address ?? null,
-      is_pep: u.is_pep,
-      pep_detail: u.pep_detail ?? null,
-      consent_given: u.consent_given,
-    })),
-  );
+  const base = uboKyc.map((u) => ({
+    case_id: caseId,
+    ubo_id: u.ubo_id,
+    ubo_name: u.ubo_name,
+    date_of_birth: u.date_of_birth || null,
+    exact_ownership_percent: u.exact_ownership_percent ?? null,
+    residential_address: u.residential_address ?? null,
+    is_pep: u.is_pep,
+    pep_detail: u.pep_detail ?? null,
+    consent_given: u.consent_given,
+  }));
+  const full = base.map((r, i) => ({ ...r, email: uboKyc[i]!.email || null, mobile: uboKyc[i]!.mobile || null }));
+  let ins = await db.from("onboarding_ubo_kyc").insert(full);
+  if (ins.error && /(column|schema cache|does not exist)/i.test(ins.error.message) && /(email|mobile)/i.test(ins.error.message)) {
+    ins = await db.from("onboarding_ubo_kyc").insert(base);
+  }
   if (ins.error) throw ins.error;
 }
 

@@ -109,11 +109,12 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
 
       {error === "required" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please complete the required fields, or tick &ldquo;don&apos;t know&rdquo; where offered, before continuing.</p>}
       {error === "email" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please use a company email address, not a personal one (e.g. not gmail/outlook/yahoo).</p>}
+      {error === "attest" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please confirm the beneficial-owner list is complete before continuing.</p>}
       {error === "save" && <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">Something went wrong saving — please try again.</p>}
 
       <div className="mt-5">
         {current === "company" && <CompanyPage token={token} c={c} answers={answers} v2={v2} />}
-        {current === "ubos" && <UbosPage token={token} c={c} enrichment={enrichment} merchant={merchant} v2={v2} />}
+        {current === "ubos" && <UbosPage token={token} c={c} enrichment={enrichment} merchant={merchant} answers={answers} v2={v2} />}
         {current === "accounts" && <AccountsPage token={token} c={c} merchant={merchant} v2={v2} />}
         {current === "payments" && <PaymentsPage token={token} merchant={merchant} v2={v2} />}
         {current === "infosec" && <InfosecPage token={token} uploadCount={uploads.length} v2={v2} />}
@@ -219,8 +220,8 @@ function CompanyPage({ token, c, answers, v2 }: { token: string; c: TokenCase; a
   );
 }
 
-function UbosPage({ token, c, enrichment, merchant, v2 }: {
-  token: string; c: TokenCase; enrichment: Awaited<ReturnType<typeof loadEnrichment>>; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; v2?: string;
+function UbosPage({ token, c, enrichment, merchant, answers, v2 }: {
+  token: string; c: TokenCase; enrichment: Awaited<ReturnType<typeof loadEnrichment>>; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; answers: AnswerMap; v2?: string;
 }) {
   const individualUbos = enrichment.ubos.filter((u) => !u.is_corporate && u.name);
   const kycByUbo = new Map(merchant.kyc.map((k) => [k.ubo_id ?? k.ubo_name, k]));
@@ -228,7 +229,7 @@ function UbosPage({ token, c, enrichment, merchant, v2 }: {
     <PageForm token={token} page="ubos" v2={v2} title="Beneficial owners" intro="Confirm the details for each person with significant control (25%+ ownership or control).">
       <input type="hidden" name="ubo_count" value={individualUbos.length} />
       {individualUbos.length === 0 ? (
-        <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-500">No beneficial owners are on file from Companies House. If anyone owns or controls 25%+ of the business, we&apos;ll follow up separately.</p>
+        <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-500">No beneficial owners are on file from Companies House. If anyone owns or controls 25%+ of the business, please confirm below and we&apos;ll follow up separately.</p>
       ) : (
         <div className="space-y-4">
           {individualUbos.map((u, i) => {
@@ -242,6 +243,8 @@ function UbosPage({ token, c, enrichment, merchant, v2 }: {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div><label className={lbl}>Date of birth</label><input type="date" name={`ubo_dob_${i}`} defaultValue={k?.date_of_birth ?? ""} className={field} /></div>
                   <div><label className={lbl}>Exact ownership %</label><input name={`ubo_pct_${i}`} defaultValue={k?.exact_ownership_percent ?? ""} placeholder="e.g. 60%" className={field} /></div>
+                  <div><label className={lbl}>Email</label><input type="email" name={`ubo_email_${i}`} defaultValue={k?.email ?? ""} className={field} /></div>
+                  <div><label className={lbl}>Mobile</label><input type="tel" name={`ubo_mobile_${i}`} defaultValue={k?.mobile ?? ""} className={field} /></div>
                 </div>
                 <div className="mt-3">
                   <span className={lbl}>Residential address</span>
@@ -268,6 +271,11 @@ function UbosPage({ token, c, enrichment, merchant, v2 }: {
           })}
         </div>
       )}
+
+      <label className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-800">
+        <input type="checkbox" name="ubo_list_complete" defaultChecked={answers["ubo_list_complete"]?.value === "yes"} className="mt-0.5" />
+        <span>I confirm this is the complete list of beneficial owners — everyone who owns or controls 25% or more of the business. <span className="text-red-600">*</span></span>
+      </label>
     </PageForm>
   );
 }
@@ -380,7 +388,7 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
           <h3 className="font-semibold text-neutral-700">Beneficial owners</h3>
           <Link href={changeHref("ubos")} className="text-xs text-blue-700 hover:underline">Change</Link>
         </div>
-        <p className="mt-1 text-neutral-600">{merchant.kyc.length} confirmed.</p>
+        <p className="mt-1 text-neutral-600">{merchant.kyc.length} confirmed · {answers["ubo_list_complete"]?.value === "yes" ? "list confirmed complete" : <span className="text-amber-600">not yet confirmed complete</span>}</p>
       </section>
 
       {merchant.bankAccounts.length > 0 && (

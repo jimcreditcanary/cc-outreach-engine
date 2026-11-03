@@ -152,6 +152,8 @@ function parseUbos(formData: FormData): UboKycInput[] {
       is_pep: str(formData.get(`ubo_pep_${i}`)) === "yes",
       pep_detail: str(formData.get(`ubo_pep_detail_${i}`)),
       consent_given: str(formData.get(`ubo_consent_${i}`)) === "on",
+      email: str(formData.get(`ubo_email_${i}`)),
+      mobile: str(formData.get(`ubo_mobile_${i}`)),
     });
   }
   return out;
@@ -264,7 +266,12 @@ export async function savePageAction(formData: FormData) {
       }
     } else if (page === "ubos") {
       await saveUboKyc(db, c.id, parseUbos(formData));
-      if (mode === "continue") { await setPageComplete(db, c.id, "ubos", true); dest = advance(); }
+      const listComplete = str(formData.get("ubo_list_complete")) === "on";
+      await setAnswers(db, c.id, [{ field_key: "ubo_list_complete", value: listComplete ? "yes" : "" }], ed);
+      if (mode === "continue") {
+        if (!listComplete) dest = `${back}?page=ubos&error=attest${qp(v2)}`;
+        else { await setPageComplete(db, c.id, "ubos", true); dest = advance(); }
+      }
     } else if (page === "accounts") {
       await saveBankAccounts(db, c.id, parseBankAccounts(formData));
       if (mode === "continue") { await setPageComplete(db, c.id, "accounts", true); dest = advance(); }
@@ -302,6 +309,7 @@ export async function submitForApprovalAction(formData: FormData) {
   const answers = await getAnswers(db, c.id);
   const missing = missingCompanyFields(answers, { fcaRequired: requiresFcaFrn(c.product_groups), tuCredit: c.product_groups.includes("tu_credit") });
   if (missing.length) redirect(`${back}?page=company&error=required${qp(v2)}`);
+  if (answers["ubo_list_complete"]?.value !== "yes") redirect(`${back}?page=ubos&error=attest${qp(v2)}`);
 
   let failed = false;
   try {
