@@ -21,6 +21,7 @@ import { enrichCompanyForCase } from "@/lib/onboarding/enrich";
 import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
 import { extractUpload } from "@/lib/onboarding/uploads";
 import { runUboChecks } from "@/lib/onboarding/uboChecks";
+import { ensureUboDocRequest } from "@/lib/onboarding/uboDocs";
 import { generateDocsForCase } from "@/lib/onboarding/docgen";
 import { fileCaseToDrive } from "@/lib/onboarding/driveFiling";
 import { parseAccountsForCase } from "@/lib/onboarding/accounts";
@@ -362,6 +363,20 @@ export async function runUboChecksAction(formData: FormData) {
     await flash("error", `UBO checks failed: ${(e as Error).message}`);
   }
   revalidatePath(`/onboarding/${id}/review`);
+  redirect(`/onboarding/${id}/review`);
+}
+
+/** Step 7 — open (or re-use) a UBO document-upload request so ops can share the
+ *  link with a beneficial owner. No email — the link is copied + sent by hand. */
+export async function requestUboDocsAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  const uboName = str(formData.get("ubo_name"));
+  if (id && uboName) {
+    await ensureUboDocRequest(serviceClient(), id, { uboName, reason: "manual request" }).catch(() => {});
+    revalidatePath(`/onboarding/${id}/review`);
+  }
   redirect(`/onboarding/${id}/review`);
 }
 

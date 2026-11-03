@@ -19,6 +19,7 @@ const PUBLIC_PREFIXES = [
   "/enquire", // public inbound-lead landing page
   "/demo", // public branded prospect demo pages
   "/m", // public merchant onboarding form — guarded by its unguessable token
+  "/u", // public UBO document-upload form — guarded by its unguessable token
 ];
 
 // Pages allowed inside an <iframe> — the embeddable lead/booking forms.
@@ -55,7 +56,7 @@ export async function middleware(req: NextRequest) {
   if (brandedHost) {
     const host = req.headers.get("host")?.split(":")[0]?.toLowerCase();
     if (host === brandedHost) {
-      if (pathname.startsWith("/m")) return withFrameHeaders(NextResponse.next({ request: req }), pathname);
+      if (pathname.startsWith("/m") || pathname.startsWith("/u")) return withFrameHeaders(NextResponse.next({ request: req }), pathname);
       return NextResponse.redirect("https://www.creditcanary.co.uk/");
     }
   }

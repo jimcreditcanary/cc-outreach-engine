@@ -12,11 +12,13 @@ import { loadMerchantForm } from "@/lib/onboarding/merchantForm";
 import { loadPrivacyAssessment } from "@/lib/onboarding/privacyAssessment";
 import { loadUploads } from "@/lib/onboarding/uploads";
 import { loadUboChecks } from "@/lib/onboarding/uboChecks";
+import { loadUboDocRequests, loadUboDocs, uboUploadUrl } from "@/lib/onboarding/uboDocs";
 import { loadGeneratedDocs } from "@/lib/onboarding/docgen";
 import { caseDriveFolderUrl } from "@/lib/onboarding/driveFiling";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
-import { assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction, generateDocsAction, approveCaseAction, fileToDriveAction } from "../../actions";
+import { CopyButton } from "@/components/CopyButton";
+import { assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction, requestUboDocsAction, generateDocsAction, approveCaseAction, fileToDriveAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -40,12 +42,14 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const c = await getCase(db, id);
   if (!c) notFound();
 
-  const [{ form, kyc, bankAccounts, directDebit }, privacy, uploads, uboChecks, generatedDocs] = await Promise.all([
+  const [{ form, kyc, bankAccounts, directDebit }, privacy, uploads, uboChecks, generatedDocs, uboRequests, uboDocs] = await Promise.all([
     loadMerchantForm(db, id),
     loadPrivacyAssessment(db, id),
     loadUploads(db, id),
     loadUboChecks(db, id),
     loadGeneratedDocs(db, id),
+    loadUboDocRequests(db, id),
+    loadUboDocs(db, id),
   ]);
   const driveUrl = await caseDriveFolderUrl(db, id);
 
@@ -186,6 +190,35 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                         {ch.screening_detail.matches.map((m, i) => <li key={i}>{m.type}: {m.name}{m.detail ? ` — ${m.detail}` : ""}</li>)}
                       </ul>
                     )}
+                    {(() => {
+                      const failed = !ch.idv_verified || ch.pep_match || ch.sanctions_match;
+                      const reqRow = ch.ubo_name ? uboRequests.get(ch.ubo_name) : undefined;
+                      const docs = uboDocs.filter((d) => d.ubo_ref === ch.ubo_name);
+                      if (!failed && !reqRow && docs.length === 0) return null;
+                      return (
+                        <div className="mt-2 border-t border-neutral-100 pt-2">
+                          {reqRow ? (
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="font-medium text-neutral-600">Document-upload link:</span>
+                              <a href={uboUploadUrl(reqRow.token)} target="_blank" rel="noopener noreferrer" className="break-all text-blue-700 hover:underline">{uboUploadUrl(reqRow.token)}</a>
+                              <CopyButton text={uboUploadUrl(reqRow.token)} label="Copy" />
+                              <span className="text-neutral-400">— send to this owner to upload a passport + proof of address.</span>
+                            </div>
+                          ) : failed ? (
+                            <form action={requestUboDocsAction}>
+                              <input type="hidden" name="case_id" value={id} />
+                              <input type="hidden" name="ubo_name" value={ch.ubo_name ?? ""} />
+                              <PendingButton className="rounded border border-amber-300 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-50" pendingLabel="…">Request documents →</PendingButton>
+                            </form>
+                          ) : null}
+                          {docs.length > 0 && (
+                            <ul className="mt-1 text-xs text-neutral-600">
+                              {docs.map((d) => <li key={d.id}>📎 {d.kind === "ubo_passport" ? "Passport" : "Proof of address"}: {d.filename}</li>)}
+                            </ul>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </li>
                 ))}
               </ul>

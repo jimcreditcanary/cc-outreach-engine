@@ -15,8 +15,10 @@ export const UPLOAD_BUCKET = "onboarding-uploads";
 
 export interface UploadFile { name: string; type: string; bytes: Uint8Array }
 
-/** Store one uploaded file in the private bucket + record its metadata. */
-export async function saveUpload(db: DB, caseId: string, file: UploadFile, kind = "infosec"): Promise<void> {
+/** Store one uploaded file in the private bucket + record its metadata. `uboRef`
+ *  ties a UBO identity document to a beneficial owner (resilient to migration
+ *  069 not being applied yet). */
+export async function saveUpload(db: DB, caseId: string, file: UploadFile, kind = "infosec", uboRef?: string): Promise<void> {
   const safeName = (file.name || "file").replace(/[^\w.\-]+/g, "_").slice(0, 120) || "file";
   const path = `${caseId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
   const up = await db.storage.from(UPLOAD_BUCKET).upload(path, file.bytes, {
@@ -24,10 +26,15 @@ export async function saveUpload(db: DB, caseId: string, file: UploadFile, kind 
     upsert: false,
   });
   if (up.error) throw up.error;
-  const ins = await db.from("onboarding_uploads").insert({
+  const base = {
     case_id: caseId, kind, filename: file.name, storage_path: path,
     content_type: file.type || null, size_bytes: file.bytes.byteLength,
-  });
+  };
+  const row = uboRef ? { ...base, ubo_ref: uboRef } : base;
+  let ins = await db.from("onboarding_uploads").insert(row as typeof base);
+  if (ins.error && uboRef && /(column|schema cache|does not exist)/i.test(ins.error.message) && /ubo_ref/i.test(ins.error.message)) {
+    ins = await db.from("onboarding_uploads").insert(base);
+  }
   if (ins.error) throw ins.error;
 }
 

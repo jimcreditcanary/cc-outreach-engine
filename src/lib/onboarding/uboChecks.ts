@@ -6,6 +6,7 @@
 import type { serviceClient } from "../db/client";
 import { getCallValidate, type IdvResult, type ScreeningResult } from "../integrations/callValidate";
 import { logCaseEvent, updateCase } from "./cases";
+import { ensureUboDocRequest } from "./uboDocs";
 
 type DB = ReturnType<typeof serviceClient>;
 
@@ -98,6 +99,13 @@ export async function runUboChecks(db: DB, caseId: string, actor: { id?: string 
     if (idv.verified) res.verified++;
     if (screen.pepMatch) res.pepMatches++;
     if (screen.sanctionsMatch) res.sanctionsMatches++;
+
+    // On any failure, open a document-upload request so ops can share the link
+    // (brief Step 7). The customer is never emailed — the link is shared by hand.
+    if (!idv.verified || screen.pepMatch || screen.sanctionsMatch) {
+      const reason = [!idv.verified ? "ID&V not verified" : "", screen.pepMatch ? "PEP match" : "", screen.sanctionsMatch ? "sanctions match" : ""].filter(Boolean).join(", ");
+      await ensureUboDocRequest(db, caseId, { uboKycId: k.id, uboName: k.ubo_name, reason }).catch(() => {});
+    }
   }
 
   await updateCase(db, caseId, { status: "ubo_checks" });
