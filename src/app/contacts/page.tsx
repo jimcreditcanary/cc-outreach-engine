@@ -38,13 +38,14 @@ interface GuessGroup {
   rows: { id: string; full_name: string | null; email: string | null }[];
 }
 
-export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; status?: string; guessed?: string; sort?: string; after?: string }> }) {
-  const { q, page: pageStr, owner, status, guessed, sort: sortRaw, after } = await searchParams;
+export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; status?: string; guessed?: string; sort?: string; after?: string; type?: string; bounced?: string }> }) {
+  const sp = await searchParams;
+  const { q, page: pageStr, owner, status, guessed, sort: sortRaw, after } = sp;
 
   // HubSpot-backed view (P2) — isolated component; the Supabase path below is
   // untouched and still used when CRM_BACKEND=supabase / no token.
   if (activeBackend() === "hubspot") {
-    return <HubspotContactsView q={q} newOnly={status === "new"} sortRaw={sortRaw} after={after} />;
+    return <HubspotContactsView q={q} newOnly={status === "new"} sortRaw={sortRaw} after={after} filters={{ owner, type: sp.type, bounced: sp.bounced }} />;
   }
   const page = Math.max(1, parseInt(pageStr ?? "1") || 1);
   const from = (page - 1) * PAGE;

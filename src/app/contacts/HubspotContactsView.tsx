@@ -9,22 +9,31 @@ import { getCrm } from "@/lib/crm";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
 import { PageTabs, CRM_TABS } from "@/components/PageTabs";
+import { NavSelect } from "@/components/NavSelect";
+import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
+import { propOptions } from "@/lib/hubspot/schema";
 
 const SORT_COLS = ["full_name", "job_title", "email", "created_at"] as const;
 
+export interface ContactFilters { owner?: string; type?: string; bounced?: string }
+
 export async function HubspotContactsView({
-  q, newOnly, sortRaw, after,
-}: { q?: string; newOnly: boolean; sortRaw?: string; after?: string }) {
+  q, newOnly, sortRaw, after, filters = {},
+}: { q?: string; newOnly: boolean; sortRaw?: string; after?: string; filters?: ContactFilters }) {
   const sort = parseSort(sortRaw, SORT_COLS, newOnly ? { col: "created_at", dir: "desc" } : { col: "full_name", dir: "asc" });
   const crm = getCrm();
 
-  const [page, allCount, newCount] = await Promise.all([
-    crm.listContacts({ q, newOnly, after, limit: 100, sort: { col: sort.col as typeof SORT_COLS[number], dir: sort.dir } }),
+  const [page, allCount, newCount, owners, typeOpts] = await Promise.all([
+    crm.listContacts({ q, newOnly, after, limit: 100, sort: { col: sort.col as typeof SORT_COLS[number], dir: sort.dir }, ownerId: filters.owner, contactType: filters.type, bounced: filters.bounced === "yes" }),
     crm.listContacts({ limit: 1 }).then((p) => p.total),
     crm.listContacts({ newOnly: true, limit: 1 }).then((p) => p.total),
+    listOwners(),
+    propOptions("contacts", "type"),
   ]);
 
-  const hdrParams = { ...(q ? { q } : {}), ...(newOnly ? { status: "new" } : {}) };
+  const filterParams: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filters)) if (v) filterParams[k] = v;
+  const hdrParams = { ...(q ? { q } : {}), ...(newOnly ? { status: "new" } : {}), ...filterParams };
   const nextParams = new URLSearchParams({ ...hdrParams, ...(sortRaw ? { sort: sortRaw } : {}), ...(page.after ? { after: page.after } : {}) });
 
   return (
@@ -47,6 +56,18 @@ export async function HubspotContactsView({
         <input name="q" defaultValue={q ?? ""} placeholder="Search name, email or company…" className="w-full rounded border border-neutral-300 px-3 py-2 text-sm" />
         {newOnly && <input type="hidden" name="status" value="new" />}
       </form>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs uppercase tracking-wide text-neutral-400">Filter</span>
+        <NavSelect basePath="/contacts" param="owner" value={filters.owner} allLabel="Any owner" ariaLabel="Filter by owner"
+          options={ownerOptions(owners).map((o) => ({ value: o.id, label: o.name }))} />
+        {typeOpts.length > 0 && (
+          <NavSelect basePath="/contacts" param="type" value={filters.type} allLabel="Any role" ariaLabel="Filter by role"
+            options={typeOpts.map((o) => ({ value: o.value, label: o.label }))} />
+        )}
+        <NavSelect basePath="/contacts" param="bounced" value={filters.bounced} allLabel="Deliverability: any" ariaLabel="Filter by deliverability"
+          options={[{ value: "yes", label: "Bounced only" }]} />
+      </div>
 
       <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">

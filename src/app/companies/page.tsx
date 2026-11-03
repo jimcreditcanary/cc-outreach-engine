@@ -29,12 +29,13 @@ interface OrgRow {
 
 const PAGE = 100;
 
-export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; sort?: string; after?: string }> }) {
-  const { q, page: pageStr, owner, sort: sortRaw, after } = await searchParams;
+export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; owner?: string; sort?: string; after?: string; target?: string; client?: string; icp?: string; partner?: string; onb?: string }> }) {
+  const sp = await searchParams;
+  const { q, page: pageStr, owner, sort: sortRaw, after } = sp;
 
   // HubSpot-backed view (P2) — isolated; Supabase path below unchanged.
   if (activeBackend() === "hubspot") {
-    return <HubspotCompaniesView q={q} sortRaw={sortRaw} after={after} />;
+    return <HubspotCompaniesView q={q} sortRaw={sortRaw} after={after} filters={{ owner, target: sp.target, client: sp.client, icp: sp.icp, partner: sp.partner, onb: sp.onb }} />;
   }
   const page = Math.max(1, parseInt(pageStr ?? "1") || 1);
   const from = (page - 1) * PAGE;

@@ -117,7 +117,12 @@ export const hubspotRepo: CrmRepository = {
       }],
     };
     if (opts.q?.trim()) body.query = opts.q.trim();
-    if (opts.newOnly) body.filterGroups = [{ filters: [{ propertyName: "hs_lead_status", operator: "EQ", value: "NEW" }] }];
+    const cf: SearchFilter[] = [];
+    if (opts.newOnly) cf.push({ propertyName: "hs_lead_status", operator: "EQ", value: "NEW" });
+    if (opts.ownerId) cf.push({ propertyName: "hubspot_owner_id", operator: "EQ", value: opts.ownerId });
+    if (opts.contactType) cf.push({ propertyName: "type", operator: "CONTAINS_TOKEN", value: opts.contactType });
+    if (opts.bounced) cf.push({ propertyName: "hs_email_hard_bounce_reason_enum", operator: "HAS_PROPERTY" });
+    if (cf.length) body.filterGroups = [{ filters: cf }];
 
     const res = await search("contacts", body);
     return {
@@ -179,6 +184,14 @@ export const hubspotRepo: CrmRepository = {
       }],
     };
     if (opts.q?.trim()) body.query = opts.q.trim();
+    const cf: SearchFilter[] = [];
+    if (opts.ownerId) cf.push({ propertyName: "hubspot_owner_id", operator: "EQ", value: opts.ownerId });
+    if (opts.targetGroup) cf.push({ propertyName: "target_group", operator: "EQ", value: opts.targetGroup });
+    if (opts.onboardingStatus) cf.push({ propertyName: "onboarding_status", operator: "EQ", value: opts.onboardingStatus });
+    if (opts.currentClient !== undefined) cf.push({ propertyName: "current_client", operator: "EQ", value: opts.currentClient ? "true" : "false" });
+    if (opts.icp !== undefined) cf.push({ propertyName: "icp", operator: "EQ", value: opts.icp ? "true" : "false" });
+    if (opts.partner !== undefined) cf.push({ propertyName: "is_partner", operator: "EQ", value: opts.partner ? "true" : "false" });
+    if (cf.length) body.filterGroups = [{ filters: cf }];
     const res = await search("companies", body);
     return {
       records: await withOwners((res.results ?? []).map(fromHubspotCompany)),

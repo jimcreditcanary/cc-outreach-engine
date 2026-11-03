@@ -143,6 +143,12 @@ export interface ListContactsOpts {
   q?: string;
   /** New-leads tab. */
   newOnly?: boolean;
+  /** Feature filters (server-side). */
+  ownerId?: string;
+  /** Account role (HubSpot contact `type`, exact multi-select member). */
+  contactType?: string;
+  /** Only hard-bounced contacts. */
+  bounced?: boolean;
   limit?: number;
   /** Opaque forward cursor (HubSpot `after`). */
   after?: string;
@@ -151,6 +157,14 @@ export interface ListContactsOpts {
 
 export interface ListCompaniesOpts {
   q?: string;
+  /** Feature filters (server-side). */
+  ownerId?: string;
+  targetGroup?: string;
+  onboardingStatus?: string;
+  /** Tri-state flags: true/false filter, undefined = any. */
+  currentClient?: boolean;
+  icp?: boolean;
+  partner?: boolean;
   limit?: number;
   after?: string;
   sort?: { col: "name" | "industry" | "created_at"; dir: SortDir };
