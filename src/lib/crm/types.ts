@@ -121,6 +121,8 @@ export interface ContactWrite {
   email?: string;
   job_title?: string | null;
   mobile?: string | null;
+  /** LinkedIn profile URL → custom contact property `linkedin_url`. */
+  linkedin?: string | null;
   /** Flag/unflag as a new lead → hs_lead_status NEW vs IN_PROGRESS. */
   is_new?: boolean;
   /** Mark the email as guessed (Extrapolated) vs confirmed (Verified). */

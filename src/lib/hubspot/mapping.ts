@@ -193,6 +193,7 @@ export function toHubspotContactProps(input: ContactWrite): Props {
   if (input.email !== undefined) props.email = input.email;
   if (input.job_title !== undefined) props.jobtitle = input.job_title ?? "";
   if (input.mobile !== undefined) props.mobilephone = input.mobile ?? "";
+  if (input.linkedin !== undefined) props.linkedin_url = input.linkedin ?? "";
   if (input.is_new !== undefined) props.hs_lead_status = input.is_new ? "NEW" : "IN_PROGRESS";
   if (input.email_guessed !== undefined) props.email_status = input.email_guessed ? "Extrapolated" : "Verified";
   if (input.lead_source !== undefined) props.lead_source = input.lead_source ?? "";

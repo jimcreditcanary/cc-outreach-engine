@@ -1,18 +1,22 @@
-// One-time (idempotent) creation of the HubSpot DEAL properties that surface an
-// onboarding case's state in HubSpot. Safe to re-run — existing props are
-// skipped. Needs a HUBSPOT_TOKEN with crm.schemas.deals.write (to create) and,
-// for the app to then WRITE them, crm.objects.deals.write.
+// One-time (idempotent) creation of the HubSpot properties that the onboarding
+// agent writes: DEAL props that surface a case's state, and a CONTACT prop for a
+// new contact's LinkedIn URL. Safe to re-run — existing props are skipped. Needs
+// a HUBSPOT_TOKEN with crm.schemas.deals.write + crm.schemas.contacts.write (to
+// create) and, for the app to then WRITE them, the matching crm.objects.*.write.
 //
 //   npm run onboarding-setup-props
 //
-// Until this runs + the deals-write scope is added, syncDealOnboardingStatus()
-// simply no-ops — the wizard still works, the status just isn't mirrored to HubSpot.
+// Until this runs, syncDealOnboardingStatus() no-ops and a new contact's LinkedIn
+// is dropped best-effort — the wizard still works, those values just aren't
+// mirrored to HubSpot.
 
 import { config } from "dotenv";
 config({ path: ".env.local", override: true });
 
 interface PropOption { label: string; value: string; displayOrder?: number }
 interface PropDef {
+  object: "deals" | "contacts";
+  groupName: string;
   name: string;
   label: string;
   type: "string" | "enumeration";
@@ -36,6 +40,8 @@ const STATUS_OPTIONS: PropOption[] = ([
 
 const PROPS: PropDef[] = [
   {
+    object: "deals",
+    groupName: "dealinformation",
     name: "onboarding_status",
     label: "Onboarding status",
     type: "enumeration",
@@ -44,11 +50,22 @@ const PROPS: PropDef[] = [
     options: STATUS_OPTIONS,
   },
   {
+    object: "deals",
+    groupName: "dealinformation",
     name: "onboarding_case_id",
     label: "Onboarding case ID",
     type: "string",
     fieldType: "text",
     description: "The veepveep onboarding case id for this deal (internal reference).",
+  },
+  {
+    object: "contacts",
+    groupName: "contactinformation",
+    name: "linkedin_url",
+    label: "LinkedIn URL",
+    type: "string",
+    fieldType: "text",
+    description: "LinkedIn profile URL, captured on the veepveep onboarding new-contact form.",
   },
 ];
 
@@ -60,9 +77,9 @@ async function main() {
   }
 
   for (const p of PROPS) {
-    const label = `deals.${p.name}`;
+    const label = `${p.object}.${p.name}`;
     try {
-      await hsFetch(`/crm/v3/properties/deals/${p.name}`);
+      await hsFetch(`/crm/v3/properties/${p.object}/${p.name}`);
       console.log(`• ${label} — already exists, skipped`);
       continue;
     } catch (e) {
@@ -73,11 +90,11 @@ async function main() {
       }
     }
     try {
-      await hsFetch(`/crm/v3/properties/deals`, {
+      await hsFetch(`/crm/v3/properties/${p.object}`, {
         method: "POST",
         body: {
           name: p.name, label: p.label, type: p.type, fieldType: p.fieldType,
-          groupName: "dealinformation", description: p.description,
+          groupName: p.groupName, description: p.description,
           ...(p.options ? { options: p.options } : {}),
         },
       });
@@ -87,7 +104,7 @@ async function main() {
       process.exitCode = 1;
     }
   }
-  console.log("\nDone. Add crm.objects.deals.write to the token for the app to write these.");
+  console.log("\nDone. Add crm.objects.deals.write + crm.objects.contacts.write to the token for the app to write these.");
 }
 
 main().catch((e) => { console.error("✗", e?.message ?? e); process.exit(1); });

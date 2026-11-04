@@ -43,7 +43,7 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
   const bdb = serviceClient();
   const [{ data: billingAccts }, { data: caseRows }, customer] = await Promise.all([
     bdb.from("billing_accounts").select("id, status").eq("hubspot_company_id", id).order("created_at", { ascending: false }).limit(1),
-    bdb.from("onboarding_cases").select("id, status, merchant_form_token").eq("hubspot_company_id", id).neq("status", "cancelled").order("updated_at", { ascending: false }).limit(1),
+    bdb.from("onboarding_cases").select("id, status, merchant_form_token, drive_folder_id").eq("hubspot_company_id", id).neq("status", "cancelled").order("updated_at", { ascending: false }).limit(1),
     isCustomer(bdb, id),
   ]);
   // Customer status = the local "Active Customer" flag (the button), NOT
@@ -52,6 +52,23 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
   const billingAcct = (billingAccts ?? [])[0] ?? null;
   const onboardingCase = (caseRows ?? [])[0] ?? null;
   const hasOnboardedCase = onboardingCase?.status === "onboarded";
+
+  // "Onboarded by / date": the actor + time of the completion milestone — the
+  // sign-off (`approved`) if there is one, else the internal-onboarding step
+  // (`internal_complete`) that made the customer link live.
+  let onboardedBy: { label: string; email: string | null; at: string } | null = null;
+  if (onboardingCase) {
+    const { data: evRows } = await bdb
+      .from("onboarding_events")
+      .select("event, actor_email, created_at")
+      .eq("case_id", onboardingCase.id)
+      .in("event", ["approved", "internal_complete"])
+      .order("created_at", { ascending: false });
+    const evs = (evRows ?? []) as { event: string; actor_email: string | null; created_at: string }[];
+    const ev = evs.find((e) => e.event === "approved") ?? evs.find((e) => e.event === "internal_complete") ?? null;
+    if (ev) onboardedBy = { label: ev.event === "approved" ? "Onboarded" : "Internal onboarding", email: ev.actor_email, at: ev.created_at };
+  }
+  const driveFolderUrl = onboardingCase?.drive_folder_id ? `https://drive.google.com/drive/folders/${onboardingCase.drive_folder_id}` : null;
   // Deal picker for "Start onboarding" uses these only when no case exists yet;
   // the full list is also shown in the Deals section below.
   const onboardDeals = onboardingCase ? [] : deals;
@@ -108,6 +125,16 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
             {onboardingCase ? (
               <div className="space-y-2">
                 <Link href={`/onboarding/${onboardingCase.id}`} className="inline-block rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">Open onboarding case →</Link>
+                {(onboardedBy || driveFolderUrl) && (
+                  <div className="space-y-0.5 text-[11px] text-neutral-500">
+                    {onboardedBy && (
+                      <p>{onboardedBy.label} by <span className="text-neutral-700">{onboardedBy.email ?? "—"}</span> · {fmtDate(onboardedBy.at)}</p>
+                    )}
+                    {driveFolderUrl && (
+                      <a href={driveFolderUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-700 hover:underline">Drive folder ↗</a>
+                    )}
+                  </div>
+                )}
                 {onboardingCase.merchant_form_token && (
                   <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 p-2">
                     <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Customer onboarding link</p>

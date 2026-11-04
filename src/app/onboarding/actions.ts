@@ -150,6 +150,8 @@ export async function addContactToCompanyAction(formData: FormData) {
   const last = str(formData.get("last_name"));
   const email = str(formData.get("email"));
   const jobTitle = str(formData.get("job_title"));
+  const mobile = str(formData.get("mobile"));
+  const linkedin = str(formData.get("linkedin"));
   if (!first && !email) {
     await flash("error", "Enter at least a name or email for the new contact.");
     return redirect(`/onboarding/${id}?step=stakeholders`);
@@ -159,8 +161,17 @@ export async function addContactToCompanyAction(formData: FormData) {
     last_name: last,
     email: email ?? undefined,
     job_title: jobTitle,
+    mobile: mobile || undefined,
     company_id: c.hubspot_company_id,
   });
+  // LinkedIn goes to a custom contact property (`linkedin_url`) that may not
+  // exist until `npm run onboarding-setup-props` has run — write it best-effort
+  // so a missing property never blocks contact creation.
+  if (linkedin) {
+    await hubspotRepo.updateContact(created.id, { linkedin }).catch((e) =>
+      console.warn(`[onboarding] LinkedIn not saved for contact ${created.id} (property missing? run onboarding-setup-props):`, (e as Error).message),
+    );
+  }
   // Also link to the deal so it shows in the stakeholder picker (best-effort).
   if (c.hubspot_deal_id) await associateDealContact(c.hubspot_deal_id, created.id).catch(() => {});
   await logCaseEvent(db, id, "contact_created", actorOf(me), { contact_id: created.id, email });

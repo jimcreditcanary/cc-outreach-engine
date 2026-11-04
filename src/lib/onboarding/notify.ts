@@ -4,10 +4,10 @@
 //  - API-sandbox request → emails the team to set up sandbox access.
 
 import type { serviceClient } from "../db/client";
-import { getDeal } from "../hubspot/repo";
+import { getDeal, hubspotRepo } from "../hubspot/repo";
 import { resolveInboundOwner } from "../leads/capture";
 import { sendTransactional } from "../send/postmark";
-import { getCase } from "./cases";
+import { getCase, listStakeholders } from "./cases";
 
 type DB = ReturnType<typeof serviceClient>;
 
@@ -48,12 +48,26 @@ export async function requestApiSandbox(db: DB, caseId: string): Promise<boolean
   const deal = c.hubspot_deal_id ? await getDeal(c.hubspot_deal_id).catch(() => null) : null;
   const { ownerId, notifyEmail } = await resolveInboundOwner(db);
   const who = deal?.name || c.company_number || caseId;
+
+  // The people who'll actually use the sandbox: stakeholders tagged
+  // "Technical / product". Resolve each to a name/email/mobile so the team can
+  // reach them directly (best-effort — HubSpot may be unavailable/mocked).
+  const techStakeholders = (await listStakeholders(db, caseId)).filter((s) => s.role === "technical_product");
+  const techIds = [...new Set(techStakeholders.map((s) => s.hubspot_contact_id))];
+  const techContacts = (await Promise.all(techIds.map((cid) => hubspotRepo.getContact(cid).catch(() => null)))).filter(Boolean);
+  const techLines = techContacts.length
+    ? techContacts.map((ct) => `  - ${ct!.full_name || ct!.email || ct!.id}${ct!.email ? ` · ${ct!.email}` : ""}${ct!.mobile ? ` · ${ct!.mobile}` : ""}`)
+    : ["  - (none tagged — add a Technical / product contact on the stakeholders step)"];
+
   const lines = [
     `API sandbox access requested for an onboarding case.`,
     ``,
     `Deal: ${deal?.name ?? "—"}${deal?.url ? ` (${deal.url})` : ""}`,
     `Company number: ${c.company_number ?? "—"}`,
     `Product groups: ${c.product_groups.join(", ") || "—"}`,
+    ``,
+    `Technical contact(s):`,
+    ...techLines,
     ``,
     `Set them up with API sandbox access.`,
   ];

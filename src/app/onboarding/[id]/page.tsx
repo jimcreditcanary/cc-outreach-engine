@@ -413,6 +413,8 @@ async function StakeholdersStep({ c, stakeholders }: { c: OnboardingCase; stakeh
           <div><label className="mb-1 block text-[10px] uppercase tracking-wide text-neutral-400">Last name</label><input name="last_name" className={field} placeholder="Smith" /></div>
           <div className="min-w-48 flex-1"><label className="mb-1 block text-[10px] uppercase tracking-wide text-neutral-400">Email</label><input name="email" type="email" className={field} placeholder="jane@company.com" /></div>
           <div><label className="mb-1 block text-[10px] uppercase tracking-wide text-neutral-400">Job title</label><input name="job_title" className={field} placeholder="CFO" /></div>
+          <div><label className="mb-1 block text-[10px] uppercase tracking-wide text-neutral-400">Mobile</label><input name="mobile" type="tel" className={field} placeholder="07…" /></div>
+          <div className="min-w-48 flex-1"><label className="mb-1 block text-[10px] uppercase tracking-wide text-neutral-400">LinkedIn</label><input name="linkedin" type="url" className={field} placeholder="linkedin.com/in/…" /></div>
           <PendingButton className="rounded border border-emerald-500 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="Adding…">+ New contact</PendingButton>
         </form>
         <p className="mt-1 text-xs text-neutral-400">Creates the contact on the company (and links it to this deal), then pick it above with a role.</p>
