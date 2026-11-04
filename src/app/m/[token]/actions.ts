@@ -20,6 +20,7 @@ import { listStakeholders, ONBOARDING_ROLES } from "@/lib/onboarding/cases";
 import { hubspotRepo } from "@/lib/hubspot/repo";
 import { requiresFcaFrn, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
 import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
+import { ensureSignatoryContact } from "@/lib/onboarding/signatoryContact";
 import { loadEnrichment } from "@/lib/onboarding/enrich";
 import {
   COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, PAYMENT_ANSWER_KEYS, INFOSEC_ANSWER_KEYS, projectCompanyAnswers,
@@ -393,6 +394,9 @@ export async function submitForApprovalAction(formData: FormData) {
   let failed = false;
   try {
     await saveBusinessComplianceSignatory(db, c.id, projectCompanyAnswers(answers));
+    // Auto-create the authorised signatory as a HubSpot contact if new (item 9).
+    // Best-effort — never block the submission on a HubSpot write.
+    await ensureSignatoryContact(db, c.id).catch((e) => console.error(`[signatory-contact] case ${c.id}:`, e));
     const [uboRes, bankRes] = await Promise.all([
       db.from("onboarding_ubo_kyc").select("id", { count: "exact", head: true }).eq("case_id", c.id),
       db.from("onboarding_bank_accounts").select("id", { count: "exact", head: true }).eq("case_id", c.id),
