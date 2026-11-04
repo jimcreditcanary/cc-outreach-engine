@@ -1,6 +1,6 @@
 "use server";
 
-// Public submit for the merchant onboarding form. No auth — the unguessable
+// Public submit for the merchant onboarding form. No auth - the unguessable
 // merchant_form_token is the credential. Validates the token → case, saves the
 // submission (merchant_submitted), and alerts the team.
 
@@ -111,7 +111,7 @@ export async function submitMerchantFormAction(formData: FormData) {
   const data: MerchantFormData = { business, compliance, signatory, uboKyc, bankAccounts, directDebit };
   try {
     await saveMerchantForm(db, c.id, data);
-    // Infosec uploads — best-effort; never fail the submit on an upload error.
+    // Infosec uploads - best-effort; never fail the submit on an upload error.
     const files = formData.getAll("infosec_files").filter((f): f is File => f instanceof File && f.size > 0);
     for (const f of files.slice(0, 10)) {
       if (f.size > 20 * 1024 * 1024) continue;

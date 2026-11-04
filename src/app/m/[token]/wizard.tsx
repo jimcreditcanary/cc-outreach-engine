@@ -45,7 +45,7 @@ export async function SelfIdentify({ token, caseId, v2 }: { token: string; caseI
   return (
     <>
       <h1 className="text-2xl font-semibold text-[#003566]">Before you start</h1>
-      <p className="mt-1 text-sm text-neutral-600">So we can track who provided each answer, please tell us who you are. Several people can fill this in — just pick yourself each time.</p>
+      <p className="mt-1 text-sm text-neutral-600">So we can track who provided each answer, please tell us who you are. Several people can fill this in - just pick yourself each time.</p>
       <form action={setEditorAction} className="mt-6 space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
         <input type="hidden" name="token" value={token} />
         <input type="hidden" name="v2" value={v2 ?? ""} />
@@ -93,8 +93,22 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
         <span className="text-xs text-neutral-500">Filling in as <strong>{editor.name}</strong>{editor.role ? ` (${editor.role})` : ""}</span>
       </div>
 
-      {/* Progress bar */}
-      <ol className="mt-4 flex flex-wrap gap-1.5 text-xs">
+      {/* Progress — compact bar on phones, full step chips on larger screens */}
+      {(() => {
+        const idx = Math.max(0, pages.findIndex((p) => p.id === current));
+        return (
+          <div className="mt-4 sm:hidden">
+            <div className="flex items-baseline justify-between text-xs text-neutral-500">
+              <span>Step {idx + 1} of {pages.length}</span>
+              <span className="font-medium text-[#003566]">{pages[idx]?.label}</span>
+            </div>
+            <div className="mt-1.5 h-1 rounded-full bg-neutral-200">
+              <div className="h-1 rounded-full bg-[#003566] transition-[width]" style={{ width: `${((idx + 1) / pages.length) * 100}%` }} />
+            </div>
+          </div>
+        );
+      })()}
+      <ol className="mt-4 hidden flex-wrap gap-1.5 text-xs sm:flex">
         {pages.map((p, i) => {
           const done = progress.has(p.id);
           const active = p.id === current;
@@ -115,9 +129,9 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
       {error === "email" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please use a company email address, not a personal one (e.g. not gmail/outlook/yahoo).</p>}
       {error === "attest" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please confirm the beneficial-owner list is complete before continuing.</p>}
       {error === "account" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please add at least one bank account before continuing.</p>}
-      {error === "save" && <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">Something went wrong saving — please try again.</p>}
+      {error === "save" && <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">Something went wrong saving - please try again.</p>}
 
-      {(() => { const a = attributionLine(answers[`_page_${current}`]); return a ? <p className="mt-3 text-[11px] text-neutral-400">This page — {a.replace(/^Updated/, "last updated")}</p> : null; })()}
+      {(() => { const a = attributionLine(answers[`_page_${current}`]); return a ? <p className="mt-3 text-[11px] text-neutral-400">This page - {a.replace(/^Updated/, "last updated")}</p> : null; })()}
 
       <div className="mt-5">
         {current === "company" && <CompanyPage token={token} c={c} answers={answers} v2={v2} />}
@@ -164,7 +178,7 @@ function AnswerField({ def, answers, fcaRequired }: { def: AnswerFieldDef; answe
       <input id={def.key} name={def.key} type={def.type ?? "text"} defaultValue={a?.value ?? ""} className={field} />
       {def.unknownOk && (
         <label className="mt-1 flex items-center gap-1.5 text-xs text-neutral-500">
-          <input type="checkbox" name={`${def.key}__unknown`} defaultChecked={a?.is_unknown} /> Don&apos;t know — ask later
+          <input type="checkbox" name={`${def.key}__unknown`} defaultChecked={a?.is_unknown} /> Don&apos;t know - ask later
         </label>
       )}
       {attr && <p className="mt-0.5 text-[11px] text-neutral-400">{attr}</p>}
@@ -281,7 +295,7 @@ function UbosPage({ token, c, enrichment, merchant, answers, v2 }: {
 
       <label className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-800">
         <input type="checkbox" name="ubo_list_complete" defaultChecked={answers["ubo_list_complete"]?.value === "yes"} className="mt-0.5" />
-        <span>I confirm this is the complete list of beneficial owners — everyone who owns or controls 25% or more of the business. <span className="text-red-600">*</span></span>
+        <span>I confirm this is the complete list of beneficial owners - everyone who owns or controls 25% or more of the business. <span className="text-red-600">*</span></span>
       </label>
     </PageForm>
   );
@@ -307,7 +321,7 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-[#003566]">Bank accounts</h2>
-        <p className="mt-0.5 text-sm text-neutral-500">Add the account(s) we&apos;ll disburse to / settle with. Each is stored encrypted and checked with Confirmation of Payee — you can add several.</p>
+        <p className="mt-0.5 text-sm text-neutral-500">Add the account(s) we&apos;ll disburse to / settle with. Each is stored encrypted and checked with Confirmation of Payee - you can add several.</p>
       </div>
 
       {merchant.bankAccounts.length > 0 && (
@@ -317,7 +331,7 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
             {merchant.bankAccounts.map((a) => (
               <li key={a.id} className="flex flex-wrap items-center gap-2 rounded border border-neutral-200 p-2 text-sm">
                 <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] font-medium text-neutral-600">{purposeLabel(a.purpose)}</span>
-                <span className="text-neutral-800">{a.account_name || "—"}</span>
+                <span className="text-neutral-800">{a.account_name || "-"}</span>
                 <span className="font-mono text-neutral-500">••••{a.account_tail ?? "----"}</span>
                 {a.cop_result && <CopBadge result={a.cop_result} matched={a.cop_matched_name} />}
                 <form action={removeBankAccountAction} className="ml-auto">
@@ -372,12 +386,12 @@ function Attr({ answers, name }: { answers: AnswerMap; name: string }) {
   const a = attributionLine(answers[name]);
   return a ? <p className="mt-0.5 text-[11px] text-neutral-400">{a}</p> : null;
 }
-// "Don't know — ask later": lets the filler defer any payment/infosec question to
+// "Don't know - ask later": lets the filler defer any payment/infosec question to
 // the economic buyer. On by default for these helpers; opt out with noUnknown.
 function UnknownToggle({ name, answers }: { name: string; answers: AnswerMap }) {
   return (
     <label className="mt-1 flex items-center gap-1.5 text-xs text-neutral-400">
-      <input type="checkbox" name={`${name}__unknown`} defaultChecked={answers[name]?.is_unknown} /> Don&apos;t know — ask later
+      <input type="checkbox" name={`${name}__unknown`} defaultChecked={answers[name]?.is_unknown} /> Don&apos;t know - ask later
     </label>
   );
 }
@@ -415,7 +429,7 @@ function SelectA({ name, label, answers, options, required, noUnknown }: {
     <div>
       <label htmlFor={name} className={lbl}>{label}{required && <span className="text-red-600"> *</span>}</label>
       <select id={name} name={name} defaultValue={answers[name]?.value ?? ""} className={field}>
-        <option value="">—</option>
+        <option value="">-</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       {!noUnknown && <UnknownToggle name={name} answers={answers} />}
@@ -454,8 +468,8 @@ function PaymentsPage({ token, c, answers, companyName, charity, v2 }: {
           <TextA name="pay_avg_value" label="Average transaction value" answers={answers} required />
           <TextA name="pay_max_value" label="Maximum transaction value" answers={answers} required />
           <RadioA name="pay_b2b_b2c" label="Do you provide your service B2B or B2C?" answers={answers} options={[{ value: "b2c", label: "B2C" }, { value: "b2b", label: "B2B" }, { value: "both", label: "Both" }]} required />
-          <TextA name="pay_b2b_pct" label="If both — B2B %" answers={answers} />
-          <TextA name="pay_b2c_pct" label="If both — B2C %" answers={answers} />
+          <TextA name="pay_b2b_pct" label="If both - B2B %" answers={answers} />
+          <TextA name="pay_b2c_pct" label="If both - B2C %" answers={answers} />
           <TextA name="pay_collect_method" label="How do you currently collect payments, and who is your provider?" answers={answers} required full />
         </fieldset>
       )}
@@ -471,9 +485,9 @@ function PaymentsPage({ token, c, answers, companyName, charity, v2 }: {
         <fieldset className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
           <legend className="px-1 text-sm font-semibold text-[#003566]">Direct Debit</legend>
           <RadioA name="dd_has_sun" label="Do you have an active SUN (Service User Number)?" answers={answers} options={YN} required full />
-          <TextA name="dd_sun_number" label="If yes — SUN number" answers={answers} />
-          <TextA name="dd_sun_provider" label="If yes — provider" answers={answers} />
-          <RadioA name="dd_branded_sun_ok" label="If no — happy for Credit Canary to provide a branded SUN?" answers={answers} options={[{ value: "yes", label: "Yes" }]} full />
+          <TextA name="dd_sun_number" label="If yes - SUN number" answers={answers} />
+          <TextA name="dd_sun_provider" label="If yes - provider" answers={answers} />
+          <RadioA name="dd_branded_sun_ok" label="If no - happy for Credit Canary to provide a branded SUN?" answers={answers} options={[{ value: "yes", label: "Yes" }]} full />
           <div className="sm:col-span-2">
             <TextA name="dd_statement_display" label="What should show on your customers' bank statements?" answers={answers} placeholder={companyName || "Your company"} />
             <p className="mt-0.5 text-[11px] text-neutral-400">Live example: “<span className="font-mono">{stmtExample.slice(0, 18)}</span>” will appear on their statement.</p>
@@ -481,8 +495,8 @@ function PaymentsPage({ token, c, answers, companyName, charity, v2 }: {
           <RadioA name="dd_transfer" label="Transferring all existing Direct Debits, or a partial transfer?" answers={answers} options={[{ value: "all", label: "All" }, { value: "partial", label: "Partial" }]} required full />
           <TextA name="dd_max_collection_limit" label="Max collection limit per customer, per month" answers={answers} required />
           <SelectA name="dd_frequency" label="Frequency of collections" answers={answers} required options={[{ value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }, { value: "quarterly", label: "Quarterly" }, { value: "annual", label: "Annual" }, { value: "other", label: "Other" }]} />
-          <TextA name="dd_frequency_other" label="If other — please specify" answers={answers} />
-          <TextA name="dd_frequency_split" label="If more than one frequency — the split (e.g. 10% weekly, 70% monthly)" answers={answers} full />
+          <TextA name="dd_frequency_other" label="If other - please specify" answers={answers} />
+          <TextA name="dd_frequency_split" label="If more than one frequency - the split (e.g. 10% weekly, 70% monthly)" answers={answers} full />
           <RadioA name="dd_before_after" label="Do you collect before or after the service is provided?" answers={answers} options={[{ value: "before", label: "Before" }, { value: "after", label: "After" }]} required full />
           <div className="sm:col-span-2">
             <span className={lbl}>How will you sign customers up to Direct Debit? <span className="text-red-600">*</span></span>
@@ -528,8 +542,8 @@ function InfosecPage({ token, answers, uploadCount, v2 }: { token: string; answe
     <div className="border-t border-neutral-100 pt-3 first:border-0 first:pt-0">
       <RadioA name={`infosec_${key}`} label={label} answers={answers} options={YN} required />
       <div className="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <TextA name={`infosec_${key}_expiry`} label="If yes — expiry date" answers={answers} type="date" />
-        <TextA name={`infosec_${key}_assessor`} label="If yes — assessor (e.g. BSI)" answers={answers} />
+        <TextA name={`infosec_${key}_expiry`} label="If yes - expiry date" answers={answers} type="date" />
+        <TextA name={`infosec_${key}_assessor`} label="If yes - assessor (e.g. BSI)" answers={answers} />
       </div>
     </div>
   );
@@ -543,7 +557,7 @@ function InfosecPage({ token, answers, uploadCount, v2 }: { token: string; answe
         <YnRow name="infosec_ico_notice" label="Have you ever received an Enforcement or Decision Notice from the ICO?" answers={answers} />
         <YnRow name="infosec_data_transfer" label="Do you intend to transfer any data outside the UK and EEA?" answers={answers} />
         <YnRow name="infosec_industry_body" label="Do you require membership of a recognised industry body / trade association?" answers={answers} />
-        <YnRow name="infosec_membership_valid" label="If a member — is the membership valid and current?" answers={answers} />
+        <YnRow name="infosec_membership_valid" label="If a member - is the membership valid and current?" answers={answers} />
       </fieldset>
 
       <fieldset className="mt-4 space-y-1 rounded-lg border border-neutral-200 bg-white p-4">
@@ -553,14 +567,14 @@ function InfosecPage({ token, answers, uploadCount, v2 }: { token: string; answe
         {cert("soc2", "SOC2?")}
         <YnRow name="infosec_iso27001_intending" label="Intending to become ISO 27001 accredited (audit scheduled in next 3 months)?" answers={answers} />
         <YnRow name="infosec_align_other" label="Do you align to other required security arrangements?" answers={answers} explainLabel="If no, please explain why" />
-        <TextA name="infosec_align_detail" label="If yes — please provide detail" answers={answers} full />
+        <TextA name="infosec_align_detail" label="If yes - please provide detail" answers={answers} full />
       </fieldset>
 
       <fieldset className="mt-4 space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
         <legend className="px-1 text-sm font-semibold text-[#003566]">Your security controls</legend>
         <RadioA name="infosec_over_10" label="Does your business have more than 10 employees?" answers={answers} options={YN} required />
         {!over ? (
-          <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Answer the question above and click <strong>Save &amp; finish later</strong> — we&apos;ll then show the security questions for your business size.</p>
+          <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Answer the question above and click <strong>Save &amp; finish later</strong> - we&apos;ll then show the security questions for your business size.</p>
         ) : over === "no" ? (
           <div className="space-y-1">
             {INFOSEC_SMALL.map(([k, l]) => (
@@ -575,13 +589,13 @@ function InfosecPage({ token, answers, uploadCount, v2 }: { token: string; answe
             {INFOSEC_LARGE.map(([k, l]) => (
               <div key={k}>
                 <YnRow name={k} label={l} answers={answers} explainLabel={k === "l_personal_devices" ? "If yes, please explain why" : "If no, please explain why"} />
-                {k === "l_infosec_policy" && <div><label className="text-xs text-neutral-500">If yes — upload the policy</label><input name="infosec_policy_file" type="file" accept=".pdf,.doc,.docx,.txt" className={fileInput} /></div>}
-                {k === "l_pentest" && <div><label className="text-xs text-neutral-500">If yes — upload the report</label><input name="pentest_file" type="file" accept=".pdf,.doc,.docx,.txt" className={fileInput} /></div>}
-                {k === "l_cyber_insurance" && <div><label className="text-xs text-neutral-500">If yes — upload the certificate</label><input name="cyber_insurance_file" type="file" accept=".pdf,.doc,.docx,.txt" className={fileInput} /></div>}
+                {k === "l_infosec_policy" && <div><label className="text-xs text-neutral-500">If yes - upload the policy</label><input name="infosec_policy_file" type="file" accept=".pdf,.doc,.docx,.txt" className={fileInput} /></div>}
+                {k === "l_pentest" && <div><label className="text-xs text-neutral-500">If yes - upload the report</label><input name="pentest_file" type="file" accept=".pdf,.doc,.docx,.txt" className={fileInput} /></div>}
+                {k === "l_cyber_insurance" && <div><label className="text-xs text-neutral-500">If yes - upload the certificate</label><input name="cyber_insurance_file" type="file" accept=".pdf,.doc,.docx,.txt" className={fileInput} /></div>}
               </div>
             ))}
             <div className="border-t border-neutral-100 pt-3">
-              <TextA name="l_encryption_detail" label="Confirm data is encrypted at rest and in transit — detail the standards / technologies used" answers={answers} required full />
+              <TextA name="l_encryption_detail" label="Confirm data is encrypted at rest and in transit - detail the standards / technologies used" answers={answers} required full />
             </div>
           </div>
         )}
@@ -603,7 +617,7 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
   const fcaRequired = requiresFcaFrn(c.product_groups);
   const fields = COMPANY_FIELDS.filter((f) => !f.onlyIfTuCredit || tuCredit);
   const changeHref = (page: string) => `/m/${encodeURIComponent(token)}?page=${page}${v2 ? `&v2=${v2}` : ""}`;
-  const shown = (a: AnswerMap[string] | undefined) => a?.is_unknown ? <span className="text-amber-600">Don&apos;t know (we&apos;ll follow up)</span> : (a?.value || <span className="text-neutral-400">—</span>);
+  const shown = (a: AnswerMap[string] | undefined) => a?.is_unknown ? <span className="text-amber-600">Don&apos;t know (we&apos;ll follow up)</span> : (a?.value || <span className="text-neutral-400">-</span>);
 
   return (
     <div className="space-y-5">
@@ -626,11 +640,11 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
           ))}
           <div className="flex items-baseline gap-3 px-4 py-1.5 text-sm">
             <dt className="w-56 shrink-0 text-neutral-500">Data protection officer(s)</dt>
-            <dd className="text-neutral-800">{dpoSummary(collectDpos(answers)) || <span className="text-neutral-400">—</span>}</dd>
+            <dd className="text-neutral-800">{dpoSummary(collectDpos(answers)) || <span className="text-neutral-400">-</span>}</dd>
           </div>
           <div className="flex items-baseline gap-3 px-4 py-1.5 text-sm">
             <dt className="w-56 shrink-0 text-neutral-500">Social media</dt>
-            <dd className="text-neutral-800">{SOCIAL_FIELDS.filter((s) => answers[s.key]?.value).map((s) => s.label).join(", ") || <span className="text-neutral-400">—</span>}</dd>
+            <dd className="text-neutral-800">{SOCIAL_FIELDS.filter((s) => answers[s.key]?.value).map((s) => s.label).join(", ") || <span className="text-neutral-400">-</span>}</dd>
           </div>
         </dl>
       </section>

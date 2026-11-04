@@ -41,26 +41,26 @@ export async function LegacyMerchantForm({ token, c, error }: { token: string; c
   return (
     <>
       <h1 className="text-2xl font-semibold text-[#003566]">Complete your onboarding</h1>
-      <p className="mt-1 text-sm text-neutral-600">A few details to get you set up. We&apos;ve pre-filled what we can from Companies House — please confirm the rest. It takes about 10–15 minutes.</p>
+      <p className="mt-1 text-sm text-neutral-600">A few details to get you set up. We&apos;ve pre-filled what we can from Companies House - please confirm the rest. It takes about 10–15 minutes.</p>
 
       {error && (
         <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-          {error === "save" ? "Something went wrong saving your form — please try again." : "We couldn't match this link."}
+          {error === "save" ? "Something went wrong saving your form - please try again." : "We couldn't match this link."}
         </p>
       )}
 
-      {/* Entity — read-only from Companies House */}
+      {/* Entity - read-only from Companies House */}
       <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Your company (from Companies House)</h2>
         {snapshot ? (
           <dl className="mt-2 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-            <div><dt className="text-neutral-400">Name</dt><dd className="text-neutral-800">{snapshot.company_name ?? "—"}</dd></div>
+            <div><dt className="text-neutral-400">Name</dt><dd className="text-neutral-800">{snapshot.company_name ?? "-"}</dd></div>
             <div><dt className="text-neutral-400">Company number</dt><dd className="text-neutral-800">{snapshot.company_number}</dd></div>
-            <div><dt className="text-neutral-400">Type</dt><dd className="text-neutral-800">{snapshot.company_type ?? "—"}</dd></div>
-            <div><dt className="text-neutral-400">Status</dt><dd className="text-neutral-800">{snapshot.company_status ?? "—"}</dd></div>
+            <div><dt className="text-neutral-400">Type</dt><dd className="text-neutral-800">{snapshot.company_type ?? "-"}</dd></div>
+            <div><dt className="text-neutral-400">Status</dt><dd className="text-neutral-800">{snapshot.company_status ?? "-"}</dd></div>
           </dl>
         ) : (
-          <p className="mt-1 text-sm text-neutral-500">Company number {c.company_number ?? "—"}.</p>
+          <p className="mt-1 text-sm text-neutral-500">Company number {c.company_number ?? "-"}.</p>
         )}
       </section>
 
@@ -115,7 +115,7 @@ export async function LegacyMerchantForm({ token, c, error }: { token: string; c
             <legend className="px-1 text-sm font-semibold text-[#003566]">Settlement account</legend>
             <p className="mt-1 text-xs text-neutral-500">
               The business bank account we&apos;ll settle funds to. Stored encrypted and verified with Confirmation of Payee.
-              {settleTail ? ` On file: ••••${settleTail} — re-enter to change.` : ""}
+              {settleTail ? ` On file: ••••${settleTail} - re-enter to change.` : ""}
             </p>
             <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div><label htmlFor="settle_account_name" className={lbl}>Account name</label><input id="settle_account_name" name="settle_account_name" className={field} /></div>
@@ -135,7 +135,7 @@ export async function LegacyMerchantForm({ token, c, error }: { token: string; c
               <div>
                 <label htmlFor="dd_collects" className={lbl}>Do you currently collect Direct Debits?</label>
                 <select id="dd_collects" name="dd_collects" defaultValue={dd.collects_dd ?? ""} className={field}>
-                  <option value="">—</option><option value="yes">Yes</option><option value="no">No</option>
+                  <option value="">-</option><option value="yes">Yes</option><option value="no">No</option>
                 </select>
               </div>
               <div><label htmlFor="dd_existing_sun" className={lbl}>Existing Service User Number (if any)</label><input id="dd_existing_sun" name="dd_existing_sun" defaultValue={dd.existing_sun ?? ""} className={field} /></div>

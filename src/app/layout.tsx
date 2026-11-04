@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import { GeistSans } from "geist/font/sans";
 import "./globals.css";
 import { currentUser } from "@/lib/auth/server";
 import { AppShell } from "@/components/AppShell";
@@ -7,7 +8,7 @@ import { FlashToaster } from "@/components/FlashToaster";
 import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
-  title: "Credit Canary — Outreach",
+  title: "Credit Canary - Outreach",
   description: "Outreach engine operator console",
   robots: { index: false, follow: false },
 };
@@ -19,7 +20,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en-GB">
-      <body className="min-h-screen bg-neutral-50 text-neutral-900 antialiased">
+      <body className={`${GeistSans.className} min-h-screen bg-neutral-50 text-neutral-900 antialiased`}>
         {me ? (
           <AppShell initialCollapsed={collapsed} userEmail={me.email ?? ""}>
             {children}

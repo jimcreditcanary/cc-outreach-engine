@@ -43,7 +43,7 @@ export interface AnswerFieldDef {
   requiredIfFca?: boolean;
   /** Only show/collect for TU Credit (principal office). */
   onlyIfTuCredit?: boolean;
-  /** Offer the "don't know — ask later" toggle. */
+  /** Offer the "don't know - ask later" toggle. */
   unknownOk?: boolean;
 }
 
@@ -59,12 +59,12 @@ export const COMPANY_FIELDS: AnswerFieldDef[] = [
   { key: "vat_number", label: "VAT number (optional)" },
   { key: "trade_body", label: "Trade-body membership", unknownOk: true },
   { key: "privacy_policy_url", label: "Privacy-policy URL", type: "url", unknownOk: true },
-  { key: "signatory_name", label: "Authorised signatory — full name", required: true },
-  { key: "signatory_title", label: "Authorised signatory — title / role", required: true },
-  { key: "signatory_email", label: "Authorised signatory — email", type: "email", required: true },
+  { key: "signatory_name", label: "Authorised signatory - full name", required: true },
+  { key: "signatory_title", label: "Authorised signatory - title / role", required: true },
+  { key: "signatory_email", label: "Authorised signatory - email", type: "email", required: true },
 ];
 
-/** Social media URLs (optional) — answer-store keys. */
+/** Social media URLs (optional) - answer-store keys. */
 export const SOCIAL_FIELDS: { key: string; label: string }[] = [
   { key: "social_facebook", label: "Facebook" },
   { key: "social_linkedin", label: "LinkedIn" },

@@ -1,4 +1,4 @@
-// Public merchant onboarding form at /m/<token>. No auth — the unguessable
+// Public merchant onboarding form at /m/<token>. No auth - the unguessable
 // merchant_form_token is the credential. Renders standalone (the root layout
 // drops the app nav when the viewer isn't signed in). Routes to either the
 // proven single-page form (default) or the multi-page wizard when
@@ -51,7 +51,7 @@ export default async function MerchantFormPage({
     return (
       <Shell>
         <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-5">
-          <h1 className="text-xl font-semibold text-[#003566]">Thank you — that&apos;s submitted ✓</h1>
+          <h1 className="text-xl font-semibold text-[#003566]">Thank you - that&apos;s submitted ✓</h1>
           <p className="mt-2 text-sm text-neutral-700">We&apos;ve received your onboarding details. Our team will review and be in touch with the next steps. You can close this page.</p>
         </div>
       </Shell>

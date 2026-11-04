@@ -1,7 +1,7 @@
-// Public UBO document-upload form at /u/<token>. No auth — the unguessable
+// Public UBO document-upload form at /u/<token>. No auth - the unguessable
 // token is the credential. A beneficial owner whose ID&V / PEP check failed
 // uploads a passport photo + a recent proof of address. Renders standalone
-// (root layout drops the app nav when unauthed). The link is shared by ops —
+// (root layout drops the app nav when unauthed). The link is shared by ops -
 // the customer is never emailed.
 
 import type { ReactNode } from "react";
@@ -53,7 +53,7 @@ export default async function UboDocPage({
     return (
       <Shell>
         <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-5">
-          <h1 className="text-xl font-semibold text-[#003566]">Thank you — received ✓</h1>
+          <h1 className="text-xl font-semibold text-[#003566]">Thank you - received ✓</h1>
           <p className="mt-2 text-sm text-neutral-700">We&apos;ve securely received your documents. Our team will review them. You can close this page.</p>
         </div>
       </Shell>
@@ -67,12 +67,12 @@ export default async function UboDocPage({
     <Shell>
       <h1 className="text-2xl font-semibold text-[#003566]">Verify your identity</h1>
       <p className="mt-1 text-sm text-neutral-600">
-        Hi {name}, as part of <strong>{company}</strong>&apos;s onboarding with Credit Canary we need to confirm your identity as a beneficial owner. Please upload the two documents below — it&apos;s secure and only used for this check.
+        Hi {name}, as part of <strong>{company}</strong>&apos;s onboarding with Credit Canary we need to confirm your identity as a beneficial owner. Please upload the two documents below - it&apos;s secure and only used for this check.
       </p>
 
       {sp.error && (
         <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-          {sp.error === "save" ? "Something went wrong uploading — please try again." : "We couldn't match this link."}
+          {sp.error === "save" ? "Something went wrong uploading - please try again." : "We couldn't match this link."}
         </p>
       )}
 

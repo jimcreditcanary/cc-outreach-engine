@@ -1,6 +1,6 @@
 "use server";
 
-// Public submit for the UBO document-upload form. No auth — the unguessable
+// Public submit for the UBO document-upload form. No auth - the unguessable
 // token is the credential. Stores the passport + proof of address against the
 // case, tied to the UBO by name.
 
