@@ -16,9 +16,9 @@ The full Step-6 customer questionnaire (P0–P6) is **live and the default** —
 | ~~B1~~ | ✅ New-contact form: **LinkedIn + Mobile** — mobile → `mobilephone`; LinkedIn → custom contact prop `linkedin_url` (written best-effort; created by onboarding-setup-props) | 1.3 | S | C2 token scope for LinkedIn to persist |
 | ~~B2~~ | ✅ **API-sandbox request lists the technical contacts** (Technical / product stakeholders, name · email · mobile) | 1.4 | S | — |
 | B3 | 🟡 Company page: **"Onboarded by / date"** ✅ (from case event) + **Drive-folder link** (shows once `drive_folder_id` set) | 8/10 | S | Drive (C1) for the link |
-| B4 | Enrichment: **incorporation certificate** (CH filing history) | 1.5 | M | — |
-| B5 | Enrichment: **two-year financials** (current assets / liabilities; parse 2 periods, not just latest) | 1.5 | M | — |
-| B6 | Enrichment: **insolvency filings table** + per-director **PSC flag** surfaced | 1.5 | S–M | — |
+| ~~B4~~ | ✅ Enrichment: **incorporation certificate** — CH `getIncorporationFiling` → public "view document" link on the enrichment page | 1.5 | M | migration 070 |
+| ~~B5~~ | ✅ Enrichment: **two-year financials** — iXBRL now parses current assets/liabilities + net current assets for latest + prior period (`accounts.periods`) | 1.5 | M | migration 070 |
+| ~~B6~~ | ✅ Enrichment: **insolvency filings table** (type/dates/practitioners) + per-director **PSC** badge (officer↔PSC name match) | 1.5 | S–M | migration 070 |
 | B7 | **Reports as PDFs in the pack** — render Call Validate / CoP results to PDF + file alongside the docs | 8 | M | Drive (C1) to file |
 | B8 | **Project Tracker Google Doc** (Key Contacts / Actions / Q&A) | 9 | M | Drive (C1) + Google Docs API |
 | B9 | **UI polish pass** on the live customer form (em-dashes, brand font, mobile progress, clutter, trust cue) — see review | — | M | — |
@@ -59,7 +59,7 @@ Added as **B9 — UI polish pass** (size M). Items 1, 3, 4 are the quick, high-v
 
 **Phase 1 — polish batch (me, ~½–1 session, no external deps).** ✅ B1 + B2 + B3 (minus the Drive link) shipped 2026-11-04 (commit b6073ab). **B6 remains** (fold into Phase 2 enrichment). All small, self-contained; shipped behind the usual push → deploy.
 
-**Phase 2 — enrichment depth (me, ~1 session).** B4 + B5 (+ finish B6). Pure Companies House + iXBRL work; extends the existing `enrich.ts` / `accounts.ts`. No external deps.
+**Phase 2 — enrichment depth (me, ~1 session).** ✅ B4 + B5 + B6 shipped 2026-11-04 (commit 177a41e). Pure Companies House + iXBRL; extends `enrich.ts` / `accounts.ts` / `ixbrl.ts`. **Needs migration 070 applied** (additive columns; degrades gracefully until then).
 
 **Phase 3 — your config (parallel with Phase 1/2, ~15 min each).** C1 (Drive) and C2 (HubSpot scope). C1 is the important one — it turns doc *generation* (already working) into doc *filing*, and unblocks B3's link, B7 and B8.
 
