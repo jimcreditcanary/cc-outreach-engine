@@ -13,9 +13,9 @@ The full Step-6 customer questionnaire (P0–P6) is **live and the default** —
 
 | # | Gap | Brief | Size | Depends on |
 |---|-----|-------|------|-----------|
-| B1 | New-contact form: **LinkedIn + Mobile** (mobile → HubSpot `mobilephone`; LinkedIn needs a contact property) | 1.3 | S | — |
-| B2 | **API-sandbox request includes the technical contacts** (not just deal/company) | 1.4 | S | — |
-| B3 | Company page: **"Onboarded by / date"** + **Drive-folder link** | 8/10 | S | Drive (C1) for the link |
+| ~~B1~~ | ✅ New-contact form: **LinkedIn + Mobile** — mobile → `mobilephone`; LinkedIn → custom contact prop `linkedin_url` (written best-effort; created by onboarding-setup-props) | 1.3 | S | C2 token scope for LinkedIn to persist |
+| ~~B2~~ | ✅ **API-sandbox request lists the technical contacts** (Technical / product stakeholders, name · email · mobile) | 1.4 | S | — |
+| B3 | 🟡 Company page: **"Onboarded by / date"** ✅ (from case event) + **Drive-folder link** (shows once `drive_folder_id` set) | 8/10 | S | Drive (C1) for the link |
 | B4 | Enrichment: **incorporation certificate** (CH filing history) | 1.5 | M | — |
 | B5 | Enrichment: **two-year financials** (current assets / liabilities; parse 2 periods, not just latest) | 1.5 | M | — |
 | B6 | Enrichment: **insolvency filings table** + per-director **PSC flag** surfaced | 1.5 | S–M | — |
@@ -28,7 +28,7 @@ The full Step-6 customer questionnaire (P0–P6) is **live and the default** —
 | # | Item | Unblocks |
 |---|------|----------|
 | C1 | **Google Drive**: set `GOOGLE_SERVICE_ACCOUNT_JSON` + `ONBOARDING_DRIVE_ROOT_FOLDER_ID` (point at the brief's Drive folder) | real doc filing; B3 link, B7, B8 |
-| C2 | **HubSpot deal-write**: add `crm.objects.deals.write` + `crm.schemas.deals.write` + association labels to the Private App token, then `npm run onboarding-setup-props` + `npm run onboarding-setup-associations` | role→deal sync + `onboarding_case_id` stamp |
+| C2 | **HubSpot write scopes**: add `crm.objects.deals.write` + `crm.schemas.deals.write` + `crm.objects.contacts.write` + `crm.schemas.contacts.write` + association labels to the Private App token, then `npm run onboarding-setup-props` (now also creates the contact `linkedin_url` prop) + `npm run onboarding-setup-associations` | role→deal sync + `onboarding_case_id` stamp + B1 LinkedIn persistence |
 | C3 | **Live integration keys**: Call Validate / TransUnion (ID&V + PEP), CoP PSP, Postcoder | real checks (mock until set; flows already work on mocks) |
 
 ## Descoped
@@ -57,7 +57,7 @@ Added as **B9 — UI polish pass** (size M). Items 1, 3, 4 are the quick, high-v
 
 ## Close-out plan
 
-**Phase 1 — polish batch (me, ~½–1 session, no external deps).** B1 + B2 + B6, and B3 minus the Drive link. All small, self-contained, immediate value. Ship behind the usual push → deploy.
+**Phase 1 — polish batch (me, ~½–1 session, no external deps).** ✅ B1 + B2 + B3 (minus the Drive link) shipped 2026-11-04 (commit b6073ab). **B6 remains** (fold into Phase 2 enrichment). All small, self-contained; shipped behind the usual push → deploy.
 
 **Phase 2 — enrichment depth (me, ~1 session).** B4 + B5 (+ finish B6). Pure Companies House + iXBRL work; extends the existing `enrich.ts` / `accounts.ts`. No external deps.
 
