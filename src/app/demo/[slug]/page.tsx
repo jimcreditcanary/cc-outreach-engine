@@ -57,7 +57,7 @@ export default async function DemoPage({ params }: { params: Promise<{ slug: str
   return (
     <main className="min-h-screen bg-neutral-50">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col lg:flex-row">
-        {/* LEFT — pitch, on a brand-tinted panel */}
+        {/* LEFT - pitch, on a brand-tinted panel */}
         <section className="flex flex-col justify-center gap-6 px-8 py-12 lg:w-2/5" style={{ backgroundColor: brand, color: fg }}>
           <div className="flex h-12 items-center">
             {d.logo_url
@@ -72,10 +72,10 @@ export default async function DemoPage({ params }: { params: Promise<{ slug: str
             {d.product_type && <span className="rounded-full border px-3 py-1" style={{ borderColor: fg, opacity: 0.85 }}>{d.product_type}</span>}
             {d.tone && <span className="rounded-full border px-3 py-1" style={{ borderColor: fg, opacity: 0.85 }}>{d.tone}</span>}
           </div>
-          <p className="mt-auto text-xs opacity-70">A live, branded preview of your customer&apos;s origination journey — powered by Credit Canary.</p>
+          <p className="mt-auto text-xs opacity-70">A live, branded preview of your customer&apos;s origination journey - powered by Credit Canary.</p>
         </section>
 
-        {/* RIGHT — device viewport */}
+        {/* RIGHT - device viewport */}
         <section className="flex flex-1 items-center justify-center bg-neutral-100 px-6 py-12">
           <DeviceFrame brand={brand}>
             <LoanJourney brand={brand} fg={fg} logo={d.logo_url} companyName={d.company_name} />

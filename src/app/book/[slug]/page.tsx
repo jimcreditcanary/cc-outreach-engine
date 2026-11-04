@@ -1,4 +1,4 @@
-// PUBLIC booking page — /book/<slug> is in the middleware's public list,
+// PUBLIC booking page - /book/<slug> is in the middleware's public list,
 // so everything rendered here is visible to the open internet: operator
 // display name and free slots only. No CRM data, no emails, no secrets.
 
@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const page = await loadBookingPage(serviceClient(), slug);
   return {
-    title: page ? `Book a call with ${page.operator_name} — Credit Canary` : "Book a call — Credit Canary",
+    title: page ? `Book a call with ${page.operator_name} - Credit Canary` : "Book a call - Credit Canary",
     robots: { index: false, follow: false },
   };
 }
@@ -29,7 +29,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function PublicBookingPage({ params, searchParams }: Props) {
   const { slug } = await params;
   const sp = await searchParams;
-  // ?embed=1 — chromeless for <iframe> use; the host page brings the branding.
+  // ?embed=1 - chromeless for <iframe> use; the host page brings the branding.
   const embed = sp.embed === "1";
   const db = serviceClient();
   const page = await loadBookingPage(db, slug);
@@ -46,7 +46,7 @@ export default async function PublicBookingPage({ params, searchParams }: Props)
             <LocalTime iso={sp.booked} /> with {page.operator_name} ({page.config.durationMins} min).
           </p>
           <p className="mt-2 text-xs text-emerald-700">
-            A calendar invite is on its way to your inbox{sp.join ? "" : " — accept it and you're set"}.
+            A calendar invite is on its way to your inbox{sp.join ? "" : " - accept it and you're set"}.
           </p>
           {sp.join && (
             <a
@@ -69,7 +69,7 @@ export default async function PublicBookingPage({ params, searchParams }: Props)
   try {
     slots = (await availableSlots(db, page)).map((d) => d.toISOString());
   } catch {
-    // A connected calendar source errored — better to show nothing than
+    // A connected calendar source errored - better to show nothing than
     // risk double-booking off incomplete availability.
     loadFailed = true;
   }
@@ -83,11 +83,11 @@ export default async function PublicBookingPage({ params, searchParams }: Props)
       )}
       {loadFailed ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Availability is temporarily unavailable — please try again in a few minutes.
+          Availability is temporarily unavailable - please try again in a few minutes.
         </p>
       ) : slots.length === 0 ? (
         <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
-          No open slots in the next three weeks — please check back soon.
+          No open slots in the next three weeks - please check back soon.
         </p>
       ) : (
         <BookingForm slug={slug} slots={slots} durationMins={page.config.durationMins} embed={embed} />

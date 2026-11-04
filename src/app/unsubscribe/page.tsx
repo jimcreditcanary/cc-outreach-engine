@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 const REASONS = [
   "Not relevant to my role",
-  "Bad timing — try again later",
+  "Bad timing - try again later",
   "Already using something similar",
   "Too many emails",
   "Not interested in Credit Canary",
@@ -13,7 +13,7 @@ const REASONS = [
 ];
 
 const RECONTACT = [
-  { v: "never", label: "Never — please remove me" },
+  { v: "never", label: "Never - please remove me" },
   { v: "3", label: "In 3 months" },
   { v: "6", label: "In 6 months" },
   { v: "12", label: "In a year" },

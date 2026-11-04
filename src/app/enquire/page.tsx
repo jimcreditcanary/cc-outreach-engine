@@ -1,4 +1,4 @@
-// PUBLIC inbound-lead landing page — /enquire is middleware-exempt, so
+// PUBLIC inbound-lead landing page - /enquire is middleware-exempt, so
 // this renders for the open internet: brand shell + form only, no CRM
 // data. Share it anywhere (email footers, LinkedIn, the marketing site's
 // CTAs); tag the source with ?src=… (e.g. /enquire?src=linkedin) and it's
@@ -21,7 +21,7 @@ const lbl = "mb-1 block text-xs font-medium uppercase tracking-wide text-neutral
 
 export default async function EnquirePage({ searchParams }: { searchParams: Promise<{ sent?: string; book?: string; error?: string; src?: string; embed?: string }> }) {
   const sp = await searchParams;
-  // ?embed=1 — chromeless for <iframe> use on the marketing site: the host
+  // ?embed=1 - chromeless for <iframe> use on the marketing site: the host
   // page supplies the branding, we supply just the form.
   const embed = sp.embed === "1";
 
@@ -38,7 +38,7 @@ export default async function EnquirePage({ searchParams }: { searchParams: Prom
       {sp.sent ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
           <div className="mb-2 text-3xl">✅</div>
-          <h2 className="mb-1 text-lg font-semibold text-emerald-900">Thanks — we&apos;ve got it</h2>
+          <h2 className="mb-1 text-lg font-semibold text-emerald-900">Thanks - we&apos;ve got it</h2>
           <p className="text-sm text-emerald-800">We&apos;ll be in touch within one working day.</p>
           {sp.book && (
             <>
@@ -63,7 +63,7 @@ export default async function EnquirePage({ searchParams }: { searchParams: Prom
           <form action={submitEnquiryAction} className="space-y-4 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
             {sp.src && <input type="hidden" name="src" value={sp.src.slice(0, 60)} />}
             {embed && <input type="hidden" name="embed" value="1" />}
-            {/* Honeypot — hidden from humans */}
+            {/* Honeypot - hidden from humans */}
             <div className="hidden" aria-hidden="true">
               <label>Website<input name="website" type="text" tabIndex={-1} autoComplete="off" /></label>
             </div>
@@ -98,7 +98,7 @@ export default async function EnquirePage({ searchParams }: { searchParams: Prom
               Send enquiry
             </PendingButton>
             <p className="text-center text-[11px] text-neutral-400">
-              We only use your details to reply — no mailing lists, no sharing.
+              We only use your details to reply - no mailing lists, no sharing.
             </p>
           </form>
         </>
