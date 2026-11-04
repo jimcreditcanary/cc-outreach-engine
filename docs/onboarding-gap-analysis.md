@@ -15,24 +15,29 @@ The full Step-6 customer questionnaire (P0–P6) is **live and the default** —
 |---|-----|-------|------|-----------|
 | ~~B1~~ | ✅ New-contact form: **LinkedIn + Mobile** — mobile → `mobilephone`; LinkedIn → custom contact prop `linkedin_url` (written best-effort; created by onboarding-setup-props) | 1.3 | S | C2 token scope for LinkedIn to persist |
 | ~~B2~~ | ✅ **API-sandbox request lists the technical contacts** (Technical / product stakeholders, name · email · mobile) | 1.4 | S | — |
-| B3 | 🟡 Company page: **"Onboarded by / date"** ✅ (from case event) + **Drive-folder link** (shows once `drive_folder_id` set) | 8/10 | S | Drive (C1) for the link |
+| ~~B3~~ | ✅ Company page: **"Onboarded by / date"** (from case event). Drive-folder link ↪ descoped (code is there, lights up if Drive is ever set) | 8/10 | S | — |
 | ~~B4~~ | ✅ Enrichment: **incorporation certificate** — CH `getIncorporationFiling` → public "view document" link on the enrichment page | 1.5 | M | migration 070 |
 | ~~B5~~ | ✅ Enrichment: **two-year financials** — iXBRL now parses current assets/liabilities + net current assets for latest + prior period (`accounts.periods`) | 1.5 | M | migration 070 |
 | ~~B6~~ | ✅ Enrichment: **insolvency filings table** (type/dates/practitioners) + per-director **PSC** badge (officer↔PSC name match) | 1.5 | S–M | migration 070 |
-| B7 | **Reports as PDFs in the pack** — render Call Validate / CoP results to PDF + file alongside the docs | 8 | M | Drive (C1) to file |
-| B8 | **Project Tracker Google Doc** (Key Contacts / Actions / Q&A) | 9 | M | Drive (C1) + Google Docs API |
-| B9 | **UI polish pass** on the live customer form (em-dashes, brand font, mobile progress, clutter, trust cue) — see review | — | M | — |
+| ~~B7~~ | ↪ **descoped** (2026-11-04) — reports-as-PDFs in the pack. Needs Drive; skipped with C1. | 8 | M | Drive (C1) |
+| ~~B8~~ | ↪ **descoped** (2026-11-04) — Project Tracker Google Doc. Needs Drive; skipped with C1. | 9 | M | Drive (C1) |
+| ~~B9~~ | ✅ **UI polish pass** on the live customer form (Geist font, mobile progress, em-dashes, clutter, padlock trust cue, tap targets) | — | M | — |
+
+**All code build items are complete or descoped. Nothing left to build.**
 
 ## Remaining — config / activation (your side, no code)
 
-| # | Item | Unblocks |
-|---|------|----------|
-| C1 | **Google Drive**: set `GOOGLE_SERVICE_ACCOUNT_JSON` + `ONBOARDING_DRIVE_ROOT_FOLDER_ID` (point at the brief's Drive folder) | real doc filing; B3 link, B7, B8 |
-| C2 | **HubSpot write scopes**: add `crm.objects.deals.write` + `crm.schemas.deals.write` + `crm.objects.contacts.write` + `crm.schemas.contacts.write` + association labels to the Private App token, then `npm run onboarding-setup-props` (now also creates the contact `linkedin_url` prop) + `npm run onboarding-setup-associations` | role→deal sync + `onboarding_case_id` stamp + B1 LinkedIn persistence |
-| C3 | **Live integration keys**: Call Validate / TransUnion (ID&V + PEP), CoP PSP, Postcoder | real checks (mock until set; flows already work on mocks) |
+| # | Item | Unblocks | Status |
+|---|------|----------|--------|
+| ~~C1~~ | Google Drive envs | doc filing; B3 link, B7, B8 | ↪ **descoped** (2026-11-04) |
+| C2 | **HubSpot write scopes**: add `crm.objects.deals.write` + `crm.schemas.deals.write` + `crm.objects.contacts.write` + `crm.schemas.contacts.write` + association labels to the Private App token, then `npm run onboarding-setup-props` (also creates the contact `linkedin_url` prop) + `npm run onboarding-setup-associations` | role→deal status sync + `onboarding_case_id` stamp + B1 LinkedIn persistence | optional — degrades gracefully (HubSpot mirror just no-ops) |
+| C3 | **Live integration keys**: Call Validate / TransUnion (ID&V + PEP), CoP PSP, Postcoder | real KYC/CoP/address checks (mock until set; flows already work on mocks) | optional — needed only to run on live data |
+
+Migration 070 ✅ applied 2026-11-04 (B4/B5/B6 now persist).
 
 ## Descoped
-↪ HubSpot field-sync of questionnaire answers on submit — "not bothered". Doc regen + ops@ routing already happen.
+↪ HubSpot field-sync of questionnaire answers on submit — "not bothered".
+↪ Google Drive (C1) and everything that depends on it — B7 (reports-as-PDFs), B8 (Project Tracker Doc), B3's Drive-folder link. Decided 2026-11-04.
 
 ---
 
@@ -61,17 +66,12 @@ Added as **B9 — UI polish pass** (size M). Items 1, 3, 4 are the quick, high-v
 
 **Phase 2 — enrichment depth (me, ~1 session).** ✅ B4 + B5 + B6 shipped 2026-11-04 (commit 177a41e). Pure Companies House + iXBRL; extends `enrich.ts` / `accounts.ts` / `ixbrl.ts`. **Needs migration 070 applied** (additive columns; degrades gracefully until then).
 
-**Phase 3 — your config (parallel with Phase 1/2, ~15 min each).** C1 (Drive) and C2 (HubSpot scope). C1 is the important one — it turns doc *generation* (already working) into doc *filing*, and unblocks B3's link, B7 and B8.
+**Phase 3 — Drive (C1) + B7/B8 + B3 link.** ↪ **descoped 2026-11-04.** Jim is skipping Google Drive, so doc *filing*, reports-as-PDFs, the Project Tracker Doc and B3's folder link are all off the table. Doc *generation* still works (into the DB); nothing is filed to Drive.
 
-**Phase 4 — Drive-dependent build (me, after C1).** B7 (reports as PDFs) + B8 (Project Tracker Doc) + wire B3's Drive link. These only make sense once Drive is live.
+### What's left to complete (2026-11-04)
+With Drive descoped, **all code is done.** The only remaining items are optional activation config, both your side, both graceful (the app runs today without them):
 
-**Phase 5 — go fully live on real data (you, when ready).** C3 (integration keys/contracts). The onboarding runs end-to-end on mocks today; flipping these makes the ID&V / CoP / address checks real. Can be last.
+1. **C2 — HubSpot write scopes** (if you want the HubSpot mirror): add the deal + contact write scopes + association labels to the Private App token, then run `onboarding-setup-props` + `onboarding-setup-associations`. Turns on deal onboarding-status sync, the `onboarding_case_id` stamp, role→deal associations, and B1 LinkedIn persistence. Until then those just no-op.
+2. **C3 — live integration keys** (when you go live on real data): Call Validate (ID&V + PEP/sanctions), TransUnion, CoP PSP, Postcoder. Everything runs on mocks today; these flip the KYC / CoP / address checks to real. Companies House is already keyed (enrichment is live).
 
-### Recommended order
-1. **Me (start here):** B9 UI polish pass — the form is **live to customers now**, so perceived trust/quality is the highest-leverage thing. Quick wins first (em-dashes, mobile progress bar, clutter), then the brand typeface.
-2. **You:** set the Google Drive envs (C1) — unblocks three build items.
-3. **Me:** Phase 1 functional polish (B1-B3) then Phase 2 enrichment depth.
-4. **Me:** Phase 4 (Drive-dependent: B7, B8, B3 link) once C1 is in.
-5. **You:** integration keys (C3) when ready to run on live data.
-
-After the build items + C1/C2, the brief is fully built; C3 is purely "turn the mocks into live providers".
+That's the whole list. No further build work is outstanding.
