@@ -77,8 +77,10 @@ export async function runUboChecks(db: DB, caseId: string, actor: { id?: string 
     let screen: ScreeningResult;
     try {
       screen = await cv.screen({ firstName, lastName, dob: k.date_of_birth });
-    } catch (e) {
-      screen = { pepMatch: false, sanctionsMatch: false, matches: [{ type: "pep", name: `${firstName} ${lastName}`, detail: `screening unavailable: ${(e as Error).message}` }] };
+    } catch {
+      // Screening unavailable — record no matches (the unavailable idv_band
+      // already signals the check didn't run). Never fabricate a hit.
+      screen = { pepMatch: false, sanctionsMatch: false, matches: [] };
     }
 
     await db.from("onboarding_ubo_checks").insert({

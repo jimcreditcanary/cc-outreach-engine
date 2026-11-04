@@ -1,12 +1,11 @@
 // Call Validate (TransUnion) adapter — UBO identity verification (ID&V) + PEP /
-// sanctions screening. The live TransUnion contract (WSDL/endpoint) isn't wired
-// yet, so the live client throws a clear "not configured" error that the
-// orchestrator records as unavailable; the fixture mock drives the whole UBO-
-// check flow meanwhile. Same shape as the CoP adapter.
+// sanctions screening. This provider is DESCOPED (no live contract wired, and we
+// deliberately do NOT fabricate results): when it isn't configured, every check
+// returns an explicit "unavailable" so an operator can never mistake a stubbed
+// pass for a real verification. KYC is handled manually (document collection via
+// the UBO upload link) until a provider is wired.
 //
-// Env (live, once the contract is in hand): CALL_VALIDATE_USER + CALL_VALIDATE_PASSWORD.
-
-import { useMock } from "./mock";
+// Env (if ever wired): CALL_VALIDATE_USER + CALL_VALIDATE_PASSWORD.
 
 export interface IdvPerson {
   firstName: string;
@@ -35,36 +34,22 @@ export interface CallValidateClient {
   screen(person: { firstName: string; lastName: string; dob?: string | null }): Promise<ScreeningResult>;
 }
 
-function liveClient(): CallValidateClient {
-  const notWired = () => {
-    throw new Error("Call Validate not wired yet — provide the TransUnion API contract + CALL_VALIDATE_USER/PASSWORD.");
-  };
-  return { verifyIdentity: notWired, screen: notWired };
-}
-
-function mockClient(): CallValidateClient {
+/** No provider wired — never fabricates. ID&V is "unavailable" (so it counts as
+ *  not-verified and falls back to manual document collection); screening returns
+ *  no matches but is explicitly flagged as not run. */
+function unconfiguredClient(): CallValidateClient {
   return {
-    async verifyIdentity(person) {
-      const hasAddress = Boolean(person.address?.postcode);
-      const hasDob = Boolean(person.dob);
-      // Fixture: full data → pass, partial → refer; a "fail" test name fails.
-      if (person.lastName.toLowerCase().includes("fail")) {
-        return { band: "fail", score: 20, verified: false, detail: { mock: true, reason: "no match" } };
-      }
-      if (hasAddress && hasDob) return { band: "pass", score: 92, verified: true, detail: { mock: true, sources: ["electoral_roll", "credit_header"] } };
-      return { band: "refer", score: 55, verified: false, detail: { mock: true, reason: "insufficient data — need full DOB + address" } };
+    async verifyIdentity() {
+      return { band: "unavailable", score: 0, verified: false, detail: { configured: false, reason: "Identity verification is not configured." } };
     },
-    async screen(person) {
-      const name = `${person.firstName} ${person.lastName}`.toLowerCase();
-      const matches: ScreeningMatch[] = [];
-      if (name.includes("pep")) matches.push({ type: "pep", name: `${person.firstName} ${person.lastName}`, detail: "Mock PEP list hit — verify manually." });
-      if (name.includes("sanction")) matches.push({ type: "sanction", name: `${person.firstName} ${person.lastName}`, detail: "Mock sanctions list hit — verify manually." });
-      return { pepMatch: matches.some((m) => m.type === "pep"), sanctionsMatch: matches.some((m) => m.type === "sanction"), matches };
+    async screen() {
+      return { pepMatch: false, sanctionsMatch: false, matches: [] };
     },
   };
 }
 
 export function getCallValidate(): CallValidateClient {
-  const hasCreds = Boolean(process.env.CALL_VALIDATE_USER && process.env.CALL_VALIDATE_PASSWORD);
-  return useMock("callValidate", hasCreds) ? mockClient() : liveClient();
+  // Descoped: no live provider. Always the explicit "unavailable" client — never
+  // a fabricated pass/fail. (Wire a real liveClient here if the contract lands.)
+  return unconfiguredClient();
 }

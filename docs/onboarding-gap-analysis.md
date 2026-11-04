@@ -30,14 +30,18 @@ The full Step-6 customer questionnaire (P0–P6) is **live and the default** —
 | # | Item | Unblocks | Status |
 |---|------|----------|--------|
 | ~~C1~~ | Google Drive envs | doc filing; B3 link, B7, B8 | ↪ **descoped** (2026-11-04) |
-| C2 | **HubSpot write scopes**: add `crm.objects.deals.write` + `crm.schemas.deals.write` + `crm.objects.contacts.write` + `crm.schemas.contacts.write` + association labels to the Private App token, then `npm run onboarding-setup-props` (also creates the contact `linkedin_url` prop) + `npm run onboarding-setup-associations` | role→deal status sync + `onboarding_case_id` stamp + B1 LinkedIn persistence | optional — degrades gracefully (HubSpot mirror just no-ops) |
-| C3 | **Live integration keys**: Call Validate / TransUnion (ID&V + PEP), CoP PSP, Postcoder | real KYC/CoP/address checks (mock until set; flows already work on mocks) | optional — needed only to run on live data |
+| ~~C2~~ | HubSpot write scopes + `onboarding-setup-props`/`-associations` | deal status sync + `onboarding_case_id` stamp + role→deal associations + B1 LinkedIn (→ built-in `hs_linkedin_url`) | ✅ **done** (2026-11-04) — props + all 6 association labels created; token has the scopes |
+| ~~C3~~ | Live KYC/CoP/address providers (Call Validate/TransUnion, CoP PSP, Postcoder) | real ID&V / PEP / CoP / address checks | ↪ **descoped** (2026-11-04) — providers now return explicit "unavailable" (no fabricated results); KYC handled manually via UBO doc upload |
 
 Migration 070 ✅ applied 2026-11-04 (B4/B5/B6 now persist).
 
 ## Descoped
 ↪ HubSpot field-sync of questionnaire answers on submit — "not bothered".
 ↪ Google Drive (C1) and everything that depends on it — B7 (reports-as-PDFs), B8 (Project Tracker Doc), B3's Drive-folder link. Decided 2026-11-04.
+↪ Live KYC/CoP/address providers (C3) — Call Validate/TransUnion, CoP PSP, Postcoder. Decided 2026-11-04. The adapters now return explicit "unavailable" instead of fabricating results, so nobody mistakes a stub for a real check; ID&V falls back to manual document collection via the UBO upload link. (Companies House stays live.)
+
+## Status: build complete
+All code is shipped; C1/C3 descoped; C2 done. **Nothing outstanding** — the onboarding agent is feature-complete against the brief (minus the deliberately-descoped Drive filing + live KYC providers).
 
 ---
 

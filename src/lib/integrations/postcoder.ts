@@ -1,10 +1,10 @@
 // Address lookup via Allies Postcoder. Powers postcode → address autocomplete
-// on the merchant form (UBO residential + trading addresses). Fixture mock when
-// no key / INTEGRATIONS_MOCK selects it, so the form works before provisioning.
+// on the merchant form (UBO residential + trading addresses). DESCOPED until a
+// key is set: with no POSTCODER_API_KEY the lookup returns no suggestions (it
+// does NOT fabricate addresses) — the form still accepts manually-typed
+// addresses, so nothing fake is ever saved as a real address.
 //
 // Env (live): POSTCODER_API_KEY.
-
-import { useMock } from "./mock";
 
 export interface PostalAddress {
   summaryline: string;
@@ -46,19 +46,8 @@ function liveClient(key: string): PostcoderClient {
   };
 }
 
-function mockClient(): PostcoderClient {
-  return {
-    async lookup(postcode) {
-      const pc = (postcode.trim() || "E14 5AB").toUpperCase();
-      return [
-        { summaryline: `Flat 1, 1 Example Street, London, ${pc}`, line1: "Flat 1", line2: "1 Example Street", city: "London", county: "Greater London", postcode: pc },
-        { summaryline: `2 Example Street, London, ${pc}`, line1: "2 Example Street", line2: "", city: "London", county: "Greater London", postcode: pc },
-      ];
-    },
-  };
-}
-
 export function getPostcoder(): PostcoderClient {
+  // Descoped until keyed: no fabricated suggestions — just no autocomplete.
   const key = process.env.POSTCODER_API_KEY;
-  return useMock("postcoder", Boolean(key)) ? mockClient() : liveClient(key!);
+  return key ? liveClient(key) : { async lookup() { return []; } };
 }

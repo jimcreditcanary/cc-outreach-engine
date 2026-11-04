@@ -1,14 +1,16 @@
-// Mock selection for external integrations (onboarding brief, non-negotiables).
-// Every integration (companiesHouse, cop, callValidate, postcoder, drive,
-// charityCommission, sanctions, fcaRegister) exposes a typed interface with a
-// live client and a mock, and picks between them here — so the whole pipeline
-// runs end-to-end before any real key/credential is in place.
+// Mock selection for external integrations. companiesHouse / drive / xero use a
+// fixture mock so the pipeline runs before a real key is in place.
+//
+// NOTE: the KYC/CoP/address providers (callValidate, cop, postcoder) are DESCOPED
+// and no longer mocked — rather than fabricate a pass/match/address they return
+// an explicit "unavailable"/empty result (see those adapters). They ignore
+// INTEGRATIONS_MOCK.
 //
 // An integration uses its mock when EITHER:
-//   • INTEGRATIONS_MOCK names it ("all", or a comma list e.g. "companiesHouse,cop")
+//   • INTEGRATIONS_MOCK names it ("all", or a comma list e.g. "companiesHouse")
 //   • its own credentials are absent (hasCreds=false) — so dev works out of the box
 //
-// Set INTEGRATIONS_MOCK=all in dev/staging to force every adapter to its mock.
+// Set INTEGRATIONS_MOCK=all in dev/staging to force every mocked adapter to its mock.
 
 export type IntegrationName =
   | "companiesHouse"

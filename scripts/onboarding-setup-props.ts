@@ -1,14 +1,13 @@
-// One-time (idempotent) creation of the HubSpot properties that the onboarding
-// agent writes: DEAL props that surface a case's state, and a CONTACT prop for a
-// new contact's LinkedIn URL. Safe to re-run — existing props are skipped. Needs
-// a HUBSPOT_TOKEN with crm.schemas.deals.write + crm.schemas.contacts.write (to
-// create) and, for the app to then WRITE them, the matching crm.objects.*.write.
+// One-time (idempotent) creation of the HubSpot DEAL properties that surface an
+// onboarding case's state. Safe to re-run — existing props are skipped. Needs a
+// HUBSPOT_TOKEN with crm.schemas.deals.write (to create) and crm.objects.deals.write
+// (for the app to write them). B1's LinkedIn uses HubSpot's BUILT-IN contact
+// property `hs_linkedin_url`, so no contact property is created here.
 //
 //   npm run onboarding-setup-props
 //
-// Until this runs, syncDealOnboardingStatus() no-ops and a new contact's LinkedIn
-// is dropped best-effort — the wizard still works, those values just aren't
-// mirrored to HubSpot.
+// Until this runs, syncDealOnboardingStatus() no-ops — the wizard still works,
+// the deal status just isn't mirrored to HubSpot.
 
 import { config } from "dotenv";
 config({ path: ".env.local", override: true });
@@ -57,15 +56,6 @@ const PROPS: PropDef[] = [
     type: "string",
     fieldType: "text",
     description: "The veepveep onboarding case id for this deal (internal reference).",
-  },
-  {
-    object: "contacts",
-    groupName: "contactinformation",
-    name: "linkedin_url",
-    label: "LinkedIn URL",
-    type: "string",
-    fieldType: "text",
-    description: "LinkedIn profile URL, captured on the veepveep onboarding new-contact form.",
   },
 ];
 
