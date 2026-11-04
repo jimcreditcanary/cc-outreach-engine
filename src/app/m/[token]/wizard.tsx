@@ -25,8 +25,45 @@ import {
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
 import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAccountAction } from "./actions";
 
-const field = "w-full rounded border border-neutral-300 px-3 py-2 text-sm focus:border-[#003566] focus:outline-none focus:ring-1 focus:ring-[#003566]";
+// ─── Design tokens (B9 — locked) ─────────────────────────────────────────────
+// Accent  #003566 navy (brand, every interactive/accent surface)
+// States  emerald = done · amber = needs-follow-up ("don't know") · red = required/error
+// Radius  controls rounded-md · containers rounded-lg · badges rounded · progress rounded-full
+// Inputs  px-3 py-2.5 (≈44px tap target)
+const field = "w-full rounded-md border border-neutral-300 px-3 py-2.5 text-sm focus:border-[#003566] focus:outline-none focus:ring-1 focus:ring-[#003566]";
 const lbl = "block text-sm font-medium text-neutral-800 mb-1";
+const btnPrimary = "rounded-md bg-[#003566] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#002a52]";
+const btnSecondary = "rounded-md border border-neutral-300 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-100";
+
+// Small padlock trust cue, placed beside sensitive inputs (bank, identity).
+function LockNote({ children }: { children: ReactNode }) {
+  return (
+    <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="3" y="7.5" width="10" height="6" rx="1.3" /><path d="M5 7.5V5.2a3 3 0 0 1 6 0v2.3" />
+      </svg>
+      <span>{children}</span>
+    </p>
+  );
+}
+
+// One combined meta row under a field: the "don't know" toggle (left) and the
+// attribution line (right) share a single baseline instead of stacking two
+// faint sub-lines. Renders nothing when neither applies.
+function FieldMeta({ name, answers, noUnknown }: { name: string; answers: AnswerMap; noUnknown?: boolean }) {
+  const a = attributionLine(answers[name]);
+  if (noUnknown && !a) return null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3">
+      {noUnknown ? <span /> : (
+        <label className="flex items-center gap-1.5 text-xs text-neutral-400">
+          <input type="checkbox" name={`${name}__unknown`} defaultChecked={answers[name]?.is_unknown} /> Don&apos;t know - ask later
+        </label>
+      )}
+      {a && <span className="text-[11px] text-neutral-400">{a}</span>}
+    </div>
+  );
+}
 
 // ─── Self-identify ───────────────────────────────────────────────────────────
 
@@ -64,7 +101,7 @@ export async function SelfIdentify({ token, caseId, v2 }: { token: string; caseI
           <div><label htmlFor="editor_name" className={lbl}>Your name</label><input id="editor_name" name="editor_name" className={field} /></div>
           <div><label htmlFor="editor_email" className={lbl}>Your email (optional)</label><input id="editor_email" name="editor_email" type="email" className={field} /></div>
         </div>
-        <PendingButton className="rounded bg-[#003566] px-5 py-2 text-sm font-semibold text-white hover:bg-[#002a52]" pendingLabel="Starting…">Start →</PendingButton>
+        <PendingButton className={btnPrimary} pendingLabel="Starting…">Start →</PendingButton>
       </form>
     </>
   );
@@ -161,8 +198,8 @@ function PageForm({ token, page, v2, title, intro, children }: {
       </div>
       {children}
       <div className="flex flex-wrap items-center gap-2">
-        <button type="submit" name="mode" value="draft" className="rounded border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100">Save &amp; finish later</button>
-        <button type="submit" name="mode" value="continue" className="rounded bg-[#003566] px-5 py-2 text-sm font-semibold text-white hover:bg-[#002a52]">Continue →</button>
+        <button type="submit" name="mode" value="draft" className={btnSecondary}>Save &amp; finish later</button>
+        <button type="submit" name="mode" value="continue" className={btnPrimary}>Continue →</button>
       </div>
     </form>
   );
@@ -171,17 +208,11 @@ function PageForm({ token, page, v2, title, intro, children }: {
 function AnswerField({ def, answers, fcaRequired }: { def: AnswerFieldDef; answers: AnswerMap; fcaRequired: boolean }) {
   const a = answers[def.key];
   const required = def.required || (def.requiredIfFca && fcaRequired);
-  const attr = attributionLine(a);
   return (
     <div>
       <label htmlFor={def.key} className={lbl}>{def.label}{required && <span className="text-red-600"> *</span>}</label>
       <input id={def.key} name={def.key} type={def.type ?? "text"} defaultValue={a?.value ?? ""} className={field} />
-      {def.unknownOk && (
-        <label className="mt-1 flex items-center gap-1.5 text-xs text-neutral-500">
-          <input type="checkbox" name={`${def.key}__unknown`} defaultChecked={a?.is_unknown} /> Don&apos;t know - ask later
-        </label>
-      )}
-      {attr && <p className="mt-0.5 text-[11px] text-neutral-400">{attr}</p>}
+      <FieldMeta name={def.key} answers={answers} noUnknown={!def.unknownOk} />
     </div>
   );
 }
@@ -249,6 +280,7 @@ function UbosPage({ token, c, enrichment, merchant, answers, v2 }: {
   return (
     <PageForm token={token} page="ubos" v2={v2} title="Beneficial owners" intro="Confirm the details for each person with significant control (25%+ ownership or control).">
       <input type="hidden" name="ubo_count" value={individualUbos.length} />
+      <LockNote>Identity details are encrypted and used only for anti-money-laundering checks.</LockNote>
       {individualUbos.length === 0 ? (
         <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-500">No beneficial owners are on file from Companies House. If anyone owns or controls 25%+ of the business, please confirm below and we&apos;ll follow up separately.</p>
       ) : (
@@ -321,7 +353,8 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-[#003566]">Bank accounts</h2>
-        <p className="mt-0.5 text-sm text-neutral-500">Add the account(s) we&apos;ll disburse to / settle with. Each is stored encrypted and checked with Confirmation of Payee - you can add several.</p>
+        <p className="mt-0.5 text-sm text-neutral-500">Add the account(s) we&apos;ll disburse to / settle with - you can add several.</p>
+        <div className="mt-1.5"><LockNote>Stored encrypted and checked with Confirmation of Payee. We never display your full account number back.</LockNote></div>
       </div>
 
       {merchant.bankAccounts.length > 0 && (
@@ -374,8 +407,8 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
           <p className="mt-2 text-xs text-neutral-400">Leave rows blank if not needed. Save to add more rows.</p>
         </fieldset>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="submit" name="mode" value="draft" className="rounded border border-neutral-300 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100">Save &amp; finish later</button>
-          <button type="submit" name="mode" value="continue" className="rounded bg-[#003566] px-5 py-2 text-sm font-semibold text-white hover:bg-[#002a52]">Continue →</button>
+          <button type="submit" name="mode" value="draft" className={btnSecondary}>Save &amp; finish later</button>
+          <button type="submit" name="mode" value="continue" className={btnPrimary}>Continue →</button>
         </div>
       </form>
     </div>
@@ -388,13 +421,7 @@ function Attr({ answers, name }: { answers: AnswerMap; name: string }) {
 }
 // "Don't know - ask later": lets the filler defer any payment/infosec question to
 // the economic buyer. On by default for these helpers; opt out with noUnknown.
-function UnknownToggle({ name, answers }: { name: string; answers: AnswerMap }) {
-  return (
-    <label className="mt-1 flex items-center gap-1.5 text-xs text-neutral-400">
-      <input type="checkbox" name={`${name}__unknown`} defaultChecked={answers[name]?.is_unknown} /> Don&apos;t know - ask later
-    </label>
-  );
-}
+// The toggle + attribution render together on one row via FieldMeta.
 function TextA({ name, label, answers, type = "text", placeholder, required, full, noUnknown }: {
   name: string; label: string; answers: AnswerMap; type?: string; placeholder?: string; required?: boolean; full?: boolean; noUnknown?: boolean;
 }) {
@@ -402,8 +429,7 @@ function TextA({ name, label, answers, type = "text", placeholder, required, ful
     <div className={full ? "sm:col-span-2" : undefined}>
       <label htmlFor={name} className={lbl}>{label}{required && <span className="text-red-600"> *</span>}</label>
       <input id={name} name={name} type={type} placeholder={placeholder} defaultValue={answers[name]?.value ?? ""} className={field} />
-      {!noUnknown && <UnknownToggle name={name} answers={answers} />}
-      <Attr answers={answers} name={name} />
+      <FieldMeta name={name} answers={answers} noUnknown={noUnknown} />
     </div>
   );
 }
@@ -417,8 +443,7 @@ function RadioA({ name, label, answers, options, required, dflt, full, noUnknown
       <div className="flex flex-wrap gap-4 text-sm">
         {options.map((o) => <label key={o.value} className="flex items-center gap-1.5"><input type="radio" name={name} value={o.value} defaultChecked={cur ? cur === o.value : o.value === dflt} /> {o.label}</label>)}
       </div>
-      {!noUnknown && <UnknownToggle name={name} answers={answers} />}
-      <Attr answers={answers} name={name} />
+      <FieldMeta name={name} answers={answers} noUnknown={noUnknown} />
     </div>
   );
 }
@@ -432,8 +457,7 @@ function SelectA({ name, label, answers, options, required, noUnknown }: {
         <option value="">-</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
-      {!noUnknown && <UnknownToggle name={name} answers={answers} />}
-      <Attr answers={answers} name={name} />
+      <FieldMeta name={name} answers={answers} noUnknown={noUnknown} />
     </div>
   );
 }
@@ -699,7 +723,7 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
       <form action={submitForApprovalAction}>
         <input type="hidden" name="token" value={token} />
         <input type="hidden" name="v2" value={v2 ?? ""} />
-        <PendingButton className="rounded bg-[#003566] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#002a52]" pendingLabel="Submitting…">Submit for approval</PendingButton>
+        <PendingButton className={btnPrimary} pendingLabel="Submitting…">Submit for approval</PendingButton>
         <p className="mt-2 text-xs text-neutral-400">Required fields must be complete (or marked &ldquo;don&apos;t know&rdquo;). Your information is sent securely and used only for your Credit Canary onboarding.</p>
       </form>
     </div>

@@ -67,7 +67,13 @@ export default async function UboDocPage({
     <Shell>
       <h1 className="text-2xl font-semibold text-[#003566]">Verify your identity</h1>
       <p className="mt-1 text-sm text-neutral-600">
-        Hi {name}, as part of <strong>{company}</strong>&apos;s onboarding with Credit Canary we need to confirm your identity as a beneficial owner. Please upload the two documents below - it&apos;s secure and only used for this check.
+        Hi {name}, as part of <strong>{company}</strong>&apos;s onboarding with Credit Canary we need to confirm your identity as a beneficial owner. Please upload the two documents below.
+      </p>
+      <p className="mt-2 flex items-center gap-1.5 text-xs text-neutral-500">
+        <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <rect x="3" y="7.5" width="10" height="6" rx="1.3" /><path d="M5 7.5V5.2a3 3 0 0 1 6 0v2.3" />
+        </svg>
+        <span>Uploaded securely and used only for this identity check.</span>
       </p>
 
       {sp.error && (
@@ -88,7 +94,7 @@ export default async function UboDocPage({
           <p className="mt-1 text-xs text-neutral-500">A utility bill or bank statement dated within the last 3 months.</p>
           <input name="poa" type="file" accept="image/*,.pdf" required className={fileInput} />
         </fieldset>
-        <PendingButton className="rounded bg-[#003566] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#002a52]" pendingLabel="Uploading…">
+        <PendingButton className="rounded-md bg-[#003566] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#002a52]" pendingLabel="Uploading…">
           Upload securely
         </PendingButton>
         <p className="text-xs text-neutral-400">Your documents are sent securely and used only to verify your identity for this onboarding.</p>
