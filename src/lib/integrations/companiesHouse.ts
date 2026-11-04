@@ -108,7 +108,28 @@ export interface ChPsc {
 }
 
 export interface ChChargesSummary { total: number; outstanding: number }
-export interface ChInsolvencySummary { cases: number; raw: unknown }
+
+/** One insolvency case from /company/{num}/insolvency (B6). */
+export interface ChInsolvencyCase {
+  /** Case number within the company's insolvency history. */
+  number: number | null;
+  /** e.g. "creditors-voluntary-liquidation", "compulsory-liquidation". */
+  type: string | null;
+  /** Key dates on the case, e.g. [{ type: "wound-up-on", date: "2021-06-01" }]. */
+  dates: { type: string | null; date: string | null }[];
+  /** Appointed insolvency practitioners (name + role, if given). */
+  practitioners: { name: string | null; role: string | null }[];
+}
+export interface ChInsolvencySummary { cases: number; caseList: ChInsolvencyCase[]; raw: unknown }
+
+/** The incorporation filing from filing-history (B4). `transactionId` drives a
+ *  public "view document" link on the CH service (no API key needed). */
+export interface ChIncorporationFiling {
+  date: string | null;
+  transactionId: string | null;
+  type: string | null;
+  description: string | null;
+}
 
 export interface ChDisqualifiedMatch {
   name: string;
@@ -139,8 +160,15 @@ export interface CompaniesHouseClient {
   getCharges(companyNumber: string): Promise<ChChargesSummary>;
   /** Null when CH has no insolvency record (404). */
   getInsolvency(companyNumber: string): Promise<ChInsolvencySummary | null>;
+  /** The incorporation filing (B4). Null when filing history has no incorporation item. */
+  getIncorporationFiling(companyNumber: string): Promise<ChIncorporationFiling | null>;
   /** Fuzzy name search of the disqualified-officers register. */
   searchDisqualified(name: string): Promise<ChDisqualifiedMatch[]>;
+}
+
+/** Public (no-auth) CH service link to view a filed document by transaction id. */
+export function chDocumentUrl(companyNumber: string, transactionId: string): string {
+  return `https://find-and-update.company-information.service.gov.uk/company/${encodeURIComponent(companyNumber)}/filing-history/${encodeURIComponent(transactionId)}/document?format=pdf&download=0`;
 }
 
 // ─── live client ──────────────────────────────────────────────────────────────
@@ -271,6 +299,18 @@ function mapOfficer(it: Record<string, unknown>): ChOfficer {
   };
 }
 
+function mapInsolvencyCase(it: Record<string, unknown>): ChInsolvencyCase {
+  const dates = Array.isArray(it.dates) ? (it.dates as Record<string, unknown>[]) : [];
+  const prac = Array.isArray(it.practitioners) ? (it.practitioners as Record<string, unknown>[]) : [];
+  const n = it.number;
+  return {
+    number: typeof n === "number" ? n : n != null && !Number.isNaN(Number(n)) ? Number(n) : null,
+    type: (it.type as string) ?? null,
+    dates: dates.map((d) => ({ type: (d.type as string) ?? null, date: (d.date as string) ?? null })),
+    practitioners: prac.map((p) => ({ name: (p.name as string) ?? null, role: (p.role as string) ?? null })),
+  };
+}
+
 function mapPsc(it: Record<string, unknown>): ChPsc {
   return {
     kind: String(it.kind ?? ""),
@@ -358,8 +398,25 @@ function liveClient(key: string): CompaniesHouseClient {
       const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/insolvency`, key);
       if (res.status === 404) return null;
       if (!res.ok) throw new CompaniesHouseError(`insolvency failed: ${res.status}`, res.status);
-      const j = (await res.json()) as { cases?: unknown[] };
-      return { cases: Array.isArray(j.cases) ? j.cases.length : 0, raw: j };
+      const j = (await res.json()) as { cases?: Record<string, unknown>[] };
+      const cases = Array.isArray(j.cases) ? j.cases : [];
+      return { cases: cases.length, caseList: cases.map(mapInsolvencyCase), raw: j };
+    },
+    async getIncorporationFiling(companyNumber) {
+      const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/filing-history?category=incorporation&items_per_page=25`, key);
+      if (!res.ok) return null;
+      const j = (await res.json()) as { items?: Record<string, unknown>[] };
+      const items = j.items ?? [];
+      // Prefer the "new incorporation" (NEWINC) item; else the earliest filing.
+      const inc = items.find((it) => String(it.type ?? "").toUpperCase().includes("NEWINC"))
+        ?? items.slice().sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")))[0];
+      if (!inc) return null;
+      return {
+        date: (inc.date as string) ?? (inc.action_date as string) ?? null,
+        transactionId: (inc.transaction_id as string) ?? null,
+        type: (inc.type as string) ?? null,
+        description: (inc.description as string) ?? null,
+      };
     },
     async searchDisqualified(name) {
       // Best-effort — never fail the enrichment on a register search.
@@ -409,11 +466,18 @@ const MOCK_IXBRL = `<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL" xmlns:x
 <ix:header><ix:resources>
 <xbrli:context id="dur"><xbrli:period><xbrli:startDate>2024-04-01</xbrli:startDate><xbrli:endDate>2025-03-31</xbrli:endDate></xbrli:period></xbrli:context>
 <xbrli:context id="inst"><xbrli:period><xbrli:instant>2025-03-31</xbrli:instant></xbrli:period></xbrli:context>
+<xbrli:context id="instPrev"><xbrli:period><xbrli:instant>2024-03-31</xbrli:instant></xbrli:period></xbrli:context>
 </ix:resources></ix:header><body>
 <ix:nonFraction name="core:TurnoverRevenue" contextRef="dur" unitRef="GBP" scale="0">4820000</ix:nonFraction>
 <ix:nonFraction name="core:ProfitLoss" contextRef="dur" unitRef="GBP" scale="0">612000</ix:nonFraction>
 <ix:nonFraction name="core:NetAssetsLiabilities" contextRef="inst" unitRef="GBP" scale="0">1890000</ix:nonFraction>
 <ix:nonFraction name="core:CashBankOnHand" contextRef="inst" unitRef="GBP" scale="0">540000</ix:nonFraction>
+<ix:nonFraction name="core:CurrentAssets" contextRef="inst" unitRef="GBP" scale="0">2310000</ix:nonFraction>
+<ix:nonFraction name="core:CreditorsDueWithinOneYear" contextRef="inst" unitRef="GBP" scale="0">980000</ix:nonFraction>
+<ix:nonFraction name="core:NetCurrentAssetsLiabilities" contextRef="inst" unitRef="GBP" scale="0">1330000</ix:nonFraction>
+<ix:nonFraction name="core:CurrentAssets" contextRef="instPrev" unitRef="GBP" scale="0">1870000</ix:nonFraction>
+<ix:nonFraction name="core:CreditorsDueWithinOneYear" contextRef="instPrev" unitRef="GBP" scale="0">1120000</ix:nonFraction>
+<ix:nonFraction name="core:NetCurrentAssetsLiabilities" contextRef="instPrev" unitRef="GBP" scale="0">750000</ix:nonFraction>
 <ix:nonFraction name="core:AverageNumberEmployeesDuringPeriod" contextRef="dur" unitRef="pure">38</ix:nonFraction>
 </body></html>`;
 
@@ -477,6 +541,14 @@ function mockClient(): CompaniesHouseClient {
     },
     async getCharges() { return { total: 0, outstanding: 0 }; },
     async getInsolvency() { return null; },
+    async getIncorporationFiling(companyNumber) {
+      return {
+        date: MOCK_PROFILE.date_of_creation,
+        transactionId: `MOCK_${companyNumber.trim() || MOCK_PROFILE.company_number}_NEWINC`,
+        type: "NEWINC",
+        description: "incorporation-company",
+      };
+    },
     async searchDisqualified() { return []; },
   };
 }

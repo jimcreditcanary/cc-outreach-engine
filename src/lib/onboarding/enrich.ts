@@ -9,7 +9,7 @@
 // runs end-to-end against the fixture mock before a live key is set.
 
 import type { serviceClient } from "../db/client";
-import { getCompaniesHouse, type CompaniesHouseClient, type ChPsc } from "../integrations/companiesHouse";
+import { getCompaniesHouse, type CompaniesHouseClient, type ChPsc, type ChInsolvencyCase } from "../integrations/companiesHouse";
 import { getCase, logCaseEvent } from "./cases";
 
 type DB = ReturnType<typeof serviceClient>;
@@ -43,11 +43,12 @@ export async function enrichCompanyForCase(
   const ch = getCompaniesHouse();
   const num = c.company_number;
 
-  const [profile, officersAll, charges, insolvency] = await Promise.all([
+  const [profile, officersAll, charges, insolvency, incorporation] = await Promise.all([
     ch.getProfile(num),
     ch.getOfficers(num),
     ch.getCharges(num),
     ch.getInsolvency(num),
+    ch.getIncorporationFiling(num).catch(() => null), // B4 — best-effort, never fails the enrich
   ]);
   if (!profile) throw new Error(`Companies House has no company ${num}.`);
 
@@ -69,7 +70,7 @@ export async function enrichCompanyForCase(
   await db.from("onboarding_officers").delete().eq("case_id", caseId);
   await db.from("onboarding_company_snapshot").delete().eq("case_id", caseId);
 
-  await db.from("onboarding_company_snapshot").insert({
+  const snapshotBase = {
     case_id: caseId,
     company_number: profile.company_number,
     company_name: profile.company_name,
@@ -89,7 +90,16 @@ export async function enrichCompanyForCase(
     disqualified_officer_found: disqualifiedFound,
     raw: profile.raw,
     enriched_at: new Date().toISOString(),
-  });
+  };
+  // B4/B6 columns (migration 070). Try with them; fall back to the base row when
+  // the columns aren't there yet so enrichment still writes a snapshot.
+  const snapshotFull = {
+    ...snapshotBase,
+    incorporation_transaction_id: incorporation?.transactionId ?? null,
+    insolvency_cases: insolvency?.caseList ?? null,
+  };
+  let snapIns = await db.from("onboarding_company_snapshot").insert(snapshotFull);
+  if (snapIns.error) snapIns = await db.from("onboarding_company_snapshot").insert(snapshotBase);
 
   if (officers.length) {
     await db.from("onboarding_officers").insert(
@@ -147,6 +157,10 @@ export interface CompanySnapshot {
   has_charges: boolean;
   has_insolvency_history: boolean;
   disqualified_officer_found: boolean;
+  /** B4 — CH filing-history transaction id for the incorporation filing. */
+  incorporation_transaction_id: string | null;
+  /** B6 — structured insolvency cases (null before migration 070). */
+  insolvency_cases: ChInsolvencyCase[] | null;
   enriched_at: string | null;
 }
 export interface OfficerRow {
@@ -177,7 +191,13 @@ export async function loadEnrichment(db: DB, caseId: string): Promise<{
     // raw CH profile so "active but winding up" shows on the enrichment page.
     const snapRow = snap.data as (CompanySnapshot & { raw?: { company_status_detail?: string | null } | null }) | null;
     const snapshot: CompanySnapshot | null = snapRow
-      ? { ...snapRow, company_status_detail: snapRow.company_status_detail ?? snapRow.raw?.company_status_detail ?? null }
+      ? {
+          ...snapRow,
+          company_status_detail: snapRow.company_status_detail ?? snapRow.raw?.company_status_detail ?? null,
+          // Columns from migration 070 — default to null when not yet applied.
+          incorporation_transaction_id: snapRow.incorporation_transaction_id ?? null,
+          insolvency_cases: snapRow.insolvency_cases ?? null,
+        }
       : null;
     return {
       snapshot,

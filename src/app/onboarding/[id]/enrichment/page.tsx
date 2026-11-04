@@ -11,6 +11,8 @@ import { serviceClient } from "@/lib/db/client";
 import { getCase } from "@/lib/onboarding/cases";
 import { loadEnrichment, type UboRow } from "@/lib/onboarding/enrich";
 import { loadAccounts } from "@/lib/onboarding/accounts";
+import { chDocumentUrl } from "@/lib/integrations/companiesHouse";
+import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { humanizeLabel } from "@/lib/format/sector";
 import { PendingButton } from "@/components/PendingButton";
@@ -47,6 +49,13 @@ export default async function EnrichmentPage({ params }: { params: Promise<{ id:
   if (!c) notFound();
   const { snapshot, officers, ubos } = await loadEnrichment(db, id);
   const accounts = c.company_number ? await loadAccounts(db, id) : null;
+
+  // B6 — which officers are also PSCs? Match officer names against the individual
+  // PSC list (both formats normalise via parsePersonName → first/last key).
+  const pscKeys = new Set(
+    ubos.filter((u) => !u.is_corporate && u.name).map((u) => { const n = parsePersonName(u.name); return nameMatchKey(n.first, n.last); }),
+  );
+  const isPsc = (name: string) => { const n = parsePersonName(name); return pscKeys.has(nameMatchKey(n.first, n.last)); };
 
   return (
     <main className="px-4 py-6 md:px-8">
@@ -87,13 +96,40 @@ export default async function EnrichmentPage({ params }: { params: Promise<{ id:
           {!accounts ? (
             <p className="mt-2 text-sm text-neutral-400">Not parsed yet — pulls the headline figures from the latest filed iXBRL accounts (Companies House Document API).</p>
           ) : (
-            <dl className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <div><dt className="text-xs text-neutral-400">Turnover</dt><dd className="text-sm text-neutral-800">{money(accounts.turnover)}</dd></div>
-              <div><dt className="text-xs text-neutral-400">Profit / loss</dt><dd className="text-sm text-neutral-800">{money(accounts.profit_loss)}</dd></div>
-              <div><dt className="text-xs text-neutral-400">Net assets</dt><dd className="text-sm text-neutral-800">{money(accounts.net_assets)}</dd></div>
-              <div><dt className="text-xs text-neutral-400">Cash</dt><dd className="text-sm text-neutral-800">{money(accounts.cash)}</dd></div>
-              <div><dt className="text-xs text-neutral-400">Employees</dt><dd className="text-sm text-neutral-800">{accounts.employees ?? "—"}</dd></div>
-            </dl>
+            <>
+              <dl className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <div><dt className="text-xs text-neutral-400">Turnover</dt><dd className="text-sm text-neutral-800">{money(accounts.turnover)}</dd></div>
+                <div><dt className="text-xs text-neutral-400">Profit / loss</dt><dd className="text-sm text-neutral-800">{money(accounts.profit_loss)}</dd></div>
+                <div><dt className="text-xs text-neutral-400">Net assets</dt><dd className="text-sm text-neutral-800">{money(accounts.net_assets)}</dd></div>
+                <div><dt className="text-xs text-neutral-400">Cash</dt><dd className="text-sm text-neutral-800">{money(accounts.cash)}</dd></div>
+                <div><dt className="text-xs text-neutral-400">Employees</dt><dd className="text-sm text-neutral-800">{accounts.employees ?? "—"}</dd></div>
+              </dl>
+              {accounts.periods && accounts.periods.length > 0 && (
+                <div className="mt-3 overflow-x-auto">
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-400">Working capital (two-year)</p>
+                  <table className="w-full min-w-[460px] text-sm">
+                    <thead className="text-left text-xs uppercase text-neutral-400">
+                      <tr>
+                        <th className="py-1 font-medium">Period end</th>
+                        <th className="py-1 text-right font-medium">Current assets</th>
+                        <th className="py-1 text-right font-medium">Current liabilities</th>
+                        <th className="py-1 text-right font-medium">Net current assets</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {accounts.periods.map((p, i) => (
+                        <tr key={p.period_end ?? i} className="border-t border-neutral-100">
+                          <td className="py-1.5 text-neutral-700">{p.period_end ? fmtDate(p.period_end) : "—"}{i === 0 && <span className="ml-1 text-[10px] text-neutral-400">latest</span>}</td>
+                          <td className="py-1.5 text-right text-neutral-800">{money(p.current_assets)}</td>
+                          <td className="py-1.5 text-right text-neutral-800">{money(p.current_liabilities)}</td>
+                          <td className="py-1.5 text-right text-neutral-800">{money(p.net_current_assets)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </section>
       )}
@@ -139,11 +175,37 @@ export default async function EnrichmentPage({ params }: { params: Promise<{ id:
             <Cell label="Name">{snapshot.company_name ?? "—"}</Cell>
             <Cell label="Type">{snapshot.company_type ?? "—"}</Cell>
             <Cell label="Incorporated">{snapshot.incorporation_date ? fmtDate(snapshot.incorporation_date) : "—"}</Cell>
+            <Cell label="Certificate of incorporation">
+              {snapshot.incorporation_transaction_id
+                ? <a href={chDocumentUrl(snapshot.company_number, snapshot.incorporation_transaction_id)} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">View certificate ↗</a>
+                : <span className="text-neutral-400">—</span>}
+            </Cell>
             <Cell label="SIC codes">{snapshot.sic_codes.length ? snapshot.sic_codes.join(", ") : "—"}</Cell>
             <Cell label="Accounts next due">{snapshot.accounts_next_due ? fmtDate(snapshot.accounts_next_due) : "—"}</Cell>
             <Cell label="Conf. statement due">{snapshot.confirmation_statement_next_due ? fmtDate(snapshot.confirmation_statement_next_due) : "—"}</Cell>
             <Cell label="Registered office" wide>{addressLine(snapshot.registered_office)}</Cell>
           </section>
+
+          {/* Insolvency filings (B6) */}
+          {snapshot.insolvency_cases && snapshot.insolvency_cases.length > 0 && (
+            <section>
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-red-700">Insolvency filings ({snapshot.insolvency_cases.length})</h2>
+              <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-sm">
+                <thead className="text-left text-xs uppercase text-neutral-400">
+                  <tr><th className="py-1">Type</th><th>Key dates</th><th>Practitioner(s)</th></tr>
+                </thead>
+                <tbody>
+                  {snapshot.insolvency_cases.map((ic, i) => (
+                    <tr key={ic.number ?? i} className="border-t border-neutral-100 align-top">
+                      <td className="py-1.5 font-medium text-neutral-800">{ic.type ? humanizeLabel(ic.type) : "—"}</td>
+                      <td className="py-1.5 text-neutral-600">{ic.dates.length ? ic.dates.map((d) => `${d.type ? pretty(d.type) : "date"}: ${d.date ? fmtDate(d.date) : "—"}`).join(" · ") : "—"}</td>
+                      <td className="py-1.5 text-neutral-600">{ic.practitioners.length ? ic.practitioners.map((p) => p.name ?? "—").join(", ") : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            </section>
+          )}
 
           {/* Officers */}
           <section>
@@ -158,6 +220,7 @@ export default async function EnrichmentPage({ params }: { params: Promise<{ id:
                     <tr key={o.id} className={`border-t border-neutral-100 ${o.resigned_on ? "text-neutral-400" : ""}`}>
                       <td className="py-1.5 font-medium text-neutral-800">
                         {o.name}
+                        {isPsc(o.name) && <span className="ml-1 rounded bg-blue-100 px-1 text-[10px] font-semibold text-blue-700">PSC</span>}
                         {o.is_disqualified && <span className="ml-1 rounded bg-red-100 px-1 text-[10px] font-semibold text-red-700">disq?</span>}
                       </td>
                       <td>{o.officer_role ?? "—"}</td>

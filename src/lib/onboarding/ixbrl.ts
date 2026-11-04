@@ -12,6 +12,14 @@
 
 export interface IxbrlFact { name: string; local: string; value: number; contextRef: string; periodEnd: string | null }
 
+/** Balance-sheet working-capital figures for one reported period (B5). */
+export interface AccountsPeriod {
+  period_end: string | null;
+  current_assets: number | null;
+  current_liabilities: number | null;
+  net_current_assets: number | null;
+}
+
 export interface ParsedAccounts {
   periodEnd: string | null;
   turnover: number | null;
@@ -19,6 +27,8 @@ export interface ParsedAccounts {
   net_assets: number | null;
   cash: number | null;
   employees: number | null;
+  /** Latest + prior period working capital (newest first; empty if none found). */
+  periods: AccountsPeriod[];
   facts: { name: string; value: number; periodEnd: string | null }[];
 }
 
@@ -83,11 +93,47 @@ function pick(facts: IxbrlFact[], needles: string[], latest: string | null): num
   return (exact ?? pool[0]!).value;
 }
 
+/** Pick a balance-sheet concept at a specific period end: an exact local-name
+ *  match first (needed because "currentassets" is a substring of
+ *  "netcurrentassetsliabilities"), then a guarded substring fallback. */
+function pickAt(
+  facts: IxbrlFact[], periodEnd: string | null,
+  opts: { exact: string[]; includes?: string[]; exclude?: string[] },
+): number | null {
+  const pool = facts.filter((f) => f.periodEnd === periodEnd);
+  for (const local of opts.exact) {
+    const f = pool.find((x) => x.local === local);
+    if (f) return f.value;
+  }
+  const inc = pool.find(
+    (f) => (opts.includes ?? []).some((n) => f.local.includes(n)) && !(opts.exclude ?? []).some((n) => f.local.includes(n)),
+  );
+  return inc ? inc.value : null;
+}
+
+const CURRENT_ASSETS = { exact: ["currentassets"], includes: ["currentassets"], exclude: ["netcurrentassets", "noncurrentassets"] };
+const CURRENT_LIABILITIES = { exact: ["creditorsduewithinoneyear", "currentliabilities"], includes: ["creditorsduewithinoneyear", "currentliabilities"] };
+const NET_CURRENT = { exact: ["netcurrentassetsliabilities", "netcurrentassets"], includes: ["netcurrentassets"] };
+
 export function parseIxbrl(xhtml: string): ParsedAccounts {
   const contexts = parseContexts(xhtml);
   const facts = parseFacts(xhtml, contexts);
   const dates = [...contexts.values()].filter(Boolean).sort();
   const latest = dates.length ? dates[dates.length - 1]! : null;
+
+  // Two most recent distinct period ends (newest first) for the working-capital
+  // comparison; keep a period only if it reports at least one of the figures.
+  const distinct = [...new Set(dates)].sort();
+  const periods: AccountsPeriod[] = distinct
+    .slice(-2)
+    .reverse()
+    .map((pe) => ({
+      period_end: pe,
+      current_assets: pickAt(facts, pe, CURRENT_ASSETS),
+      current_liabilities: pickAt(facts, pe, CURRENT_LIABILITIES),
+      net_current_assets: pickAt(facts, pe, NET_CURRENT),
+    }))
+    .filter((p) => p.current_assets != null || p.current_liabilities != null || p.net_current_assets != null);
 
   return {
     periodEnd: latest,
@@ -96,6 +142,7 @@ export function parseIxbrl(xhtml: string): ParsedAccounts {
     net_assets: pick(facts, ["netassetsliabilities", "netassets", "shareholdersfunds", "equity"], latest),
     cash: pick(facts, ["cashbankonhand", "cashcashequivalents", "cashbank"], latest),
     employees: pick(facts, ["averagenumberemployees"], latest),
+    periods,
     facts: facts.map((f) => ({ name: f.name, value: f.value, periodEnd: f.periodEnd })),
   };
 }
