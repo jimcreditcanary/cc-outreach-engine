@@ -17,6 +17,7 @@ import type { serviceClient } from "../db/client";
 import { getCase, logCaseEvent } from "./cases";
 import { loadMerchantForm } from "./merchantForm";
 import { documentsFor, type OnboardingDocKind } from "./productGroups";
+import { parsePersonName, nameMatchKey } from "./personName";
 
 type DB = ReturnType<typeof serviceClient>;
 const BUCKET = "onboarding-uploads";
@@ -71,12 +72,25 @@ async function buildData(db: DB, caseId: string): Promise<Rec> {
   const [{ data: snap }, { data: offs }, { data: ubos }, { form }] = await Promise.all([
     db.from("onboarding_company_snapshot").select("*").eq("case_id", caseId).maybeSingle(),
     db.from("onboarding_officers").select("name, officer_role, appointed_on, resigned_on, nationality, dob_month, dob_year").eq("case_id", caseId),
-    db.from("onboarding_ubos").select("name, is_corporate, nationality, country_of_residence, dob_month, dob_year, natures_of_control").eq("case_id", caseId),
+    db.from("onboarding_ubos").select("name, is_corporate, kind, ceased_on, depth, nationality, country_of_residence, dob_month, dob_year, natures_of_control").eq("case_id", caseId),
     loadMerchantForm(db, caseId),
   ]);
   const snapshot = (snap as Rec | null) ?? {};
   const officers = (offs as Rec[] | null) ?? [];
-  const uboRows = ((ubos as Rec[] | null) ?? []).filter((u) => !u.is_corporate && u.name);
+  // Current, distinct individual owners only — drop corporates, statements and
+  // ceased PSCs, then dedupe the same person across the ownership chain (so the
+  // doc's ownership section shows one box per person, not one per PSC node).
+  const seenUbo = new Set<string>();
+  const uboRows = ((ubos as Rec[] | null) ?? [])
+    .filter((u) => !u.is_corporate && u.name && !/statement/i.test(s(u.kind)) && !u.ceased_on)
+    .sort((a, b) => Number(a.depth ?? 0) - Number(b.depth ?? 0))
+    .filter((u) => {
+      const pn = parsePersonName(s(u.name));
+      const k = nameMatchKey(pn.first, pn.last) || s(u.name).toLowerCase();
+      if (seenUbo.has(k)) return false;
+      seenUbo.add(k);
+      return true;
+    });
   const business = form?.business ?? {};
   const comp = form?.compliance ?? {};
   const sig = form?.signatory ?? {};

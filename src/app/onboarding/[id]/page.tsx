@@ -34,6 +34,7 @@ import { loadGeneratedDocs, type GeneratedDoc } from "@/lib/onboarding/docgen";
 import { loadEnrichment, distinctIndividualUbos } from "@/lib/onboarding/enrich";
 import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
 import { getCrm } from "@/lib/crm";
+import { AssignRoleForm } from "./AssignRoleForm";
 import { CopyButton } from "@/components/CopyButton";
 
 export const dynamic = "force-dynamic";
@@ -377,32 +378,20 @@ async function StakeholdersStep({ c, stakeholders }: { c: OnboardingCase; stakeh
         )}
       </div>
 
-      {/* Assign a contact to one or more roles (multi-select — feedback item 4) */}
+      {/* Assign a contact to role(s). Contacts that already hold a role are
+          filtered out (item 2) — remove a role above to reassign. The role
+          checkboxes appear once a contact is chosen (item 3). */}
       {companyContacts.length === 0 ? (
         <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           No contacts on this company in HubSpot yet — add one below (or in HubSpot), then assign roles.
         </p>
       ) : (
-        <>
-          <form action={addStakeholderAction} className="flex flex-wrap items-end gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-            <input type="hidden" name="case_id" value={c.id} />
-            <div className="min-w-48 flex-1">
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">Contact</label>
-              <select name="contact_id" className={field} defaultValue="">
-                <option value="" disabled>Pick a contact…</option>
-                {companyContacts.map((ct) => <option key={ct.id} value={ct.id}>{ct.full_name}{ct.job_title ? ` — ${ct.job_title}` : ""}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-neutral-500">Roles</label>
-              <select name="roles" multiple className="h-28 w-full rounded border border-neutral-300 px-2 py-1.5 text-sm">
-                {ONBOARDING_ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-              </select>
-            </div>
-            <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Adding…">+ Add</PendingButton>
-          </form>
-          <p className="mt-1 text-xs text-neutral-400">Hold ⌘ (Mac) or Ctrl to pick multiple roles. A contact can hold several roles, and several contacts can share a role.</p>
-        </>
+        <AssignRoleForm
+          caseId={c.id}
+          contacts={companyContacts.filter((ct) => !byContact.has(ct.id)).map((ct) => ({ id: ct.id, name: ct.full_name || ct.id, title: ct.job_title ?? undefined }))}
+          roles={ONBOARDING_ROLES.map((r) => ({ key: r.key, label: r.label }))}
+          action={addStakeholderAction}
+        />
       )}
 
       {/* Add a brand-new contact to the company (and this deal) without leaving. */}
