@@ -41,11 +41,11 @@ export default async function PublicBookingPage({ params, searchParams }: Props)
       <Shell operatorName={page.operator_name} embed={embed}>
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
           <div className="mb-2 text-3xl">✅</div>
-          <h2 className="mb-1 text-lg font-semibold text-emerald-900">You&apos;re booked in</h2>
-          <p className="text-sm text-emerald-800">
+          <h2 className="mb-1 text-lg font-semibold text-[#003566]">You&apos;re booked in</h2>
+          <p className="text-sm text-neutral-700">
             <LocalTime iso={sp.booked} /> with {page.operator_name} ({page.config.durationMins} min).
           </p>
-          <p className="mt-2 text-xs text-emerald-700">
+          <p className="mt-2 text-xs text-neutral-500">
             A calendar invite is on its way to your inbox{sp.join ? "" : " - accept it and you're set"}.
           </p>
           {sp.join && (
@@ -53,7 +53,7 @@ export default async function PublicBookingPage({ params, searchParams }: Props)
               href={sp.join}
               target="_blank"
               rel="noreferrer"
-              className="mt-4 inline-block rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+              className="mt-4 inline-block rounded-lg bg-[#003566] px-4 py-2 text-sm font-semibold text-white hover:bg-[#002a52]"
             >
               Join link for the call
             </a>
@@ -101,7 +101,7 @@ function Shell({ operatorName, embed, children }: { operatorName: string; embed?
     <main className={embed ? "mx-auto max-w-xl p-2" : "mx-auto min-h-screen max-w-xl px-4 py-10"}>
       {!embed && (
         <header className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-lg font-bold text-white">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#003566] text-lg font-bold text-white">
             {operatorName.split(" ").map((w) => w[0]).slice(0, 2).join("")}
           </div>
           <h1 className="text-xl font-semibold text-neutral-900">Book a call with {operatorName}</h1>

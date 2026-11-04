@@ -29,7 +29,7 @@ export default async function EnquirePage({ searchParams }: { searchParams: Prom
     <main className={embed ? "mx-auto max-w-xl p-2" : "mx-auto min-h-screen max-w-xl px-4 py-10"}>
       {!embed && (
         <header className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-lg font-bold text-white">CC</div>
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#003566] text-lg font-bold text-white">CC</div>
           <h1 className="text-xl font-semibold text-neutral-900">Talk to Credit Canary</h1>
           <p className="text-sm text-neutral-500">Tell us a little about you and we&apos;ll come back within one working day.</p>
         </header>
@@ -38,17 +38,17 @@ export default async function EnquirePage({ searchParams }: { searchParams: Prom
       {sp.sent ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
           <div className="mb-2 text-3xl">✅</div>
-          <h2 className="mb-1 text-lg font-semibold text-emerald-900">Thanks - we&apos;ve got it</h2>
-          <p className="text-sm text-emerald-800">We&apos;ll be in touch within one working day.</p>
+          <h2 className="mb-1 text-lg font-semibold text-[#003566]">Thanks - we&apos;ve got it</h2>
+          <p className="text-sm text-neutral-700">We&apos;ll be in touch within one working day.</p>
           {sp.book && (
             <>
-              <p className="mt-4 text-sm text-emerald-800">Want to skip the back-and-forth?</p>
+              <p className="mt-4 text-sm text-neutral-700">Want to skip the back-and-forth?</p>
               <a
                 href={`/book/${encodeURIComponent(sp.book)}`}
                 // From an iframe, open the booking page in the full window —
                 // a slot grid crammed into a form-sized frame is unusable.
                 target={embed ? "_top" : undefined}
-                className="mt-2 inline-block rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                className="mt-2 inline-block rounded-lg bg-[#003566] px-4 py-2 text-sm font-semibold text-white hover:bg-[#002a52]"
               >
                 Book a call directly →
               </a>
@@ -92,7 +92,7 @@ export default async function EnquirePage({ searchParams }: { searchParams: Prom
               </div>
             </div>
             <PendingButton
-              className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+              className="w-full rounded-lg bg-[#003566] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#002a52]"
               pendingLabel="Sending…"
             >
               Send enquiry

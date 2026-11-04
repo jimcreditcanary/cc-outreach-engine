@@ -15,7 +15,7 @@ function SubmitButton({ disabled }: { disabled: boolean }) {
     <button
       type="submit"
       disabled={disabled || pending}
-      className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-neutral-300"
+      className="w-full rounded-lg bg-[#003566] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#002a52] disabled:cursor-not-allowed disabled:bg-neutral-300"
     >
       {pending ? "Booking…" : disabled ? "Pick a time first" : "Confirm booking"}
     </button>
@@ -88,8 +88,8 @@ export function BookingForm({ slug, slots, durationMins, embed }: { slug: string
                       onClick={() => setSel(t.iso)}
                       className={`rounded-md border px-2.5 py-1.5 text-sm tabular-nums transition-colors ${
                         sel === t.iso
-                          ? "border-emerald-600 bg-emerald-600 font-semibold text-white"
-                          : "border-neutral-300 bg-white text-neutral-700 hover:border-emerald-400 hover:bg-emerald-50"
+                          ? "border-[#003566] bg-[#003566] font-semibold text-white"
+                          : "border-neutral-300 bg-white text-neutral-700 hover:border-[#003566] hover:bg-[#003566]/5"
                       }`}
                     >
                       {t.time}
