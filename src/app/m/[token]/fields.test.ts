@@ -40,9 +40,9 @@ describe("missingCompanyFields", () => {
     expect(missingCompanyFields(mk({ ...base, ico_number: "" }), { fcaRequired: false, tuCredit: false })).toContain("ICO registration number");
     expect(missingCompanyFields(mk({ ...base, ico_number: "" }, ["ico_number"]), { fcaRequired: false, tuCredit: false })).not.toContain("ICO registration number");
   });
-  it("requires FCA FRN only when a TU product is selected", () => {
+  it("treats FRN as optional even when a TU product is selected (FRN is not required)", () => {
     const base = mk({ trading_name: "A", trading_address: "B", phone: "1", email: "a@co.com", website: "https://co.com", ico_number: "Z", signatory_name: "S", signatory_title: "T", signatory_email: "s@co.com" });
     expect(missingCompanyFields(base, { fcaRequired: false, tuCredit: false })).toHaveLength(0);
-    expect(missingCompanyFields(base, { fcaRequired: true, tuCredit: false })).toContain("FCA registration number (FRN)");
+    expect(missingCompanyFields(base, { fcaRequired: true, tuCredit: false })).toHaveLength(0);
   });
 });

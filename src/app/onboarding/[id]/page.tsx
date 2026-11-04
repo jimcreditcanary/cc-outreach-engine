@@ -31,7 +31,7 @@ import {
 } from "../actions";
 import { merchantFormUrl } from "@/lib/onboarding/merchantForm";
 import { loadGeneratedDocs, type GeneratedDoc } from "@/lib/onboarding/docgen";
-import { loadEnrichment } from "@/lib/onboarding/enrich";
+import { loadEnrichment, distinctIndividualUbos } from "@/lib/onboarding/enrich";
 import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
 import { getCrm } from "@/lib/crm";
 import { CopyButton } from "@/components/CopyButton";
@@ -288,8 +288,9 @@ async function StakeholdersStep({ c, stakeholders }: { c: OnboardingCase; stakeh
 
   // Active directors: role contains "director", not resigned.
   const directors = enrichment.officers.filter((o) => /director/i.test(o.officer_role ?? "") && !o.resigned_on);
-  // Individual UBOs (leaf people) from the PSC tree — exclude corporates + statements.
-  const ubos = enrichment.ubos.filter((u) => !u.is_corporate && u.name && !/statement/i.test(u.kind ?? ""));
+  // Individual UBOs (leaf people) from the PSC tree — current, deduped,
+  // corporates/statements/ceased excluded (fixes the "3 identical owners" bug).
+  const ubos = distinctIndividualUbos(enrichment.ubos);
   const enriched = !!enrichment.snapshot || enrichment.officers.length > 0 || enrichment.ubos.length > 0;
 
   // Group assigned stakeholders by contact so a person shows once with all roles.

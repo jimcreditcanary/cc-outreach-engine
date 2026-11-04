@@ -25,6 +25,7 @@ import {
   COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, PAYMENT_ANSWER_KEYS, INFOSEC_ANSWER_KEYS, projectCompanyAnswers,
   missingCompanyFields, hasValidDpo, isPersonalEmailDomain, requiresTransactionProfile,
   paymentReasonProducts, missingPaymentFields, projectPaymentAnswers, isCharityType, missingInfosecFields, nextFormPage,
+  normalizeUrl, URL_ANSWER_KEYS,
 } from "./fields";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
@@ -66,7 +67,7 @@ export async function submitMerchantFormAction(formData: FormData) {
     uboKyc.push({
       ubo_id: str(formData.get(`ubo_id_${i}`)) || null,
       ubo_name,
-      date_of_birth: str(formData.get(`ubo_dob_${i}`)),
+      date_of_birth: mmYYYYtoDate(str(formData.get(`ubo_dob_${i}`))),
       exact_ownership_percent: str(formData.get(`ubo_pct_${i}`)),
       residential_address: {
         line1: str(formData.get(`ubo_addr1_${i}`)),
@@ -136,6 +137,15 @@ export async function submitMerchantFormAction(formData: FormData) {
 
 const qp = (v2: string) => (v2 ? `&v2=${encodeURIComponent(v2)}` : "");
 
+/** Accept a UBO date of birth as MM/YYYY (Companies House granularity) and store
+ *  it as the 1st of that month; pass a full ISO date through for back-compat. */
+function mmYYYYtoDate(v: string): string {
+  const s = v.trim();
+  const m = s.match(/^(0[1-9]|1[0-2])\/(\d{4})$/);
+  if (m) return `${m[2]}-${m[1]}-01`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
 function parseUbos(formData: FormData): UboKycInput[] {
   const count = Number(str(formData.get("ubo_count")) || 0);
   const out: UboKycInput[] = [];
@@ -145,7 +155,7 @@ function parseUbos(formData: FormData): UboKycInput[] {
     out.push({
       ubo_id: str(formData.get(`ubo_id_${i}`)) || null,
       ubo_name,
-      date_of_birth: str(formData.get(`ubo_dob_${i}`)),
+      date_of_birth: mmYYYYtoDate(str(formData.get(`ubo_dob_${i}`))),
       exact_ownership_percent: str(formData.get(`ubo_pct_${i}`)),
       residential_address: {
         line1: str(formData.get(`ubo_addr1_${i}`)), line2: str(formData.get(`ubo_addr2_${i}`)),
@@ -239,10 +249,16 @@ export async function savePageAction(formData: FormData) {
         entries.push({ field_key: f.key, value: str(formData.get(f.key)), is_unknown: str(formData.get(`${f.key}__unknown`)) === "on" });
       }
       for (const s of SOCIAL_FIELDS) entries.push({ field_key: s.key, value: str(formData.get(s.key)) });
+      // Custom-rendered fields (not in the flat COMPANY_FIELDS list):
+      for (const k of ["trading_address", "trade_body_required", "trade_body", "signatory_name", "signatory_title", "signatory_email"]) {
+        entries.push({ field_key: k, value: str(formData.get(k)) });
+      }
       const dpoCount = Math.min(Number(str(formData.get("dpo_count")) || 0), 20);
       for (let i = 0; i < dpoCount; i++) {
         for (const d of DPO_FIELDS) entries.push({ field_key: `dpo_${i}_${d.key}`, value: str(formData.get(`dpo_${i}_${d.key}`)) });
       }
+      // Normalise URL answers (website / privacy / socials) to include a scheme (item 12).
+      for (const e of entries) if (URL_ANSWER_KEYS.includes(e.field_key)) e.value = normalizeUrl(e.value);
       await setAnswers(db, c.id, entries, ed);
       // Keep the typed merchant form in sync so /review, docgen and the privacy
       // assessment read current data.

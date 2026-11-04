@@ -47,21 +47,40 @@ export interface AnswerFieldDef {
   unknownOk?: boolean;
 }
 
+// Trading address + signatory are rendered as custom blocks in CompanyPage
+// (same-as-registered toggle / Postcoder lookup; existing-contact picker), so
+// they're not in this flat text-field list. FRN is optional (not required).
 export const COMPANY_FIELDS: AnswerFieldDef[] = [
   { key: "trading_name", label: "Trading name(s)", required: true },
-  { key: "trading_address", label: "Trading address", required: true },
   { key: "principal_office", label: "Principal office address", onlyIfTuCredit: true },
   { key: "phone", label: "Company telephone", type: "tel", required: true },
   { key: "email", label: "Company email", type: "email", required: true },
   { key: "website", label: "Company website", type: "url", required: true },
   { key: "ico_number", label: "ICO registration number", required: true, unknownOk: true },
-  { key: "fca_frn", label: "FCA registration number (FRN)", requiredIfFca: true },
+  { key: "fca_frn", label: "FCA registration number (FRN) (optional)" },
   { key: "vat_number", label: "VAT number (optional)" },
-  { key: "trade_body", label: "Trade-body membership", unknownOk: true },
   { key: "privacy_policy_url", label: "Privacy-policy URL", type: "url", unknownOk: true },
-  { key: "signatory_name", label: "Authorised signatory - full name", required: true },
-  { key: "signatory_title", label: "Authorised signatory - title / role", required: true },
-  { key: "signatory_email", label: "Authorised signatory - email", type: "email", required: true },
+];
+
+/** HTML validation attributes for an input type (phone + URL, item 11/12). */
+export function inputValidation(type?: string): { inputMode?: "tel" | "url"; pattern?: string; title?: string } {
+  if (type === "tel") return { inputMode: "tel", pattern: "[0-9+()\\s.\\-]{7,}", title: "Enter a valid phone number (at least 7 digits)" };
+  if (type === "url") return { inputMode: "url" };
+  return {};
+}
+
+/** Normalise a URL answer: prepend https:// when a scheme is missing, so the
+ *  website/privacy/social fields store a usable URL (item 12). Empty stays empty. */
+export function normalizeUrl(v: string): string {
+  const s = v.trim();
+  if (!s) return "";
+  return /^https?:\/\//i.test(s) ? s : `https://${s.replace(/^\/+/, "")}`;
+}
+
+/** Answer keys that hold URLs and should be normalised on save (item 12). */
+export const URL_ANSWER_KEYS = [
+  "website", "privacy_policy_url",
+  "social_facebook", "social_linkedin", "social_twitter", "social_instagram",
 ];
 
 /** Social media URLs (optional) - answer-store keys. */
@@ -154,6 +173,15 @@ export function missingCompanyFields(answers: AnswerMap, opts: { fcaRequired: bo
     if (a?.is_unknown) continue; // don't-know satisfies (deferred to economic buyer)
     if (!(a?.value ?? "").trim()) missing.push(f.label);
   }
+  // Custom-rendered required fields (not in the flat COMPANY_FIELDS list):
+  const req = (key: string, label: string) => {
+    if (answers[key]?.is_unknown) return;
+    if (!(answers[key]?.value ?? "").trim()) missing.push(label);
+  };
+  req("trading_address", "Trading address");
+  req("signatory_name", "Authorised signatory - full name");
+  req("signatory_title", "Authorised signatory - title / role");
+  req("signatory_email", "Authorised signatory - email");
   return missing;
 }
 

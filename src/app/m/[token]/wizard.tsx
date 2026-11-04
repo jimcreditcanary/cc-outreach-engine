@@ -11,7 +11,7 @@ import { serviceClient } from "@/lib/db/client";
 import { listStakeholders, ONBOARDING_ROLES } from "@/lib/onboarding/cases";
 import { hubspotRepo } from "@/lib/hubspot/repo";
 import { getAnswers, getProgress, attributionLine, type AnswerMap } from "@/lib/onboarding/formAnswers";
-import { loadEnrichment } from "@/lib/onboarding/enrich";
+import { loadEnrichment, distinctIndividualUbos } from "@/lib/onboarding/enrich";
 import { loadMerchantForm, type TokenCase } from "@/lib/onboarding/merchantForm";
 import { loadUploads } from "@/lib/onboarding/uploads";
 import { requiresFcaFrn, requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
@@ -20,9 +20,12 @@ import { AddressLookup } from "@/components/AddressLookup";
 import {
   COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, collectDpos, dpoSummary, visibleFormPages,
   requiresTransactionProfile, paymentReasonProducts, productLabel, isCharityType,
-  INFOSEC_SMALL, INFOSEC_LARGE, type AnswerFieldDef,
+  INFOSEC_SMALL, INFOSEC_LARGE, inputValidation, type AnswerFieldDef,
 } from "./fields";
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
+import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
+import { discoverPrivacyPolicyUrl } from "@/lib/onboarding/websiteScan";
+import { TradingAddress, SignatoryPicker, DpoList } from "./CompanyFields";
 import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAccountAction } from "./actions";
 
 // ─── Design tokens (B9 — locked) ─────────────────────────────────────────────
@@ -123,6 +126,37 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
     requiresTuSection(c.product_groups) ? loadUploads(db, c.id) : Promise.resolve([]),
   ]);
 
+  // Company/UBO-page prefills from the deal's contacts (signatory, DPO, UBO
+  // email-by-name), the registered address, and privacy-URL discovery. Loaded
+  // only on the pages that use them.
+  let companyPrefill: CompanyPrefill | null = null;
+  let uboEmailByName = new Map<string, string>();
+  if (current === "company" || current === "ubos") {
+    const stakeholders = await listStakeholders(db, c.id);
+    const ids = [...new Set(stakeholders.map((s) => s.hubspot_contact_id))];
+    const cts = (await Promise.all(ids.map((id) => hubspotRepo.getContact(id).catch(() => null)))).filter((x): x is NonNullable<typeof x> => !!x);
+    uboEmailByName = new Map(cts.filter((ct) => ct.email).map((ct) => { const pn = parsePersonName(ct.full_name); return [nameMatchKey(pn.first, pn.last), ct.email!]; }));
+    if (current === "company") {
+      const byId = new Map(cts.map((ct) => [ct.id, ct]));
+      const contacts = cts.map((ct) => ({ id: ct.id, name: ct.full_name || ct.email || ct.id, email: ct.email ?? "", title: ct.job_title ?? "" }));
+      const sigStake = stakeholders.find((s) => s.role === "authorised_signatory");
+      const sigCt = sigStake ? byId.get(sigStake.hubspot_contact_id) : null;
+      const signatory = sigCt ? { name: sigCt.full_name ?? "", email: sigCt.email ?? "", title: sigCt.job_title ?? "" } : null;
+      const firstCt = cts[0];
+      const dpoPrefill = firstCt
+        ? (() => { const pn = parsePersonName(firstCt.full_name); return { first: pn.first, last: pn.last, title: firstCt.job_title ?? "", email: firstCt.email ?? "", phone: firstCt.mobile ?? "" }; })()
+        : null;
+      const ro = enrichment.snapshot?.registered_office ?? null;
+      const registered = ro ? [ro.premises, ro.address_line_1, ro.address_line_2, ro.locality, ro.region, ro.postal_code, ro.country].map((x) => (x ?? "").trim()).filter(Boolean).join(", ") : "";
+      let privacyUrl: string | null = null;
+      if (!(answers["privacy_policy_url"]?.value ?? "").trim()) {
+        const site = answers["website"]?.value ?? "";
+        if (site.trim()) privacyUrl = await discoverPrivacyPolicyUrl(site);
+      }
+      companyPrefill = { contacts, signatory, dpoPrefill, registered, privacyUrl };
+    }
+  }
+
   return (
     <>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -171,8 +205,8 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
       {(() => { const a = attributionLine(answers[`_page_${current}`]); return a ? <p className="mt-3 text-[11px] text-neutral-400">This page - {a.replace(/^Updated/, "last updated")}</p> : null; })()}
 
       <div className="mt-5">
-        {current === "company" && <CompanyPage token={token} c={c} answers={answers} v2={v2} />}
-        {current === "ubos" && <UbosPage token={token} c={c} enrichment={enrichment} merchant={merchant} answers={answers} v2={v2} />}
+        {current === "company" && <CompanyPage token={token} c={c} answers={answers} prefill={companyPrefill!} v2={v2} />}
+        {current === "ubos" && <UbosPage token={token} c={c} enrichment={enrichment} merchant={merchant} answers={answers} emailByName={uboEmailByName} v2={v2} />}
         {current === "accounts" && <AccountsPage token={token} c={c} merchant={merchant} v2={v2} />}
         {current === "payments" && <PaymentsPage token={token} c={c} answers={answers} companyName={enrichment.snapshot?.company_name ?? ""} charity={isCharityType(enrichment.snapshot?.company_type)} v2={v2} />}
         {current === "infosec" && <InfosecPage token={token} answers={answers} uploadCount={uploads.length} v2={v2} />}
@@ -205,13 +239,13 @@ function PageForm({ token, page, v2, title, intro, children }: {
   );
 }
 
-function AnswerField({ def, answers, fcaRequired }: { def: AnswerFieldDef; answers: AnswerMap; fcaRequired: boolean }) {
+function AnswerField({ def, answers, fcaRequired, defaultValue }: { def: AnswerFieldDef; answers: AnswerMap; fcaRequired: boolean; defaultValue?: string }) {
   const a = answers[def.key];
   const required = def.required || (def.requiredIfFca && fcaRequired);
   return (
     <div>
       <label htmlFor={def.key} className={lbl}>{def.label}{required && <span className="text-red-600"> *</span>}</label>
-      <input id={def.key} name={def.key} type={def.type ?? "text"} defaultValue={a?.value ?? ""} className={field} />
+      <input id={def.key} name={def.key} type={def.type ?? "text"} defaultValue={a?.value ?? defaultValue ?? ""} className={field} required={required} {...inputValidation(def.type)} />
       <FieldMeta name={def.key} answers={answers} noUnknown={!def.unknownOk} />
     </div>
   );
@@ -219,44 +253,56 @@ function AnswerField({ def, answers, fcaRequired }: { def: AnswerFieldDef; answe
 
 // ─── Pages ───────────────────────────────────────────────────────────────────
 
-function CompanyPage({ token, c, answers, v2 }: { token: string; c: TokenCase; answers: AnswerMap; v2?: string }) {
+interface CompanyPrefill {
+  contacts: { id: string; name: string; email: string; title: string }[];
+  signatory: { name: string; email: string; title: string } | null;
+  dpoPrefill: { first: string; last: string; title: string; email: string; phone: string } | null;
+  registered: string;
+  privacyUrl: string | null;
+}
+
+function CompanyPage({ token, c, answers, prefill, v2 }: { token: string; c: TokenCase; answers: AnswerMap; prefill: CompanyPrefill; v2?: string }) {
   const fcaRequired = requiresFcaFrn(c.product_groups);
   const tuCredit = c.product_groups.includes("tu_credit");
   const fields = COMPANY_FIELDS.filter((f) => !f.onlyIfTuCredit || tuCredit);
-  // Render existing DPOs plus two blank slots to add more.
-  const existing: number[] = [];
-  for (let i = 0; i < 20; i++) if (answers[`dpo_${i}_first`]?.value || answers[`dpo_${i}_last`]?.value || answers[`dpo_${i}_email`]?.value) existing.push(i);
-  const dpoCount = (existing.length ? Math.max(...existing) + 1 : 0) + 2;
+  // Existing DPOs from the answer store (so a return visit keeps what was typed).
+  const existingDpos: CompanyPrefill["dpoPrefill"][] = [];
+  for (let i = 0; i < 20; i++) {
+    const g = (k: string) => (answers[`dpo_${i}_${k}`]?.value ?? "").trim();
+    if (g("first") || g("last") || g("email")) existingDpos.push({ first: g("first"), last: g("last"), title: g("title"), email: g("email"), phone: g("phone") });
+  }
+
   return (
     <PageForm token={token} page="company" v2={v2} title="Company details" intro="Confirm your business, compliance and authorised-signatory details.">
       <fieldset className="grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
-        {fields.map((f) => <AnswerField key={f.key} def={f} answers={answers} fcaRequired={fcaRequired} />)}
+        <AnswerField def={fields[0]!} answers={answers} fcaRequired={fcaRequired} />
+        {/* Trading address: same-as-registered toggle + Postcoder lookup (item 5). */}
+        <TradingAddress registered={prefill.registered} defaultAddress={answers["trading_address"]?.value ?? ""} />
+        {fields.slice(1).map((f) => (
+          <AnswerField key={f.key} def={f} answers={answers} fcaRequired={fcaRequired}
+            defaultValue={f.key === "privacy_policy_url" ? (prefill.privacyUrl ?? undefined) : undefined} />
+        ))}
       </fieldset>
 
-      {/* Data protection officers (required; can add several) */}
+      {/* Trade body (item 7): required to belong? → free text if yes. */}
       <fieldset className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
-        <legend className="px-1 text-sm font-semibold text-[#003566]">Data protection officer(s) <span className="text-red-600">*</span></legend>
-        <input type="hidden" name="dpo_count" value={dpoCount} />
-        <div className="mt-2 space-y-3">
-          {Array.from({ length: dpoCount }).map((_, i) => {
-            const attr = attributionLine(answers[`dpo_${i}_email`] ?? answers[`dpo_${i}_first`]);
-            return (
-              <div key={i} className="rounded border border-neutral-200 p-3">
-                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400">Officer {i + 1}</p>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {DPO_FIELDS.map((d) => (
-                    <div key={d.key}>
-                      <label htmlFor={`dpo_${i}_${d.key}`} className={lbl}>{d.label}</label>
-                      <input id={`dpo_${i}_${d.key}`} name={`dpo_${i}_${d.key}`} type={d.type ?? "text"} defaultValue={answers[`dpo_${i}_${d.key}`]?.value ?? ""} className={field} />
-                    </div>
-                  ))}
-                </div>
-                {attr && <p className="mt-1 text-[11px] text-neutral-400">{attr}</p>}
-              </div>
-            );
-          })}
+        <legend className="px-1 text-sm font-semibold text-[#003566]">Trade body</legend>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <RadioA name="trade_body_required" label="Are you required to be part of a trade body?" answers={answers} options={YN} required noUnknown />
+          <TextA name="trade_body" label="If yes, which trade body?" answers={answers} noUnknown />
         </div>
       </fieldset>
+
+      {/* Authorised signatory (item 9): prefill from the assigned signatory, else
+          pick an existing contact or enter a new one. */}
+      <SignatoryPicker
+        contacts={prefill.contacts}
+        prefill={prefill.signatory}
+        defaults={{ name: answers["signatory_name"]?.value ?? "", title: answers["signatory_title"]?.value ?? "", email: answers["signatory_email"]?.value ?? "" }}
+      />
+
+      {/* Data protection officers (item 10): one by default, prefilled, add more. */}
+      <DpoList initial={existingDpos.filter((d): d is NonNullable<typeof d> => !!d)} prefill={prefill.dpoPrefill} />
 
       {/* Social media (optional) */}
       <fieldset className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
@@ -264,7 +310,7 @@ function CompanyPage({ token, c, answers, v2 }: { token: string; c: TokenCase; a
         {SOCIAL_FIELDS.map((s) => (
           <div key={s.key}>
             <label htmlFor={s.key} className={lbl}>{s.label}</label>
-            <input id={s.key} name={s.key} type="url" placeholder="https://" defaultValue={answers[s.key]?.value ?? ""} className={field} />
+            <input id={s.key} name={s.key} type="url" inputMode="url" placeholder="https://" defaultValue={answers[s.key]?.value ?? ""} className={field} />
           </div>
         ))}
       </fieldset>
@@ -272,11 +318,16 @@ function CompanyPage({ token, c, answers, v2 }: { token: string; c: TokenCase; a
   );
 }
 
-function UbosPage({ token, c, enrichment, merchant, answers, v2 }: {
-  token: string; c: TokenCase; enrichment: Awaited<ReturnType<typeof loadEnrichment>>; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; answers: AnswerMap; v2?: string;
+function UbosPage({ token, c, enrichment, merchant, answers, emailByName, v2 }: {
+  token: string; c: TokenCase; enrichment: Awaited<ReturnType<typeof loadEnrichment>>; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; answers: AnswerMap; emailByName: Map<string, string>; v2?: string;
 }) {
-  const individualUbos = enrichment.ubos.filter((u) => !u.is_corporate && u.name);
+  const individualUbos = distinctIndividualUbos(enrichment.ubos);
   const kycByUbo = new Map(merchant.kyc.map((k) => [k.ubo_id ?? k.ubo_name, k]));
+  // Prefill DOB as MM/YYYY (Companies House gives month + year only).
+  const dobMMYYYY = (dbDate: string | null | undefined, month: number | null, year: number | null): string => {
+    if (dbDate) { const d = new Date(dbDate); if (isFinite(d.getTime())) return `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`; }
+    return month && year ? `${String(month).padStart(2, "0")}/${year}` : "";
+  };
   return (
     <PageForm token={token} page="ubos" v2={v2} title="Beneficial owners" intro="Confirm the details for each person with significant control (25%+ ownership or control).">
       <input type="hidden" name="ubo_count" value={individualUbos.length} />
@@ -294,10 +345,10 @@ function UbosPage({ token, c, enrichment, merchant, answers, v2 }: {
                 <input type="hidden" name={`ubo_name_${i}`} value={u.name ?? ""} />
                 <div className="mb-2 font-medium text-neutral-800">{u.name}</div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div><label className={lbl}>Date of birth</label><input type="date" name={`ubo_dob_${i}`} defaultValue={k?.date_of_birth ?? ""} className={field} /></div>
+                  <div><label className={lbl}>Date of birth</label><input name={`ubo_dob_${i}`} inputMode="numeric" pattern="(0[1-9]|1[0-2])/\d{4}" placeholder="MM/YYYY" title="Enter the month and year, e.g. 03/1985" defaultValue={dobMMYYYY(k?.date_of_birth, u.dob_month, u.dob_year)} className={field} /></div>
                   <div><label className={lbl}>Exact ownership %</label><input name={`ubo_pct_${i}`} defaultValue={k?.exact_ownership_percent ?? ""} placeholder="e.g. 60%" className={field} /></div>
-                  <div><label className={lbl}>Email</label><input type="email" name={`ubo_email_${i}`} defaultValue={k?.email ?? ""} className={field} /></div>
-                  <div><label className={lbl}>Mobile</label><input type="tel" name={`ubo_mobile_${i}`} defaultValue={k?.mobile ?? ""} className={field} /></div>
+                  <div><label className={lbl}>Email</label><input type="email" name={`ubo_email_${i}`} defaultValue={k?.email ?? (u.name ? emailByName.get(nameMatchKey(parsePersonName(u.name).first, parsePersonName(u.name).last)) ?? "" : "")} className={field} /></div>
+                  <div><label className={lbl}>Mobile</label><input type="tel" name={`ubo_mobile_${i}`} inputMode="tel" defaultValue={k?.mobile ?? ""} className={field} /></div>
                 </div>
                 <div className="mt-3">
                   <span className={lbl}>Residential address</span>
@@ -389,12 +440,6 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
           <div className="mt-2 space-y-4">
             {Array.from({ length: addCount }).map((_, i) => (
               <div key={i} className="grid grid-cols-1 gap-3 border-t border-neutral-100 pt-3 first:border-0 first:pt-0 sm:grid-cols-2">
-                <div>
-                  <label htmlFor={`add_${i}_purpose`} className={lbl}>Account type</label>
-                  <select id={`add_${i}_purpose`} name={`add_${i}_purpose`} defaultValue={purposeOpts[0]?.value} className={field}>
-                    {purposeOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
                 <div><label htmlFor={`add_${i}_name`} className={lbl}>Account name</label><input id={`add_${i}_name`} name={`add_${i}_name`} className={field} /></div>
                 <div><label htmlFor={`add_${i}_bank`} className={lbl}>Bank</label><input id={`add_${i}_bank`} name={`add_${i}_bank`} className={field} /></div>
                 <div className="grid grid-cols-2 gap-3">

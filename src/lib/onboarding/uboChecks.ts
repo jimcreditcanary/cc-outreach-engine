@@ -57,7 +57,17 @@ export async function runUboChecks(db: DB, caseId: string, actor: { id?: string 
     .from("onboarding_ubo_kyc")
     .select("id, ubo_name, date_of_birth, residential_address")
     .eq("case_id", caseId);
-  const kyc = (data as KycRow[] | null) ?? [];
+  // Dedupe by person — legacy cases may hold duplicate KYC rows for the same
+  // owner (the pre-dedup "3 identical owners" bug). Check each person once.
+  const kycAll = (data as KycRow[] | null) ?? [];
+  const seen = new Set<string>();
+  const kyc = kycAll.filter((k) => {
+    const n = parseName(k.ubo_name ?? "");
+    const key = `${n.firstName}|${n.lastName}`.toLowerCase() || (k.ubo_name ?? k.id);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
   await db.from("onboarding_ubo_checks").delete().eq("case_id", caseId);
 

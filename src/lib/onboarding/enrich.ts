@@ -11,6 +11,7 @@
 import type { serviceClient } from "../db/client";
 import { getCompaniesHouse, type CompaniesHouseClient, type ChPsc, type ChInsolvencyCase } from "../integrations/companiesHouse";
 import { getCase, logCaseEvent } from "./cases";
+import { parsePersonName, nameMatchKey } from "./personName";
 
 type DB = ReturnType<typeof serviceClient>;
 const MAX_PSC_DEPTH = 2;        // onboarding company (0) → corporate PSC (1) → its PSC (2)
@@ -173,7 +174,27 @@ export interface UboRow {
   id: string; parent_id: string | null; depth: number; via_company_number: string | null;
   kind: string | null; is_corporate: boolean; name: string | null;
   natures_of_control: string[]; dob_month: number | null; dob_year: number | null;
+  ceased_on: string | null;
   identification: Record<string, unknown> | null;
+}
+
+/** The current, distinct individual beneficial owners who need KYC: drop
+ *  corporates, PSC statements and ceased PSCs, then dedupe the same person
+ *  appearing at several points in the ownership chain (e.g. a direct PSC who is
+ *  also the PSC of a corporate parent, or re-notified after a gap). Keeps the
+ *  most direct occurrence (lowest depth). Fixes the "3 identical owners" bug. */
+export function distinctIndividualUbos(ubos: UboRow[]): UboRow[] {
+  const byPerson = new Map<string, UboRow>();
+  for (const u of ubos) {
+    if (u.is_corporate || !u.name) continue;
+    if (/statement/i.test(u.kind ?? "")) continue;
+    if (u.ceased_on) continue; // no longer a beneficial owner
+    const pn = parsePersonName(u.name);
+    const key = nameMatchKey(pn.first, pn.last) || u.name.trim().toLowerCase();
+    const existing = byPerson.get(key);
+    if (!existing || u.depth < existing.depth) byPerson.set(key, u);
+  }
+  return [...byPerson.values()];
 }
 
 /** Load a case's stored enrichment for display. Degrades to empty (not throws)
@@ -185,7 +206,7 @@ export async function loadEnrichment(db: DB, caseId: string): Promise<{
     const [snap, offs, ubos] = await Promise.all([
       db.from("onboarding_company_snapshot").select("*").eq("case_id", caseId).maybeSingle(),
       db.from("onboarding_officers").select("id, name, officer_role, appointed_on, resigned_on, nationality, occupation, dob_month, dob_year, is_disqualified").eq("case_id", caseId).order("resigned_on", { ascending: true, nullsFirst: true }),
-      db.from("onboarding_ubos").select("id, parent_id, depth, via_company_number, kind, is_corporate, name, natures_of_control, dob_month, dob_year, identification").eq("case_id", caseId).order("depth", { ascending: true }),
+      db.from("onboarding_ubos").select("id, parent_id, depth, via_company_number, kind, is_corporate, name, natures_of_control, dob_month, dob_year, ceased_on, identification").eq("case_id", caseId).order("depth", { ascending: true }),
     ]);
     // company_status_detail has no column of its own — read it off the stored
     // raw CH profile so "active but winding up" shows on the enrichment page.
