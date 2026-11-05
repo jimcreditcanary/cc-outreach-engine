@@ -8,7 +8,6 @@ import { getCrm } from "@/lib/crm";
 import { SortableTh } from "@/components/SortableTh";
 import { parseSort } from "@/lib/table/sort";
 import { PageTabs, CRM_TABS } from "@/components/PageTabs";
-import { OnboardingBadge } from "@/components/OnboardingBadge";
 import { NavSelect } from "@/components/NavSelect";
 import { SelectAllCheckbox } from "@/components/SelectAllCheckbox";
 import { PendingButton } from "@/components/PendingButton";
@@ -37,8 +36,7 @@ export async function HubspotCompaniesView({
     listOwners(),
   ]);
   // HubSpot option values can differ from their labels (e.g. "Accountants" → "Services");
-  // show the human label.
-  const onboardingLabel = new Map(onboardingOpts.map((o) => [o.value, o.label]));
+  // show the human label. (Onboarding now lives on the company page, not this list.)
   const targetLabel = new Map(targetOpts.map((o) => [o.value, o.label]));
 
   // Active filters flow into the sort + pagination links so they survive.
@@ -101,7 +99,6 @@ export async function HubspotCompaniesView({
             <SortableTh label="Name" col="name" sort={sort} basePath="/companies" params={hdrParams} className="py-1" />
             <th>Website</th>
             <th>Current client</th>
-            <th>Onboarding</th>
             <th>Target group</th>
             <th>Owner</th>
             <th></th>
@@ -120,7 +117,6 @@ export async function HubspotCompaniesView({
                   : o.current_client === false ? <span className="text-xs text-neutral-400">No</span>
                   : <span className="text-neutral-300">—</span>}
               </td>
-              <td className="text-neutral-600">{o.onboarding_status ? <OnboardingBadge status={onboardingLabel.get(o.onboarding_status) ?? o.onboarding_status} /> : <span className="text-neutral-300">—</span>}</td>
               <td className="text-neutral-600">{o.target_group ? (targetLabel.get(o.target_group) ?? o.target_group) : <span className="text-neutral-300">—</span>}</td>
               <td className="text-neutral-600">{o.owner_name ?? <span className="text-neutral-300">—</span>}</td>
               <td className="w-10 text-right">

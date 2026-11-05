@@ -17,7 +17,6 @@ import {
   Briefcase,
   CalendarClock,
   UserCheck,
-  Mail,
   Reply,
   Telescope,
   Megaphone,
@@ -65,7 +64,6 @@ const SECTIONS: Section[] = [
       { href: "/outreach",   label: "Workflow",   Icon: Megaphone },
       { href: "/alerts",     label: "Research",   Icon: Telescope },
       { href: "/replies",    label: "Replies",    Icon: Reply },
-      { href: "/newsletter", label: "Newsletter", Icon: Mail },
     ],
   },
   {
