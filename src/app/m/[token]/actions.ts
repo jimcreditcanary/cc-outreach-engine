@@ -18,7 +18,7 @@ import { getFormEditor, setFormEditor } from "@/lib/onboarding/formEditor";
 import { getAnswers, setAnswers, setPageComplete, type FormEditor, type AnswerInput } from "@/lib/onboarding/formAnswers";
 import { listStakeholders, ONBOARDING_ROLES } from "@/lib/onboarding/cases";
 import { hubspotRepo } from "@/lib/hubspot/repo";
-import { requiresFcaFrn, requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
+import { requiresFcaFrn, requiresPayments, requiresDirectDebit, requiresTuSection, requiresPolicies } from "@/lib/onboarding/productGroups";
 import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
 import { ensureSignatoryContact } from "@/lib/onboarding/signatoryContact";
 import { ensureDpoContacts } from "@/lib/onboarding/dpoContacts";
@@ -28,6 +28,7 @@ import {
   missingCompanyFields, hasValidDpo, isPersonalEmailDomain, requiresTransactionProfile,
   paymentReasonProducts, missingPaymentFields, projectPaymentAnswers, isCharityType, missingInfosecFields, nextFormPage,
   normalizeUrl, URL_ANSWER_KEYS,
+  POLICY_ANSWER_KEYS, POLICY_DOC_QUESTIONS, missingPolicyFields,
 } from "./fields";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
@@ -385,6 +386,23 @@ export async function savePageAction(formData: FormData) {
         if (missing.length) dest = `${back}?page=infosec&error=required${qp(v2)}`;
         else { await setPageComplete(db, c.id, "infosec", true); dest = advance(); }
       }
+    } else if (page === "policies") {
+      // Yes/No + paste/detail text go to the answer store; each "doc" question's
+      // file upload is stored with kind = the question's key (best-effort).
+      const entries: AnswerInput[] = POLICY_ANSWER_KEYS.map((k) => ({ field_key: k, value: str(formData.get(k)), is_unknown: str(formData.get(`${k}__unknown`)) === "on" }));
+      await setAnswers(db, c.id, entries, ed);
+      for (const q of POLICY_DOC_QUESTIONS) {
+        const files = formData.getAll(`${q.key}_file`).filter((f): f is File => f instanceof File && f.size > 0);
+        for (const f of files.slice(0, 3)) {
+          if (f.size > 20 * 1024 * 1024) continue;
+          try { await saveUpload(db, c.id, { name: f.name, type: f.type, bytes: new Uint8Array(await f.arrayBuffer()) }, q.key); } catch { /* best-effort */ }
+        }
+      }
+      if (mode === "continue") {
+        const missing = missingPolicyFields(await getAnswers(db, c.id));
+        if (missing.length) dest = `${back}?page=policies&error=required${qp(v2)}`;
+        else { await setPageComplete(db, c.id, "policies", true); dest = advance(); }
+      }
     }
     // "Save & continue anyway" (item 6): everything above has saved the page's
     // answers; advance to the next page without validating (it isn't marked
@@ -439,6 +457,9 @@ export async function submitForApprovalAction(formData: FormData) {
   }
   if (requiresTuSection(c.product_groups) && missingInfosecFields(answers).length) {
     redirect(`${back}?page=infosec&error=required${qp(v2)}`);
+  }
+  if (requiresPolicies(c.product_groups) && missingPolicyFields(answers).length) {
+    redirect(`${back}?page=policies&error=required${qp(v2)}`);
   }
 
   let failed = false;

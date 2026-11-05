@@ -188,6 +188,11 @@ export function requiresFullKyc(keys: string[]): boolean {
 export const requiresTuSection = (keys: string[]) => some(keys, (g) => g.triggersTuSection);
 export const requiresPayments = (keys: string[]) => some(keys, (g) => g.triggersPayments);
 export const requiresDirectDebit = (keys: string[]) => some(keys, (g) => g.triggersDirectDebit);
+/** The governance / FinCrime Policies page shows for Faster Payments or
+ *  Settlement Accounts (Settlement auto-selects Faster Payments). */
+const POLICY_TRIGGER_PRODUCTS = new Set<ProductGroupKey>(["faster_payments", "settlement_accounts"]);
+export const requiresPolicies = (keys: string[]) =>
+  keys.some((k) => isProductGroupKey(k) && POLICY_TRIGGER_PRODUCTS.has(k));
 export const requiresFcaFrn = (keys: string[]) => some(keys, (g) => g.requiresFcaFrn);
 /** UBO/KYC (chain + ID&V + PEP) only on full cases. */
 export const requiresUboKyc = (keys: string[]) => requiresFullKyc(keys);

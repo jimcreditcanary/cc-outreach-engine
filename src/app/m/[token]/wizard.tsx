@@ -13,14 +13,15 @@ import { hubspotRepo } from "@/lib/hubspot/repo";
 import { getAnswers, getProgress, attributionLine, type AnswerMap } from "@/lib/onboarding/formAnswers";
 import { loadEnrichment, distinctIndividualUbos } from "@/lib/onboarding/enrich";
 import { loadMerchantForm, type TokenCase } from "@/lib/onboarding/merchantForm";
-import { loadUploads, loadUboDocStatus } from "@/lib/onboarding/uploads";
-import { requiresFcaFrn, requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
+import { loadUploads, loadUboDocStatus, loadUploadKinds } from "@/lib/onboarding/uploads";
+import { requiresFcaFrn, requiresPayments, requiresDirectDebit, requiresTuSection, requiresPolicies } from "@/lib/onboarding/productGroups";
 import { PendingButton } from "@/components/PendingButton";
 import { AddressLookup } from "@/components/AddressLookup";
 import {
   COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, collectDpos, dpoSummary, visibleFormPages,
   requiresTransactionProfile, paymentReasonProducts, productLabel, isCharityType,
   INFOSEC_SMALL, INFOSEC_LARGE, inputValidation, type AnswerFieldDef,
+  POLICY_DOC_QUESTIONS, POLICY_CERT_QUESTIONS, POLICY_QUESTIONS, type PolicyQuestion,
 } from "./fields";
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
 import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
@@ -116,12 +117,13 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
   const db = serviceClient();
   const pages = visibleFormPages(c.product_groups);
   const current = pages.find((p) => p.id === page)?.id ?? "company";
-  const [answers, progress, enrichment, merchant, uploads] = await Promise.all([
+  const [answers, progress, enrichment, merchant, uploads, policyKinds] = await Promise.all([
     getAnswers(db, c.id),
     getProgress(db, c.id),
     loadEnrichment(db, c.id),
     loadMerchantForm(db, c.id),
     requiresTuSection(c.product_groups) ? loadUploads(db, c.id) : Promise.resolve([]),
+    requiresPolicies(c.product_groups) ? loadUploadKinds(db, c.id) : Promise.resolve(new Set<string>()),
   ]);
 
   // Company/UBO-page prefills from the deal's contacts (signatory, DPO, UBO
@@ -220,6 +222,7 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
         {current === "accounts" && <AccountsPage token={token} c={c} merchant={merchant} v2={v2} />}
         {current === "payments" && <PaymentsPage token={token} c={c} answers={answers} companyName={enrichment.snapshot?.company_name ?? ""} charity={isCharityType(enrichment.snapshot?.company_type)} v2={v2} />}
         {current === "infosec" && <InfosecPage token={token} answers={answers} uploadCount={uploads.length} v2={v2} />}
+        {current === "policies" && <PoliciesPage token={token} answers={answers} policyKinds={policyKinds} v2={v2} />}
         {current === "review" && <ReviewPage token={token} c={c} answers={answers} merchant={merchant} v2={v2} />}
       </div>
     </>
@@ -717,6 +720,65 @@ function InfosecPage({ token, answers, uploadCount, v2 }: { token: string; answe
   );
 }
 
+// ─── Policies page (Faster Payments / Settlement Accounts) ───────────────────
+
+/** Multi-line answer (paste a policy, or free-text detail). Optional, so no
+ *  "don't know" toggle — a merchant can attach a document instead. */
+function TextareaA({ name, label, answers, placeholder, rows = 3 }: {
+  name: string; label: string; answers: AnswerMap; placeholder?: string; rows?: number;
+}) {
+  return (
+    <div>
+      <label htmlFor={name} className={lbl}>{label}</label>
+      <textarea id={name} name={name} rows={rows} placeholder={placeholder} defaultValue={answers[name]?.value ?? ""} className={field} />
+    </div>
+  );
+}
+
+/** One policy question: Yes/No, then (if yes) a document upload + paste box, or
+ *  a free-text detail box for the "other certifications" question. The upload /
+ *  paste are always shown below the Yes/No (server-rendered, no client reveal),
+ *  labelled "If yes - …", matching the infosec page. */
+function PolicyRow({ q, answers, onFile }: { q: PolicyQuestion; answers: AnswerMap; onFile: boolean }) {
+  return (
+    <div className="border-t border-neutral-100 pt-3 first:border-0 first:pt-0">
+      <RadioA name={q.key} label={q.label} answers={answers} options={YN} required />
+      {q.detailOnly ? (
+        <div className="mt-2">
+          <TextareaA name={`${q.key}_detail`} label="If yes - please provide detail" answers={answers} />
+        </div>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {onFile && <p className="text-xs text-emerald-700">✓ Document on file - upload again only to replace.</p>}
+          <div>
+            <label htmlFor={`${q.key}_file`} className="block text-xs text-neutral-500">If yes - upload the document (PDF / Word / text / Markdown)</label>
+            <input id={`${q.key}_file`} name={`${q.key}_file`} type="file" accept=".pdf,.doc,.docx,.txt,.md" className={fileInput} />
+          </div>
+          <TextareaA name={`${q.key}_text`} label="…or paste the text here instead" answers={answers} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PoliciesPage({ token, answers, policyKinds, v2 }: {
+  token: string; answers: AnswerMap; policyKinds: Set<string>; v2?: string;
+}) {
+  return (
+    <PageForm token={token} page="policies" v2={v2} title="Policies &amp; certifications"
+      intro="Because you're onboarding for Faster Payments or Settlement Accounts, we need a view of your governance and financial-crime controls. Answer each question; where you answer Yes, attach the document or paste the text - or send it to us later.">
+      <fieldset className="space-y-1 rounded-lg border border-neutral-200 bg-white p-4">
+        <legend className="px-1 text-sm font-semibold text-[#003566]">Policies, procedures &amp; reports</legend>
+        {POLICY_DOC_QUESTIONS.map((q) => <PolicyRow key={q.key} q={q} answers={answers} onFile={policyKinds.has(q.key)} />)}
+      </fieldset>
+      <fieldset className="mt-4 space-y-1 rounded-lg border border-neutral-200 bg-white p-4">
+        <legend className="px-1 text-sm font-semibold text-[#003566]">Certifications</legend>
+        {POLICY_CERT_QUESTIONS.map((q) => <PolicyRow key={q.key} q={q} answers={answers} onFile={policyKinds.has(q.key)} />)}
+      </fieldset>
+    </PageForm>
+  );
+}
+
 function ReviewPage({ token, c, answers, merchant, v2 }: {
   token: string; c: TokenCase; answers: AnswerMap; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; v2?: string;
 }) {
@@ -802,6 +864,25 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
           </p>
         </section>
       )}
+
+      {requiresPolicies(c.product_groups) && (() => {
+        const answered = POLICY_QUESTIONS.filter((q) => (answers[q.key]?.value ?? "").trim() || answers[q.key]?.is_unknown).length;
+        const inPlace = POLICY_QUESTIONS.filter((q) => answers[q.key]?.value === "yes").length;
+        return (
+          <section className="rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-neutral-700">Policies &amp; certifications</h3>
+              <Link href={changeHref("policies")} className="text-xs text-blue-700 hover:underline">Change</Link>
+            </div>
+            <p className="mt-1 text-neutral-600">
+              {answered < POLICY_QUESTIONS.length
+                ? <span className="text-amber-600">{answered} of {POLICY_QUESTIONS.length} answered</span>
+                : `${POLICY_QUESTIONS.length} answered`}
+              {" · "}{inPlace} confirmed in place
+            </p>
+          </section>
+        );
+      })()}
 
       <form action={submitForApprovalAction}>
         <input type="hidden" name="token" value={token} />

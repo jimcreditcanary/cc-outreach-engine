@@ -61,6 +61,18 @@ export async function loadUploads(db: DB, caseId: string): Promise<UploadRow[]> 
   }
 }
 
+/** The set of upload `kind`s present for a case (best-effort). Powers the
+ *  Policies page "✓ document on file" hints, keyed by the question's kind.
+ *  Empty before the uploads table exists. */
+export async function loadUploadKinds(db: DB, caseId: string): Promise<Set<string>> {
+  try {
+    const { data } = await db.from("onboarding_uploads").select("kind").eq("case_id", caseId);
+    return new Set(((data as { kind: string | null }[] | null) ?? []).map((r) => r.kind ?? "").filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
 /** Per-beneficial-owner document status (passport/ID + proof of address), keyed
  *  by ubo_ref. Powers the Payments-product requirement that each owner uploads
  *  both (item 6i). Empty/partial if migration 069's ubo_ref column isn't there. */

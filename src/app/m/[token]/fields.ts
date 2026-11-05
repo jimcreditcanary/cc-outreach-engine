@@ -6,10 +6,10 @@
 
 import type { AnswerMap } from "@/lib/onboarding/formAnswers";
 import type { MerchantBusiness, MerchantCompliance, MerchantSignatory, DpoRecord, DirectDebitDetails } from "@/lib/onboarding/merchantForm";
-import { PRODUCT_GROUPS, requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
+import { PRODUCT_GROUPS, requiresPayments, requiresDirectDebit, requiresTuSection, requiresPolicies } from "@/lib/onboarding/productGroups";
 
 export interface FormPage {
-  id: "company" | "ubos" | "accounts" | "payments" | "infosec" | "review";
+  id: "company" | "ubos" | "accounts" | "payments" | "infosec" | "policies" | "review";
   label: string;
 }
 
@@ -22,6 +22,7 @@ export function visibleFormPages(groups: string[]): FormPage[] {
   if (requiresPayments(groups) || requiresDirectDebit(groups)) pages.push({ id: "accounts", label: "Bank accounts" });
   if (requiresTransactionProfile(groups) || requiresDirectDebit(groups)) pages.push({ id: "payments", label: "Payment details" });
   if (requiresTuSection(groups)) pages.push({ id: "infosec", label: "Information security" });
+  if (requiresPolicies(groups)) pages.push({ id: "policies", label: "Policies" });
   pages.push({ id: "review", label: "Review & submit" });
   return pages;
 }
@@ -342,5 +343,61 @@ export function missingInfosecFields(answers: AnswerMap): string[] {
   const over = val("infosec_over_10");
   if (over === "no") for (const [k, l] of INFOSEC_SMALL) need(k, l);
   else if (over === "yes") { for (const [k, l] of INFOSEC_LARGE) need(k, l); need("l_encryption_detail", "Encryption standards detail"); }
+  return miss;
+}
+
+// ─── Policies page (Faster Payments / Settlement Accounts) ───────────────────
+// Governance / financial-crime policy pack. Only shown for Faster Payments or
+// Settlement Accounts cases (requiresPolicies). Each question is Yes/No; a "yes"
+// invites a document upload (stored with kind = the question's key) OR pasted
+// text ({key}_text). The final question takes free-text detail ({key}_detail)
+// rather than a document. Answers live in onboarding_form_answers; uploads in
+// onboarding_uploads — no new table, so it degrades gracefully before 054/067.
+
+export interface PolicyQuestion {
+  /** Answer key for the Yes/No, and the upload `kind` for the document. */
+  key: string;
+  label: string;
+  /** The last question collects free-text detail instead of a doc/paste. */
+  detailOnly?: boolean;
+}
+
+/** Q1–Q8: policies, procedures, risk-assessment and audit reports. */
+export const POLICY_DOC_QUESTIONS: PolicyQuestion[] = [
+  { key: "pol_onboarding", label: "Do you maintain Customer Onboarding Procedures / a Manual?" },
+  { key: "pol_sanctions", label: "Do you maintain a Sanctions Policy?" },
+  { key: "pol_complaints", label: "Do you maintain a Complaints Policy?" },
+  { key: "pol_safeguarding", label: "Do you maintain a Safeguarding Policy?" },
+  { key: "pol_fincrime", label: "Do you maintain a FinCrime / AML Policy (including customer due diligence, transaction monitoring and compliance training)?" },
+  { key: "pol_fraud", label: "Do you maintain a Fraud Policy?" },
+  { key: "pol_risk_assessment", label: "Can you share your Client Risk Assessment template / methodology (if separate)?" },
+  { key: "pol_aml_audit", label: "Can you share your latest external FinCrime / AML audit report (if available)?" },
+];
+
+/** Q9–Q13: certifications (last one is free-text detail). */
+export const POLICY_CERT_QUESTIONS: PolicyQuestion[] = [
+  { key: "pol_iso27001", label: "Are you ISO 27001 certified?" },
+  { key: "pol_soc2", label: "Are you SOC 2 certified?" },
+  { key: "pol_cyber_essentials", label: "Are you Cyber Essentials certified?" },
+  { key: "pol_cyber_essentials_plus", label: "Are you Cyber Essentials Plus certified?" },
+  { key: "pol_other_certs", label: "Do you maintain any other professional certifications?", detailOnly: true },
+];
+
+export const POLICY_QUESTIONS: PolicyQuestion[] = [...POLICY_DOC_QUESTIONS, ...POLICY_CERT_QUESTIONS];
+
+/** Answer-store keys for the policies page: each Yes/No plus its paste/detail
+ *  text box. The document itself is a file upload, handled separately. */
+export const POLICY_ANSWER_KEYS = POLICY_QUESTIONS.flatMap((q) =>
+  q.detailOnly ? [q.key, `${q.key}_detail`] : [q.key, `${q.key}_text`],
+);
+
+/** Every Yes/No must be answered (uploads / pasted text stay optional — a
+ *  merchant can send a document separately). Mirrors the infosec page. */
+export function missingPolicyFields(answers: AnswerMap): string[] {
+  const miss: string[] = [];
+  for (const q of POLICY_QUESTIONS) {
+    if (answers[q.key]?.is_unknown) continue;
+    if (!(answers[q.key]?.value ?? "").trim()) miss.push(q.label);
+  }
   return miss;
 }
