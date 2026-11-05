@@ -62,9 +62,14 @@ export const COMPANY_FIELDS: AnswerFieldDef[] = [
   { key: "privacy_policy_url", label: "Privacy-policy URL", type: "url", unknownOk: true },
 ];
 
-/** HTML validation attributes for an input type (phone + URL, item 11/12). */
-export function inputValidation(type?: string): { inputMode?: "tel" | "url"; pattern?: string; title?: string } {
-  if (type === "tel") return { inputMode: "tel", pattern: "[0-9+()\\s.\\-]{7,}", title: "Enter a valid phone number (at least 7 digits)" };
+/** HTML validation attributes for an input type (phone + URL).
+ *  Phone must be international format "{country code} {number}", e.g.
+ *  "+44 7590571361" — a leading +, 1–3 digit country code, a space, the number. */
+export const PHONE_PATTERN = "\\+\\d{1,3} \\d[\\d ]{5,15}";
+export const PHONE_TITLE = "Use the international format: country code, a space, then the number — e.g. +44 7590571361";
+export const PHONE_PLACEHOLDER = "+44 7590571361";
+export function inputValidation(type?: string): { inputMode?: "tel" | "url"; pattern?: string; title?: string; placeholder?: string } {
+  if (type === "tel") return { inputMode: "tel", pattern: PHONE_PATTERN, title: PHONE_TITLE, placeholder: PHONE_PLACEHOLDER };
   if (type === "url") return { inputMode: "url" };
   return {};
 }

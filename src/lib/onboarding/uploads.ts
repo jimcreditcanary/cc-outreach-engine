@@ -61,6 +61,31 @@ export async function loadUploads(db: DB, caseId: string): Promise<UploadRow[]> 
   }
 }
 
+/** Per-beneficial-owner document status (passport/ID + proof of address), keyed
+ *  by ubo_ref. Powers the Payments-product requirement that each owner uploads
+ *  both (item 6i). Empty/partial if migration 069's ubo_ref column isn't there. */
+export const UBO_ID_KIND = "ubo_identity";
+export const UBO_PROOF_KIND = "ubo_proof_address";
+export async function loadUboDocStatus(db: DB, caseId: string): Promise<Map<string, { identity: boolean; proof: boolean }>> {
+  const map = new Map<string, { identity: boolean; proof: boolean }>();
+  try {
+    const { data, error } = await db
+      .from("onboarding_uploads")
+      .select("ubo_ref, kind")
+      .eq("case_id", caseId)
+      .in("kind", [UBO_ID_KIND, UBO_PROOF_KIND]);
+    if (error) return map;
+    for (const r of (data as { ubo_ref: string | null; kind: string }[] | null) ?? []) {
+      if (!r.ubo_ref) continue;
+      const cur = map.get(r.ubo_ref) ?? { identity: false, proof: false };
+      if (r.kind === UBO_ID_KIND) cur.identity = true;
+      if (r.kind === UBO_PROOF_KIND) cur.proof = true;
+      map.set(r.ubo_ref, cur);
+    }
+  } catch { /* best-effort */ }
+  return map;
+}
+
 const extractSchema = z.object({
   document_type: z.string().describe("what kind of document this is"),
   summary: z.string(),

@@ -25,6 +25,10 @@ export function AddressLookup({
   const [country, setCountry] = useState(defaults?.country ?? "United Kingdom");
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(false);
+  // Show only the postcode lookup first; reveal the manual fields once the user
+  // picks a result, enters them by hand, or the lookup finds nothing (6h). Start
+  // open when we already hold an address (a return visit).
+  const [manual, setManual] = useState(!!(defaults?.line1 || defaults?.line2 || defaults?.city));
 
   async function find() {
     if (!postcode.trim()) return;
@@ -32,9 +36,12 @@ export function AddressLookup({
     try {
       const res = await fetch(`/m/address?postcode=${encodeURIComponent(postcode.trim())}`);
       const data = (await res.json()) as { addresses?: Result[] };
-      setResults(data.addresses ?? []);
+      const list = data.addresses ?? [];
+      setResults(list);
+      if (list.length === 0) setManual(true);
     } catch {
       setResults([]);
+      setManual(true);
     } finally {
       setLoading(false);
     }
@@ -46,6 +53,7 @@ export function AddressLookup({
     setCity(r.city);
     setPostcode(r.postcode);
     setResults([]);
+    setManual(true);
   }
 
   return (
@@ -65,12 +73,16 @@ export function AddressLookup({
           ))}
         </ul>
       )}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <input value={line1} onChange={(e) => setLine1(e.target.value)} name={line1Name} placeholder="Address line 1" className={field} />
-        <input value={line2} onChange={(e) => setLine2(e.target.value)} name={line2Name} placeholder="Address line 2" className={field} />
-        <input value={city} onChange={(e) => setCity(e.target.value)} name={cityName} placeholder="Town / city" className={field} />
-        <input value={country} onChange={(e) => setCountry(e.target.value)} name={countryName} placeholder="Country" className={field} />
-      </div>
+      {!manual ? (
+        <button type="button" onClick={() => setManual(true)} className="text-xs font-medium text-[#003566] underline">Enter the address manually</button>
+      ) : (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <input value={line1} onChange={(e) => setLine1(e.target.value)} name={line1Name} placeholder="Address line 1" className={field} />
+          <input value={line2} onChange={(e) => setLine2(e.target.value)} name={line2Name} placeholder="Address line 2" className={field} />
+          <input value={city} onChange={(e) => setCity(e.target.value)} name={cityName} placeholder="Town / city" className={field} />
+          <input value={country} onChange={(e) => setCountry(e.target.value)} name={countryName} placeholder="Country" className={field} />
+        </div>
+      )}
     </div>
   );
 }

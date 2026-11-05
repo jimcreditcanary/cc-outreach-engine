@@ -13,7 +13,7 @@ import { hubspotRepo } from "@/lib/hubspot/repo";
 import { getAnswers, getProgress, attributionLine, type AnswerMap } from "@/lib/onboarding/formAnswers";
 import { loadEnrichment, distinctIndividualUbos } from "@/lib/onboarding/enrich";
 import { loadMerchantForm, type TokenCase } from "@/lib/onboarding/merchantForm";
-import { loadUploads } from "@/lib/onboarding/uploads";
+import { loadUploads, loadUboDocStatus } from "@/lib/onboarding/uploads";
 import { requiresFcaFrn, requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
 import { PendingButton } from "@/components/PendingButton";
 import { AddressLookup } from "@/components/AddressLookup";
@@ -25,7 +25,8 @@ import {
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
 import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
 import { discoverPrivacyPolicyUrl } from "@/lib/onboarding/websiteScan";
-import { TradingAddress, SignatoryPicker, DpoList } from "./CompanyFields";
+import { TradingAddress, TradeBody, SignatoryPicker, DpoList, type DpoContact } from "./CompanyFields";
+import { BankStatementQuestion } from "./PaymentFields";
 import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAccountAction } from "./actions";
 
 // ─── Design tokens (B9 — locked) ─────────────────────────────────────────────
@@ -53,18 +54,15 @@ function LockNote({ children }: { children: ReactNode }) {
 // One combined meta row under a field: the "don't know" toggle (left) and the
 // attribution line (right) share a single baseline instead of stacking two
 // faint sub-lines. Renders nothing when neither applies.
+// Per-field meta is now just the optional "don't know" toggle — the per-field
+// "updated by" attribution was removed in favour of one "Last updated" at the
+// top of the form (item 6a). Attribution is still recorded on save.
 function FieldMeta({ name, answers, noUnknown }: { name: string; answers: AnswerMap; noUnknown?: boolean }) {
-  const a = attributionLine(answers[name]);
-  if (noUnknown && !a) return null;
+  if (noUnknown) return null;
   return (
-    <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3">
-      {noUnknown ? <span /> : (
-        <label className="flex items-center gap-1.5 text-xs text-neutral-400">
-          <input type="checkbox" name={`${name}__unknown`} defaultChecked={answers[name]?.is_unknown} /> Don&apos;t know - ask later
-        </label>
-      )}
-      {a && <span className="text-[11px] text-neutral-400">{a}</span>}
-    </div>
+    <label className="mt-1 flex items-center gap-1.5 text-xs text-neutral-400">
+      <input type="checkbox" name={`${name}__unknown`} defaultChecked={answers[name]?.is_unknown} /> Don&apos;t know - ask later
+    </label>
   );
 }
 
@@ -131,14 +129,19 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
   // only on the pages that use them.
   let companyPrefill: CompanyPrefill | null = null;
   let uboEmailByName = new Map<string, string>();
+  let uboDocStatus = new Map<string, { identity: boolean; proof: boolean }>();
+  const payments = requiresPayments(c.product_groups);
   if (current === "company" || current === "ubos") {
     const stakeholders = await listStakeholders(db, c.id);
     const ids = [...new Set(stakeholders.map((s) => s.hubspot_contact_id))];
     const cts = (await Promise.all(ids.map((id) => hubspotRepo.getContact(id).catch(() => null)))).filter((x): x is NonNullable<typeof x> => !!x);
     uboEmailByName = new Map(cts.filter((ct) => ct.email).map((ct) => { const pn = parsePersonName(ct.full_name); return [nameMatchKey(pn.first, pn.last), ct.email!]; }));
+    if (current === "ubos" && payments) uboDocStatus = await loadUboDocStatus(db, c.id);
     if (current === "company") {
       const byId = new Map(cts.map((ct) => [ct.id, ct]));
       const contacts = cts.map((ct) => ({ id: ct.id, name: ct.full_name || ct.email || ct.id, email: ct.email ?? "", title: ct.job_title ?? "" }));
+      // DPO picker options — same contacts, but split into first/last for the row fields.
+      const dpoContacts: DpoContact[] = cts.map((ct) => { const pn = parsePersonName(ct.full_name); return { id: ct.id, first: pn.first, last: pn.last, title: ct.job_title ?? "", email: ct.email ?? "", phone: ct.mobile ?? "" }; });
       const sigStake = stakeholders.find((s) => s.role === "authorised_signatory");
       const sigCt = sigStake ? byId.get(sigStake.hubspot_contact_id) : null;
       const signatory = sigCt ? { name: sigCt.full_name ?? "", email: sigCt.email ?? "", title: sigCt.job_title ?? "" } : null;
@@ -153,7 +156,7 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
         const site = answers["website"]?.value ?? "";
         if (site.trim()) privacyUrl = await discoverPrivacyPolicyUrl(site);
       }
-      companyPrefill = { contacts, signatory, dpoPrefill, registered, privacyUrl };
+      companyPrefill = { contacts, dpoContacts, signatory, dpoPrefill, registered, privacyUrl };
     }
   }
 
@@ -200,13 +203,20 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
       {error === "email" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please use a company email address, not a personal one (e.g. not gmail/outlook/yahoo).</p>}
       {error === "attest" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please confirm the beneficial-owner list is complete before continuing.</p>}
       {error === "account" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please add at least one bank account before continuing.</p>}
+      {error === "ubo_docs" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">For payments onboarding, please upload a photo ID and a proof of address for each beneficial owner before continuing.</p>}
       {error === "save" && <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">Something went wrong saving - please try again.</p>}
 
-      {(() => { const a = attributionLine(answers[`_page_${current}`]); return a ? <p className="mt-3 text-[11px] text-neutral-400">This page - {a.replace(/^Updated/, "last updated")}</p> : null; })()}
+      {/* One "Last updated" for the whole form (replaces the per-field markers). */}
+      {(() => {
+        let latest: AnswerMap[string] | null = null;
+        for (const k in answers) { const a = answers[k]; if (a?.updated_at && (!latest || a.updated_at > latest.updated_at)) latest = a; }
+        const line = attributionLine(latest);
+        return line ? <p className="mt-3 text-[11px] text-neutral-400">{line.replace(/^Updated/, "Last updated")}</p> : null;
+      })()}
 
       <div className="mt-5">
         {current === "company" && <CompanyPage token={token} c={c} answers={answers} prefill={companyPrefill!} v2={v2} />}
-        {current === "ubos" && <UbosPage token={token} c={c} enrichment={enrichment} merchant={merchant} answers={answers} emailByName={uboEmailByName} v2={v2} />}
+        {current === "ubos" && <UbosPage token={token} c={c} enrichment={enrichment} merchant={merchant} answers={answers} emailByName={uboEmailByName} payments={payments} uboDocs={uboDocStatus} v2={v2} />}
         {current === "accounts" && <AccountsPage token={token} c={c} merchant={merchant} v2={v2} />}
         {current === "payments" && <PaymentsPage token={token} c={c} answers={answers} companyName={enrichment.snapshot?.company_name ?? ""} charity={isCharityType(enrichment.snapshot?.company_type)} v2={v2} />}
         {current === "infosec" && <InfosecPage token={token} answers={answers} uploadCount={uploads.length} v2={v2} />}
@@ -255,6 +265,7 @@ function AnswerField({ def, answers, fcaRequired, defaultValue }: { def: AnswerF
 
 interface CompanyPrefill {
   contacts: { id: string; name: string; email: string; title: string }[];
+  dpoContacts: DpoContact[];
   signatory: { name: string; email: string; title: string } | null;
   dpoPrefill: { first: string; last: string; title: string; email: string; phone: string } | null;
   registered: string;
@@ -284,14 +295,8 @@ function CompanyPage({ token, c, answers, prefill, v2 }: { token: string; c: Tok
         ))}
       </fieldset>
 
-      {/* Trade body (item 7): required to belong? → free text if yes. */}
-      <fieldset className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
-        <legend className="px-1 text-sm font-semibold text-[#003566]">Trade body</legend>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <RadioA name="trade_body_required" label="Are you required to be part of a trade body?" answers={answers} options={YN} required noUnknown />
-          <TextA name="trade_body" label="If yes, which trade body?" answers={answers} noUnknown />
-        </div>
-      </fieldset>
+      {/* Trade body (6d): the "which?" field shows only when Yes is selected. */}
+      <TradeBody requiredDefault={answers["trade_body_required"]?.value ?? ""} bodyDefault={answers["trade_body"]?.value ?? ""} />
 
       {/* Authorised signatory (item 9): prefill from the assigned signatory, else
           pick an existing contact or enter a new one. */}
@@ -301,8 +306,9 @@ function CompanyPage({ token, c, answers, prefill, v2 }: { token: string; c: Tok
         defaults={{ name: answers["signatory_name"]?.value ?? "", title: answers["signatory_title"]?.value ?? "", email: answers["signatory_email"]?.value ?? "" }}
       />
 
-      {/* Data protection officers (item 10): one by default, prefilled, add more. */}
-      <DpoList initial={existingDpos.filter((d): d is NonNullable<typeof d> => !!d)} prefill={prefill.dpoPrefill} />
+      {/* Data protection officers (item 6f): one by default, prefilled; each row
+          can pick an existing contact or add a new one (added to HubSpot). */}
+      <DpoList initial={existingDpos.filter((d): d is NonNullable<typeof d> => !!d)} prefill={prefill.dpoPrefill} contacts={prefill.dpoContacts} />
 
       {/* Social media (optional) */}
       <fieldset className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
@@ -318,15 +324,17 @@ function CompanyPage({ token, c, answers, prefill, v2 }: { token: string; c: Tok
   );
 }
 
-function UbosPage({ token, c, enrichment, merchant, answers, emailByName, v2 }: {
-  token: string; c: TokenCase; enrichment: Awaited<ReturnType<typeof loadEnrichment>>; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; answers: AnswerMap; emailByName: Map<string, string>; v2?: string;
+function UbosPage({ token, c, enrichment, merchant, answers, emailByName, payments, uboDocs, v2 }: {
+  token: string; c: TokenCase; enrichment: Awaited<ReturnType<typeof loadEnrichment>>; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; answers: AnswerMap; emailByName: Map<string, string>; payments: boolean; uboDocs: Map<string, { identity: boolean; proof: boolean }>; v2?: string;
 }) {
   const individualUbos = distinctIndividualUbos(enrichment.ubos);
   const kycByUbo = new Map(merchant.kyc.map((k) => [k.ubo_id ?? k.ubo_name, k]));
-  // Prefill DOB as MM/YYYY (Companies House gives month + year only).
-  const dobMMYYYY = (dbDate: string | null | undefined, month: number | null, year: number | null): string => {
-    if (dbDate) { const d = new Date(dbDate); if (isFinite(d.getTime())) return `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`; }
-    return month && year ? `${String(month).padStart(2, "0")}/${year}` : "";
+  // We hold the month + year from Companies House; resolve them (prefer any
+  // saved DOB), so the form only asks the owner for the day (item 6g).
+  const monthName = (m: number) => new Date(Date.UTC(2000, m - 1, 1)).toLocaleString("en-GB", { month: "long" });
+  const dobParts = (dbDate: string | null | undefined, month: number | null, year: number | null) => {
+    if (dbDate) { const d = new Date(dbDate); if (isFinite(d.getTime())) { const day = d.getUTCDate(); return { month: d.getUTCMonth() + 1, year: d.getUTCFullYear(), day: day && day !== 1 ? String(day) : "" }; } }
+    return { month: month ?? null, year: year ?? null, day: "" };
   };
   return (
     <PageForm token={token} page="ubos" v2={v2} title="Beneficial owners" intro="Confirm the details for each person with significant control (25%+ ownership or control).">
@@ -345,10 +353,27 @@ function UbosPage({ token, c, enrichment, merchant, answers, emailByName, v2 }: 
                 <input type="hidden" name={`ubo_name_${i}`} value={u.name ?? ""} />
                 <div className="mb-2 font-medium text-neutral-800">{u.name}</div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div><label className={lbl}>Date of birth</label><input name={`ubo_dob_${i}`} inputMode="numeric" pattern="(0[1-9]|1[0-2])/\d{4}" placeholder="MM/YYYY" title="Enter the month and year, e.g. 03/1985" defaultValue={dobMMYYYY(k?.date_of_birth, u.dob_month, u.dob_year)} className={field} /></div>
+                  <div>
+                    <label className={lbl}>Date of birth</label>
+                    {(() => {
+                      const p = dobParts(k?.date_of_birth, u.dob_month, u.dob_year);
+                      if (p.month && p.year) return (
+                        <>
+                          <input type="hidden" name={`ubo_dob_month_${i}`} value={p.month} />
+                          <input type="hidden" name={`ubo_dob_year_${i}`} value={p.year} />
+                          <div className="flex items-center gap-2">
+                            <input name={`ubo_dob_day_${i}`} inputMode="numeric" pattern="(0?[1-9]|[12]\d|3[01])" placeholder="DD" title="Enter the day of the month (1-31)" defaultValue={p.day} className={`${field} w-20`} />
+                            <span className="text-sm text-neutral-600">{monthName(p.month)} {p.year}</span>
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-neutral-400">We have the month and year from Companies House - just add the day.</p>
+                        </>
+                      );
+                      return <input name={`ubo_dob_${i}`} inputMode="numeric" pattern="(0[1-9]|1[0-2])/\d{4}" placeholder="MM/YYYY" title="Enter the month and year, e.g. 03/1985" defaultValue="" className={field} />;
+                    })()}
+                  </div>
                   <div><label className={lbl}>Exact ownership %</label><input name={`ubo_pct_${i}`} defaultValue={k?.exact_ownership_percent ?? ""} placeholder="e.g. 60%" className={field} /></div>
                   <div><label className={lbl}>Email</label><input type="email" name={`ubo_email_${i}`} defaultValue={k?.email ?? (u.name ? emailByName.get(nameMatchKey(parsePersonName(u.name).first, parsePersonName(u.name).last)) ?? "" : "")} className={field} /></div>
-                  <div><label className={lbl}>Mobile</label><input type="tel" name={`ubo_mobile_${i}`} inputMode="tel" defaultValue={k?.mobile ?? ""} className={field} /></div>
+                  <div><label className={lbl}>Mobile</label><input type="tel" name={`ubo_mobile_${i}`} defaultValue={k?.mobile ?? ""} className={field} {...inputValidation("tel")} /></div>
                 </div>
                 <div className="mt-3">
                   <span className={lbl}>Residential address</span>
@@ -370,6 +395,26 @@ function UbosPage({ token, c, enrichment, merchant, answers, emailByName, v2 }: 
                   <input type="checkbox" name={`ubo_consent_${i}`} defaultChecked={!!k?.consent_given} className="mt-0.5" />
                   <span>This person consents to Credit Canary verifying their identity for anti-money-laundering checks.</span>
                 </label>
+                {payments && (() => {
+                  const st = uboDocs.get(u.id) ?? { identity: false, proof: false };
+                  return (
+                    <div className="mt-3 rounded border border-neutral-200 p-3">
+                      <LockNote>Payments onboarding requires identity verification for each owner.</LockNote>
+                      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className={lbl}>Photo ID - passport or driving licence{!st.identity && <span className="text-red-600"> *</span>}</label>
+                          {st.identity && <p className="mb-1 text-xs text-emerald-700">✓ On file - upload again only to replace</p>}
+                          <input type="file" name={`ubo_id_file_${i}`} accept=".pdf,.png,.jpg,.jpeg" className={fileInput} />
+                        </div>
+                        <div>
+                          <label className={lbl}>Proof of address - utility bill / bank statement{!st.proof && <span className="text-red-600"> *</span>}</label>
+                          {st.proof && <p className="mb-1 text-xs text-emerald-700">✓ On file - upload again only to replace</p>}
+                          <input type="file" name={`ubo_proof_file_${i}`} accept=".pdf,.png,.jpg,.jpeg" className={fileInput} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -394,17 +439,12 @@ function CopBadge({ result, matched }: { result: string; matched: string | null 
 }
 
 function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; v2?: string }) {
-  const purposeOpts: { value: string; label: string }[] = [];
-  if (requiresPayments(c.product_groups)) purposeOpts.push({ value: "settlement", label: "Settlement" });
-  purposeOpts.push({ value: "disbursal", label: "Disbursal" });
-  if (requiresDirectDebit(c.product_groups)) purposeOpts.push({ value: "direct_debit", label: "Direct Debit collection" });
-  const purposeLabel = (p: string) => purposeOpts.find((o) => o.value === p)?.label ?? p.replace(/_/g, " ");
   const addCount = 2;
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-[#003566]">Bank accounts</h2>
-        <p className="mt-0.5 text-sm text-neutral-500">Add the account(s) we&apos;ll disburse to / settle with - you can add several.</p>
+        <p className="mt-0.5 text-sm text-neutral-500">Add the account(s) where you&apos;d like to receive money - you can add several.</p>
         <div className="mt-1.5"><LockNote>Stored encrypted and checked with Confirmation of Payee. We never display your full account number back.</LockNote></div>
       </div>
 
@@ -414,7 +454,6 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
           <ul className="space-y-2">
             {merchant.bankAccounts.map((a) => (
               <li key={a.id} className="flex flex-wrap items-center gap-2 rounded border border-neutral-200 p-2 text-sm">
-                <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] font-medium text-neutral-600">{purposeLabel(a.purpose)}</span>
                 <span className="text-neutral-800">{a.account_name || "-"}</span>
                 <span className="font-mono text-neutral-500">••••{a.account_tail ?? "----"}</span>
                 {a.cop_result && <CopBadge result={a.cop_result} matched={a.cop_matched_name} />}
@@ -460,10 +499,6 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
   );
 }
 
-function Attr({ answers, name }: { answers: AnswerMap; name: string }) {
-  const a = attributionLine(answers[name]);
-  return a ? <p className="mt-0.5 text-[11px] text-neutral-400">{a}</p> : null;
-}
 // "Don't know - ask later": lets the filler defer any payment/infosec question to
 // the economic buyer. On by default for these helpers; opt out with noUnknown.
 // The toggle + attribution render together on one row via FieldMeta.
@@ -526,16 +561,11 @@ function PaymentsPage({ token, c, answers, companyName, charity, v2 }: {
       {showProfile && (
         <fieldset className="grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
           <legend className="px-1 text-sm font-semibold text-[#003566]">Transaction profile</legend>
-          <RadioA name="pay_bank_statement" label="Can you provide a recent bank statement?" answers={answers} options={YN} required />
-          <div>
-            <label htmlFor="bank_statement_file" className={lbl}>If yes, upload it</label>
-            <input id="bank_statement_file" name="bank_statement_file" type="file" accept=".pdf,.png,.jpg,.jpeg" className="block w-full text-sm text-neutral-700 file:mr-3 file:rounded file:border-0 file:bg-[#003566] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-[#002a52]" />
-          </div>
-          <TextA name="pay_bank_statement_reason" label="If no, please explain why" answers={answers} full />
+          <BankStatementQuestion companyName={companyName} answerValue={answers["pay_bank_statement"]?.value ?? ""} reasonDefault={answers["pay_bank_statement_reason"]?.value ?? ""} />
           <TextA name="pay_take_payments_for" label="What will you take payments for?" answers={answers} required full />
-          <TextA name="pay_expected_volume" label="Expected monthly transaction volume" answers={answers} required />
-          <TextA name="pay_avg_value" label="Average transaction value" answers={answers} required />
-          <TextA name="pay_max_value" label="Maximum transaction value" answers={answers} required />
+          <TextA name="pay_expected_volume" label="Expected monthly transaction volume (number of transactions)" answers={answers} required />
+          <TextA name="pay_avg_value" label="Average transaction value (£)" answers={answers} required placeholder="£" />
+          <TextA name="pay_max_value" label="Maximum transaction value (£)" answers={answers} required placeholder="£" />
           <RadioA name="pay_b2b_b2c" label="Do you provide your service B2B or B2C?" answers={answers} options={[{ value: "b2c", label: "B2C" }, { value: "b2b", label: "B2B" }, { value: "both", label: "Both" }]} required />
           <TextA name="pay_b2b_pct" label="If both - B2B %" answers={answers} />
           <TextA name="pay_b2c_pct" label="If both - B2C %" answers={answers} />
@@ -562,7 +592,7 @@ function PaymentsPage({ token, c, answers, companyName, charity, v2 }: {
             <p className="mt-0.5 text-[11px] text-neutral-400">Live example: “<span className="font-mono">{stmtExample.slice(0, 18)}</span>” will appear on their statement.</p>
           </div>
           <RadioA name="dd_transfer" label="Transferring all existing Direct Debits, or a partial transfer?" answers={answers} options={[{ value: "all", label: "All" }, { value: "partial", label: "Partial" }]} required full />
-          <TextA name="dd_max_collection_limit" label="Max collection limit per customer, per month" answers={answers} required />
+          <TextA name="dd_max_collection_limit" label="Max collection limit per customer, per month (£)" answers={answers} required placeholder="£" />
           <SelectA name="dd_frequency" label="Frequency of collections" answers={answers} required options={[{ value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }, { value: "quarterly", label: "Quarterly" }, { value: "annual", label: "Annual" }, { value: "other", label: "Other" }]} />
           <TextA name="dd_frequency_other" label="If other - please specify" answers={answers} />
           <TextA name="dd_frequency_split" label="If more than one frequency - the split (e.g. 10% weekly, 70% monthly)" answers={answers} full />
@@ -572,7 +602,6 @@ function PaymentsPage({ token, c, answers, companyName, charity, v2 }: {
             <div className="flex flex-wrap gap-4 text-sm">
               {SIGNUP_OPTIONS.map((o) => <label key={o.value} className="flex items-center gap-1.5"><input type="checkbox" name="dd_signup" value={o.value} defaultChecked={signup.size ? signup.has(o.value) : o.value === "api"} /> {o.label}</label>)}
             </div>
-            <Attr answers={answers} name="dd_signup" />
           </div>
           <div className="sm:col-span-2">
             <RadioA name="dd_schedule" label="Which schedule applies?" answers={answers} options={[{ value: "fixed", label: "Fixed" }, { value: "rolling", label: "Rolling" }, { value: "adhoc", label: "Ad-hoc" }]} required />

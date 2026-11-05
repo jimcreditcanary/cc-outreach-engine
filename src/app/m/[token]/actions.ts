@@ -11,16 +11,17 @@ import {
   addBankAccounts, removeBankAccount, countBankAccounts, saveDirectDebit, finalizeMerchantSubmission,
   type MerchantFormData, type UboKycInput, type BankAccountInput,
 } from "@/lib/onboarding/merchantForm";
-import { saveUpload, extractPendingUploads } from "@/lib/onboarding/uploads";
+import { saveUpload, extractPendingUploads, loadUboDocStatus, UBO_ID_KIND, UBO_PROOF_KIND } from "@/lib/onboarding/uploads";
 import { notifyMerchantSubmitted } from "@/lib/onboarding/notify";
 import { generateDocsForCase } from "@/lib/onboarding/docgen";
 import { getFormEditor, setFormEditor } from "@/lib/onboarding/formEditor";
 import { getAnswers, setAnswers, setPageComplete, type FormEditor, type AnswerInput } from "@/lib/onboarding/formAnswers";
 import { listStakeholders, ONBOARDING_ROLES } from "@/lib/onboarding/cases";
 import { hubspotRepo } from "@/lib/hubspot/repo";
-import { requiresFcaFrn, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
+import { requiresFcaFrn, requiresPayments, requiresDirectDebit, requiresTuSection } from "@/lib/onboarding/productGroups";
 import { assessPrivacyPolicy } from "@/lib/onboarding/privacyAssessment";
 import { ensureSignatoryContact } from "@/lib/onboarding/signatoryContact";
+import { ensureDpoContacts } from "@/lib/onboarding/dpoContacts";
 import { loadEnrichment } from "@/lib/onboarding/enrich";
 import {
   COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, PAYMENT_ANSWER_KEYS, INFOSEC_ANSWER_KEYS, projectCompanyAnswers,
@@ -147,6 +148,34 @@ function mmYYYYtoDate(v: string): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
 }
 
+/** DOB from the day-only inputs (we hold month+year from Companies House, item
+ *  6g): combine day + hidden month + year → YYYY-MM-DD; fall back to the legacy
+ *  MM/YYYY field when no month/year was carried. */
+function uboDob(formData: FormData, i: number): string {
+  const yr = str(formData.get(`ubo_dob_year_${i}`));
+  const mo = str(formData.get(`ubo_dob_month_${i}`));
+  const day = str(formData.get(`ubo_dob_day_${i}`));
+  if (/^\d{4}$/.test(yr) && /^\d{1,2}$/.test(mo)) {
+    const d = /^\d{1,2}$/.test(day) ? day.padStart(2, "0") : "01";
+    return `${yr}-${mo.padStart(2, "0")}-${d}`;
+  }
+  return mmYYYYtoDate(str(formData.get(`ubo_dob_${i}`)));
+}
+
+/** Store one uploaded UBO document (passport / proof of address), keyed to the
+ *  owner via ubo_ref. Best-effort — never throws into the page save (item 6i). */
+async function saveUboFile(db: ReturnType<typeof serviceClient>, caseId: string, formData: FormData, field: string, kind: string, ref: string): Promise<void> {
+  const f = formData.get(field);
+  if (!(f instanceof File) || f.size === 0 || f.size > 20 * 1024 * 1024) return;
+  try { await saveUpload(db, caseId, { name: f.name, type: f.type, bytes: new Uint8Array(await f.arrayBuffer()) }, kind, ref); } catch { /* best-effort */ }
+}
+
+/** True if any owner is still missing a photo ID or a proof of address (item 6i). */
+async function uboDocsMissing(db: ReturnType<typeof serviceClient>, caseId: string, refs: string[]): Promise<boolean> {
+  const status = await loadUboDocStatus(db, caseId);
+  return refs.some((r) => { const s = status.get(r); return !s || !s.identity || !s.proof; });
+}
+
 function parseUbos(formData: FormData): UboKycInput[] {
   const count = Number(str(formData.get("ubo_count")) || 0);
   const out: UboKycInput[] = [];
@@ -156,7 +185,7 @@ function parseUbos(formData: FormData): UboKycInput[] {
     out.push({
       ubo_id: str(formData.get(`ubo_id_${i}`)) || null,
       ubo_name,
-      date_of_birth: mmYYYYtoDate(str(formData.get(`ubo_dob_${i}`))),
+      date_of_birth: uboDob(formData, i),
       exact_ownership_percent: str(formData.get(`ubo_pct_${i}`)),
       residential_address: {
         line1: str(formData.get(`ubo_addr1_${i}`)), line2: str(formData.get(`ubo_addr2_${i}`)),
@@ -280,10 +309,24 @@ export async function savePageAction(formData: FormData) {
       }
     } else if (page === "ubos") {
       await saveUboKyc(db, c.id, parseUbos(formData));
+      // Payments onboarding: store each owner's photo ID + proof of address (6i).
+      const payments = requiresPayments(c.product_groups);
+      const refs: string[] = [];
+      if (payments) {
+        const count = Number(str(formData.get("ubo_count")) || 0);
+        for (let i = 0; i < count; i++) {
+          const ref = str(formData.get(`ubo_id_${i}`)) || str(formData.get(`ubo_name_${i}`));
+          if (!ref) continue;
+          refs.push(ref);
+          await saveUboFile(db, c.id, formData, `ubo_id_file_${i}`, UBO_ID_KIND, ref);
+          await saveUboFile(db, c.id, formData, `ubo_proof_file_${i}`, UBO_PROOF_KIND, ref);
+        }
+      }
       const listComplete = str(formData.get("ubo_list_complete")) === "on";
       await setAnswers(db, c.id, [{ field_key: "ubo_list_complete", value: listComplete ? "yes" : "" }], ed);
       if (mode === "continue") {
         if (!listComplete) dest = `${back}?page=ubos&error=attest${qp(v2)}`;
+        else if (payments && refs.length && await uboDocsMissing(db, c.id, refs)) dest = `${back}?page=ubos&error=ubo_docs${qp(v2)}`;
         else { await setPageComplete(db, c.id, "ubos", true); dest = advance(); }
       }
     } else if (page === "accounts") {
@@ -397,6 +440,8 @@ export async function submitForApprovalAction(formData: FormData) {
     // Auto-create the authorised signatory as a HubSpot contact if new (item 9).
     // Best-effort — never block the submission on a HubSpot write.
     await ensureSignatoryContact(db, c.id).catch((e) => console.error(`[signatory-contact] case ${c.id}:`, e));
+    // Auto-create any new data-protection officers as HubSpot contacts (item 6f).
+    await ensureDpoContacts(db, c.id).catch((e) => console.error(`[dpo-contacts] case ${c.id}:`, e));
     const [uboRes, bankRes] = await Promise.all([
       db.from("onboarding_ubo_kyc").select("id", { count: "exact", head: true }).eq("case_id", c.id),
       db.from("onboarding_bank_accounts").select("id", { count: "exact", head: true }).eq("case_id", c.id),
