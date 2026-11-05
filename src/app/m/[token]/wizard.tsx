@@ -261,6 +261,7 @@ function AnswerField({ def, answers, fcaRequired, defaultValue }: { def: AnswerF
           browser blocks submit even when the box is ticked (item 4). Server-side
           validation still enforces them unless don't-know is set. */}
       <input id={def.key} name={def.key} type={def.type ?? "text"} defaultValue={a?.value ?? defaultValue ?? ""} className={field} required={required && !def.unknownOk} {...inputValidation(def.type)} />
+      {def.help && <a href={def.help.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs font-medium text-[#003566] underline">{def.help.label} ↗</a>}
       <FieldMeta name={def.key} answers={answers} noUnknown={!def.unknownOk} />
     </div>
   );

@@ -45,6 +45,8 @@ export interface AnswerFieldDef {
   onlyIfTuCredit?: boolean;
   /** Offer the "don't know - ask later" toggle. */
   unknownOk?: boolean;
+  /** Optional helper link shown under the field (e.g. "Find your number"). */
+  help?: { url: string; label: string };
 }
 
 // Trading address + signatory are rendered as custom blocks in CompanyPage
@@ -56,7 +58,7 @@ export const COMPANY_FIELDS: AnswerFieldDef[] = [
   { key: "phone", label: "Company telephone", type: "tel", required: true },
   { key: "email", label: "Company email", type: "email", required: true },
   { key: "website", label: "Company website", type: "url", required: true },
-  { key: "ico_number", label: "ICO registration number", required: true, unknownOk: true },
+  { key: "ico_number", label: "ICO registration number", required: true, unknownOk: true, help: { url: "https://ico.org.uk/esdwebpages/search", label: "Find your number" } },
   { key: "fca_frn", label: "FCA registration number (FRN) (optional)" },
   { key: "vat_number", label: "VAT number (optional)" },
   { key: "privacy_policy_url", label: "Privacy-policy URL", type: "url", unknownOk: true },
