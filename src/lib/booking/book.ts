@@ -22,6 +22,7 @@ import { resolveSender } from "../generate/sender";
 import { getValidAccessToken } from "../microsoft/oauth";
 import { createEvent } from "../microsoft/graph";
 import { sendTransactional } from "../send/postmark";
+import { resolveSignature, appendSignatureHtml, appendSignatureText } from "../send/signature";
 import { computeSlots, type BookingConfig } from "./availability";
 import { loadBusyIntervals } from "./busy";
 import { buildInviteIcs } from "./ics";
@@ -236,12 +237,15 @@ export async function createBooking(db: DB, req: BookingRequest): Promise<Bookin
       attendeeName: name,
       attendeeEmail: email,
     });
-    // Visitor's invite — from the operator's sender identity.
+    // Visitor's invite — from the operator's sender identity, signed off with
+    // their signature (Settings override, else the default).
+    const first = name.split(" ")[0];
+    const bsig = await resolveSignature(db, page.user_id);
     await sendTransactional({
       to: email,
       subject: `Confirmed: ${subject}`,
-      textBody: `Hi ${name.split(" ")[0]},\n\nYou're booked in with ${page.operator_name} (${whenText}, ${page.config.durationMins} min). The attached invite adds it to your calendar.\n\nSpeak soon,\n${page.operator_name}`,
-      htmlBody: `<p>Hi ${name.split(" ")[0]},</p><p>You're booked in with ${page.operator_name} (${whenText}, ${page.config.durationMins} min). The attached invite adds it to your calendar.</p><p>Speak soon,<br/>${page.operator_name}</p>`,
+      textBody: appendSignatureText(`Hi ${first},\n\nYou're booked in with ${page.operator_name} (${whenText}, ${page.config.durationMins} min). The attached invite adds it to your calendar.\n\nSpeak soon,`, bsig.text),
+      htmlBody: appendSignatureHtml(`<p>Hi ${first},</p><p>You're booked in with ${page.operator_name} (${whenText}, ${page.config.durationMins} min). The attached invite adds it to your calendar.</p><p>Speak soon,</p>`, bsig.html),
       ownerId: page.user_id,
       ics: { filename: "invite.ics", content: ics },
       tag: "booking-invite",

@@ -6,6 +6,7 @@
 
 import type { serviceClient } from "../db/client";
 import { sendTransactional } from "../send/postmark";
+import { resolveSignature } from "../send/signature";
 import { buildInviteEmail, inviteEnabled, type InviteStage } from "./invite";
 
 type DB = ReturnType<typeof serviceClient>;
@@ -95,11 +96,12 @@ export async function runLeadChases(db: DB): Promise<ChaseResult> {
 
 async function sendChase(db: DB, stage: Extract<InviteStage, "chase_48h" | "chase_7d">, row: ChaseRow): Promise<void> {
   const firstName = (row.name ?? "").trim().split(/\s+/)[0] || row.email.split("@")[0] || "there";
+  const sig = await resolveSignature(db, row.owner_id);
   const { subject, textBody, htmlBody } = buildInviteEmail(stage, {
     firstName,
     company: row.company,
     asset: row.asset,
     token: row.token,
-  });
+  }, sig);
   await sendTransactional({ to: row.email, subject, textBody, htmlBody, ownerId: row.owner_id, tag: `lead-${stage.replace("_", "-")}` });
 }

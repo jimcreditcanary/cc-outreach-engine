@@ -141,6 +141,23 @@ export async function saveSenderIdentityAction(formData: FormData) {
   revalidatePath("/settings");
 }
 
+/** Save the operator's email signature (HTML + plain text). Blank clears it →
+ *  outbound mail falls back to the built-in default. Needs migration 071. */
+export async function saveSignatureAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const email_signature_html = str(formData.get("email_signature_html"));
+  const email_signature_text = str(formData.get("email_signature_text"));
+  const { error } = await serviceClient()
+    .from("user_settings")
+    .upsert({ user_id: me.id, email_signature_html, email_signature_text, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  await flash(
+    error ? "error" : "success",
+    error ? `Couldn't save: ${error.message} — has migration 071 run?` : email_signature_html ? "Email signature saved." : "Email signature cleared — using the built-in default.",
+  );
+  revalidatePath("/settings");
+}
+
 /** Refresh the signature state from Postmark (the operator clicked the
  *  confirmation email; we want the verified flag to flip true here too). */
 export async function refreshSignatureStatusAction() {

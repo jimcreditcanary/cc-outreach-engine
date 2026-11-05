@@ -15,7 +15,7 @@ import { isWithinSendingWindow } from "../send/window";
 import { parseRamp, dailyCap, daysSince } from "../send/warmup";
 import { shouldAutoPause } from "../send/autopause";
 import { sendBroadcast, isDryRun, resolveSenderIdentity } from "../send/postmark";
-import { appendSignatureHtml, appendSignatureText } from "../send/signature";
+import { appendSignatureHtml, appendSignatureText, resolveSignature } from "../send/signature";
 import { logEmailActivity } from "../hubspot/repo";
 import { hubspotSendEnabled, sendHubspotTransactional } from "../hubspot/transactional";
 import { getValidAccessToken, connectedSenderUserId } from "../microsoft/oauth";
@@ -177,15 +177,25 @@ export async function runHsSendBatch(db: DB, opts: { batch?: number; force?: boo
     batch.push(d);
   }
 
+  // Per-owner signature (their Settings override, else the default), cached.
+  const sigCache = new Map<string, { html: string; text: string }>();
+  const sigFor = async (ownerId: string | null | undefined) => {
+    const key = ownerId ?? "__default__";
+    let s = sigCache.get(key);
+    if (!s) { s = await resolveSignature(db, ownerId); sigCache.set(key, s); }
+    return s;
+  };
+
   for (const d of batch) {
     if (dry) { sent++; continue; }
     // Tag CC links with UTM + per-contact id for GA4 attribution (both channels;
     // HubSpot additionally wraps links for its own click tracking), then sign
-    // off with Jim's signature. Tag only the body's links — leave the
+    // off with the operator's signature. Tag only the body's links — leave the
     // signature's own links clean.
     const tagOpts = { cid: d.hs_contact_id, campaign: d.campaign ?? undefined };
-    const html = appendSignatureHtml(tagLinks(d.body_html ?? "", tagOpts));
-    const text = appendSignatureText(tagLinks(d.body_text ?? "", tagOpts));
+    const sig = await sigFor(d.owner_id);
+    const html = appendSignatureHtml(tagLinks(d.body_html ?? "", tagOpts), sig.html);
+    const text = appendSignatureText(tagLinks(d.body_text ?? "", tagOpts), sig.text);
     try {
       if (channel === "outlook") {
         // Send from the operator's own Outlook mailbox (Graph /me/sendMail).

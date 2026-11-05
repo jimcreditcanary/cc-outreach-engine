@@ -10,7 +10,7 @@
 import crypto from "node:crypto";
 import type { serviceClient } from "../db/client";
 import { sendTransactional } from "../send/postmark";
-import { SIGNATURE_HTML, SIGNATURE_TEXT } from "../send/signature";
+import { SIGNATURE_HTML, SIGNATURE_TEXT, resolveSignature } from "../send/signature";
 
 type DB = ReturnType<typeof serviceClient>;
 
@@ -50,7 +50,7 @@ interface EmailContent {
 
 /** Shared HTML shell — paragraphs + two CTA links, plain and legible (it's a
  *  transactional note "from Jim", not a designed marketing email). */
-function renderHtml(paras: string[], bookUrl: string, sbUrl: string): string {
+function renderHtml(paras: string[], bookUrl: string, sbUrl: string, sigHtml: string = SIGNATURE_HTML): string {
   const body = paras.map((p) => `<p style="margin:0 0 16px;">${p}</p>`).join("");
   const btn = (href: string, label: string, primary: boolean) =>
     `<a href="${esc(href)}" style="display:inline-block;padding:10px 18px;margin:0 8px 8px 0;border-radius:6px;` +
@@ -60,12 +60,12 @@ function renderHtml(paras: string[], bookUrl: string, sbUrl: string): string {
     body +
     `<p style="margin:0 0 20px;">${btn(bookUrl, "Book a time", true)}${btn(sbUrl, "Just give me sandbox access", false)}</p>` +
     `<p style="margin:0;color:#555;">Best,</p>` +
-    SIGNATURE_HTML +
+    sigHtml +
     `</div>`
   );
 }
 
-export function buildInviteEmail(stage: InviteStage, f: InviteFields): EmailContent {
+export function buildInviteEmail(stage: InviteStage, f: InviteFields, sig?: { html: string; text: string }): EmailContent {
   const book = meetingsUrl();
   const sb = sandboxUrl(f.token);
   const company = f.company?.trim() || "your team";
@@ -79,8 +79,8 @@ export function buildInviteEmail(stage: InviteStage, f: InviteFields): EmailCont
     ];
     return {
       subject: "Still keen to see Credit Canary?",
-      textBody: toText(paras, book, sb),
-      htmlBody: renderHtml(paras.map(esc), book, sb),
+      textBody: toText(paras, book, sb, sig?.text),
+      htmlBody: renderHtml(paras.map(esc), book, sb, sig?.html),
     };
   }
 
@@ -91,8 +91,8 @@ export function buildInviteEmail(stage: InviteStage, f: InviteFields): EmailCont
     ];
     return {
       subject: "Last one from me — Credit Canary",
-      textBody: toText(paras, book, sb),
-      htmlBody: renderHtml(paras.map(esc), book, sb),
+      textBody: toText(paras, book, sb, sig?.text),
+      htmlBody: renderHtml(paras.map(esc), book, sb, sig?.html),
     };
   }
 
@@ -105,17 +105,17 @@ export function buildInviteEmail(stage: InviteStage, f: InviteFields): EmailCont
   ];
   return {
     subject: "Want a quick look at Credit Canary?",
-    textBody: toText(paras, book, sb),
-    htmlBody: renderHtml(paras.map(esc), book, sb),
+    textBody: toText(paras, book, sb, sig?.text),
+    htmlBody: renderHtml(paras.map(esc), book, sb, sig?.html),
   };
 }
 
-function toText(paras: string[], bookUrl: string, sbUrl: string): string {
+function toText(paras: string[], bookUrl: string, sbUrl: string, sigText: string = SIGNATURE_TEXT): string {
   return (
     paras.join("\n\n") +
     `\n\nBook a time: ${bookUrl}` +
     `\nJust give me sandbox access: ${sbUrl}` +
-    `\n\nBest,\n\n${SIGNATURE_TEXT}`
+    `\n\nBest,\n\n${sigText}`
   );
 }
 
@@ -164,12 +164,13 @@ export async function startLeadInvite(db: DB, input: StartInviteInput): Promise<
     if (!row) return false; // already invited this email
 
     if (inviteEnabled()) {
+      const sig = await resolveSignature(db, input.ownerId);
       const { subject, textBody, htmlBody } = buildInviteEmail("invite", {
         firstName: firstNameOf(input.name, email),
         company: input.company ?? null,
         asset: input.asset ?? null,
         token: row.token,
-      });
+      }, sig);
       await sendTransactional({ to: email, subject, textBody, htmlBody, ownerId: input.ownerId, tag: "lead-invite" });
       await db.from("lead_call_invites").update({ invited_at: new Date().toISOString() }).eq("id", row.id);
     }

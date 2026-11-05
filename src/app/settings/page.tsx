@@ -12,6 +12,7 @@ import {
   saveDraftConfigAction,
   saveHubspotOwnerAction,
   bulkSyncOwnersAction,
+  saveSignatureAction,
 } from "./actions";
 import { loadDraftConfig } from "@/lib/mailer/config";
 import {
@@ -55,6 +56,8 @@ export default async function SettingsPage() {
   const draftCfg = await loadDraftConfig(db, me.id);
   const { data: hsOwnerRow } = await db.from("user_settings").select("hubspot_owner_id").eq("user_id", me.id).maybeSingle();
   const hubspotOwnerId = (hsOwnerRow?.hubspot_owner_id as string | null) ?? "";
+  // Email signature — isolated so a pending migration 071 just greys this card.
+  const { data: sigRow } = await db.from("user_settings").select("email_signature_html, email_signature_text").eq("user_id", me.id).maybeSingle();
   const googleConnected = !!gcal?.google_ics_url;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.veepveep.co.uk";
   const bookingDays = (bk?.booking_days as string[] | null) ?? ["mon", "tue", "wed", "thu", "fri"];
@@ -83,6 +86,27 @@ export default async function SettingsPage() {
         <h1 className="text-xl font-semibold">Setup</h1>
         <p className="text-sm text-neutral-500">Signed in as {me.email}.</p>
       </header>
+
+      <section className="mb-4 rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Email signature</h2>
+        <p className="mb-3 text-xs text-neutral-500">
+          Appended to the bottom of your outreach, lead and booking emails. Leave blank to use the built-in default.
+          Paste full HTML — table-based with inline styles renders most reliably across email clients.
+        </p>
+        <form action={saveSignatureAction} className="space-y-3">
+          <div>
+            <label className={lbl}>Signature HTML</label>
+            <textarea name="email_signature_html" rows={8} defaultValue={(sigRow?.email_signature_html as string | null) ?? ""} placeholder="<table>…your signature…</table> — blank uses the built-in default" className={`${field} font-mono text-xs`} />
+          </div>
+          <div>
+            <label className={lbl}>Signature plain text <span className="normal-case text-neutral-400">(fallback for text-only clients)</span></label>
+            <textarea name="email_signature_text" rows={4} defaultValue={(sigRow?.email_signature_text as string | null) ?? ""} placeholder={"Jim Fell\nCo-Founder & CEO, Credit Canary\n…"} className={`${field} font-mono text-xs`} />
+          </div>
+          <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">
+            Save signature
+          </PendingButton>
+        </form>
+      </section>
 
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Outbound sender identity</h2>

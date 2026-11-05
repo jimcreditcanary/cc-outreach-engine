@@ -1,7 +1,13 @@
-// Jim's standard email signature — the single source of truth, shared by the
+// Jim's standard email signature — the built-in DEFAULT, shared by the
 // lead-invite emails (src/lib/leads/invite.ts) and the HubSpot transactional
 // workflow sends (src/lib/mailer/send.ts) so every outbound mail signs off the
 // same way. Keep the HTML table-based + inline-styled (email-client safe).
+// This is the fallback: an operator can override it in Settings (stored in
+// user_settings.email_signature_html/_text, migration 071) — see resolveSignature.
+
+import type { serviceClient } from "../db/client";
+
+type DB = ReturnType<typeof serviceClient>;
 
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -54,14 +60,37 @@ export const SIGNATURE_TEXT =
   `Book a meeting: https://meetings-eu1.hubspot.com/jim-fell`;
 
 /** Append the signature to an HTML body (idempotent-ish: callers pass a body
- *  that doesn't already carry it). A thin rule separates it from the message. */
-export function appendSignatureHtml(bodyHtml: string): string {
-  return `${bodyHtml}<div style="margin-top:20px;">${SIGNATURE_HTML}</div>`;
+ *  that doesn't already carry it). A thin rule separates it from the message.
+ *  Pass a resolved signature to use the operator's custom one; defaults to the
+ *  built-in. */
+export function appendSignatureHtml(bodyHtml: string, sigHtml: string = SIGNATURE_HTML): string {
+  return `${bodyHtml}<div style="margin-top:20px;">${sigHtml}</div>`;
 }
 
 /** Append the signature to a plain-text body, after the message's own sign-off. */
-export function appendSignatureText(bodyText: string): string {
-  return `${bodyText}\n\n${SIGNATURE_TEXT}`;
+export function appendSignatureText(bodyText: string, sigText: string = SIGNATURE_TEXT): string {
+  return `${bodyText}\n\n${sigText}`;
+}
+
+/** Resolve the signature for an owner: their custom one from Settings
+ *  (user_settings.email_signature_html/_text) if set, else the built-in default.
+ *  Resilient — returns the default if the column/row is missing (e.g. before
+ *  migration 071), so nothing breaks. */
+export async function resolveSignature(db: DB, ownerId: string | null | undefined): Promise<{ html: string; text: string }> {
+  if (!ownerId) return { html: SIGNATURE_HTML, text: SIGNATURE_TEXT };
+  try {
+    const { data } = await db
+      .from("user_settings")
+      .select("email_signature_html, email_signature_text")
+      .eq("user_id", ownerId)
+      .maybeSingle();
+    return {
+      html: (data?.email_signature_html ?? "").trim() || SIGNATURE_HTML,
+      text: (data?.email_signature_text ?? "").trim() || SIGNATURE_TEXT,
+    };
+  } catch {
+    return { html: SIGNATURE_HTML, text: SIGNATURE_TEXT };
+  }
 }
 
 export { esc as escapeHtml };
