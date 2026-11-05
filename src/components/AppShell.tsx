@@ -17,7 +17,6 @@ import {
   Briefcase,
   CalendarClock,
   UserCheck,
-  Reply,
   Telescope,
   Megaphone,
   Settings as SettingsIcon,
@@ -63,7 +62,6 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/outreach",   label: "Workflow",   Icon: Megaphone },
       { href: "/alerts",     label: "Research",   Icon: Telescope },
-      { href: "/replies",    label: "Replies",    Icon: Reply },
     ],
   },
   {
