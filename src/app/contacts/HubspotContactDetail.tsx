@@ -9,11 +9,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCrm } from "@/lib/crm";
+import { serviceClient } from "@/lib/db/client";
 import { propOptions } from "@/lib/hubspot/schema";
 import { PendingButton } from "@/components/PendingButton";
 import { recordUrl } from "@/lib/hubspot/client";
 import { contactCompanyIdList, contactDeals } from "@/lib/hubspot/repo";
 import { companyOpsStatus } from "@/lib/crm/companyStatus";
+import { loadContactEventsByEmail, eventLabel } from "@/lib/crm/contactEvents";
 import { updateHubspotContact, markHubspotActioned, confirmHubspotEmail } from "./hubspotActions";
 import { fmtDate } from "@/lib/format/datetime";
 
@@ -45,6 +47,7 @@ export async function HubspotContactDetail({ id }: { id: string }) {
     companyOpsStatus(ids),
   ]);
   const targetText = companies.find((co) => co.target_group)?.target_group ?? null;
+  const events = await loadContactEventsByEmail(serviceClient(), c.email);
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 md:px-8">
@@ -186,8 +189,26 @@ export async function HubspotContactDetail({ id }: { id: string }) {
         )}
       </section>
 
+      {/* Activity / events (item 11) — recorded against this contact (bridged by email). */}
+      <section className="mt-6">
+        <h2 className="mb-2 text-sm font-semibold text-neutral-700">Activity <span className="text-neutral-400">({events.length})</span></h2>
+        {events.length === 0 ? (
+          <p className="text-sm text-neutral-500">No recorded activity for this contact. The full HubSpot timeline is available via the ↗ link above.</p>
+        ) : (
+          <ul className="divide-y divide-neutral-100 rounded-lg border border-neutral-200">
+            {events.map((e, i) => (
+              <li key={i} className="flex items-baseline gap-2 px-3 py-1.5 text-sm">
+                <span className="w-28 shrink-0 text-xs text-neutral-400">{fmtDate(e.ts)}</span>
+                <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] font-medium text-neutral-600">{eventLabel(e.type)}</span>
+                {e.message && <span className="text-neutral-700">{e.message}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <p className="mt-6 text-xs text-neutral-400">
-        Live HubSpot contact. Meetings aren&apos;t shown here yet — they&apos;re keyed to the Supabase contact and move in with the operational-data re-keying. The full activity timeline lives in HubSpot — open it with the ↗ link.
+        Live HubSpot contact. Meetings aren&apos;t shown here yet — they&apos;re keyed to the Supabase contact and move in with the operational-data re-keying. The full HubSpot activity timeline is available via the ↗ link.
       </p>
     </main>
   );
