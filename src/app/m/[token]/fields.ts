@@ -385,19 +385,39 @@ export const POLICY_CERT_QUESTIONS: PolicyQuestion[] = [
 
 export const POLICY_QUESTIONS: PolicyQuestion[] = [...POLICY_DOC_QUESTIONS, ...POLICY_CERT_QUESTIONS];
 
-/** Answer-store keys for the policies page: each Yes/No plus its paste/detail
- *  text box. The document itself is a file upload, handled separately. */
-export const POLICY_ANSWER_KEYS = POLICY_QUESTIONS.flatMap((q) =>
-  q.detailOnly ? [q.key, `${q.key}_detail`] : [q.key, `${q.key}_text`],
-);
+/** ISO 27001 + SOC 2 are already asked on the Information Security page (TU
+ *  products). When that page is present we omit them here to avoid duplication;
+ *  for a Faster-Payments-only case (no infosec page) they stay. */
+const POLICY_CERT_DUPLICATES = new Set(["pol_iso27001", "pol_soc2"]);
 
-/** Every Yes/No must be answered (uploads / pasted text stay optional — a
- *  merchant can send a document separately). Mirrors the infosec page. */
-export function missingPolicyFields(answers: AnswerMap): string[] {
+/** Certification questions shown on the Policies page for a case (ISO 27001 /
+ *  SOC 2 dropped when the infosec page already covers them). */
+export function policyCertQuestions(groups: string[]): PolicyQuestion[] {
+  const dropDupes = requiresTuSection(groups);
+  return POLICY_CERT_QUESTIONS.filter((q) => !(dropDupes && POLICY_CERT_DUPLICATES.has(q.key)));
+}
+
+/** Every policy question shown for a case (docs + de-duplicated certs). */
+export function visiblePolicyQuestions(groups: string[]): PolicyQuestion[] {
+  return [...POLICY_DOC_QUESTIONS, ...policyCertQuestions(groups)];
+}
+
+/** Validation for the Policies page. Each question needs a Yes/No; where the
+ *  answer is Yes the merchant must attach a document, paste the text (or give
+ *  detail for the final certifications question), OR tick "I'll provide this
+ *  later" ({key}_later). `onFile` is the set of upload kinds already stored. */
+export function missingPolicyFields(answers: AnswerMap, onFile: Set<string>, groups: string[]): string[] {
   const miss: string[] = [];
-  for (const q of POLICY_QUESTIONS) {
-    if (answers[q.key]?.is_unknown) continue;
-    if (!(answers[q.key]?.value ?? "").trim()) miss.push(q.label);
+  for (const q of visiblePolicyQuestions(groups)) {
+    const ans = (answers[q.key]?.value ?? "").trim();
+    if (!ans) { miss.push(q.label); continue; }           // Yes/No not answered
+    if (ans !== "yes") continue;                           // "No" needs nothing more
+    if ((answers[`${q.key}_later`]?.value ?? "") === "yes") continue; // deferred
+    if (q.detailOnly) {
+      if (!(answers[`${q.key}_detail`]?.value ?? "").trim()) miss.push(`${q.label} (detail or "provide later")`);
+    } else if (!(answers[`${q.key}_text`]?.value ?? "").trim() && !onFile.has(q.key)) {
+      miss.push(`${q.label} (document or "provide later")`);
+    }
   }
   return miss;
 }

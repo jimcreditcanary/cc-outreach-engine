@@ -11,7 +11,7 @@ import {
   addBankAccounts, removeBankAccount, countBankAccounts, saveDirectDebit, finalizeMerchantSubmission,
   type MerchantFormData, type UboKycInput, type BankAccountInput,
 } from "@/lib/onboarding/merchantForm";
-import { saveUpload, extractPendingUploads, loadUboDocStatus, UBO_ID_KIND, UBO_PROOF_KIND } from "@/lib/onboarding/uploads";
+import { saveUpload, extractPendingUploads, loadUboDocStatus, loadUploadKinds, UBO_ID_KIND, UBO_PROOF_KIND } from "@/lib/onboarding/uploads";
 import { notifyMerchantSubmitted } from "@/lib/onboarding/notify";
 import { generateDocsForCase } from "@/lib/onboarding/docgen";
 import { getFormEditor, setFormEditor } from "@/lib/onboarding/formEditor";
@@ -28,7 +28,7 @@ import {
   missingCompanyFields, hasValidDpo, isPersonalEmailDomain, requiresTransactionProfile,
   paymentReasonProducts, missingPaymentFields, projectPaymentAnswers, isCharityType, missingInfosecFields, nextFormPage,
   normalizeUrl, URL_ANSWER_KEYS,
-  POLICY_ANSWER_KEYS, POLICY_DOC_QUESTIONS, missingPolicyFields,
+  visiblePolicyQuestions, missingPolicyFields,
 } from "./fields";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
@@ -387,11 +387,19 @@ export async function savePageAction(formData: FormData) {
         else { await setPageComplete(db, c.id, "infosec", true); dest = advance(); }
       }
     } else if (page === "policies") {
-      // Yes/No + paste/detail text go to the answer store; each "doc" question's
-      // file upload is stored with kind = the question's key (best-effort).
-      const entries: AnswerInput[] = POLICY_ANSWER_KEYS.map((k) => ({ field_key: k, value: str(formData.get(k)), is_unknown: str(formData.get(`${k}__unknown`)) === "on" }));
+      // Yes/No + paste/detail text + the "provide later" flag go to the answer
+      // store; each question's uploaded document is stored with kind = its key.
+      const qs = visiblePolicyQuestions(c.product_groups);
+      const entries: AnswerInput[] = [];
+      for (const q of qs) {
+        entries.push({ field_key: q.key, value: str(formData.get(q.key)) });
+        const textKey = q.detailOnly ? `${q.key}_detail` : `${q.key}_text`;
+        entries.push({ field_key: textKey, value: str(formData.get(textKey)) });
+        entries.push({ field_key: `${q.key}_later`, value: str(formData.get(`${q.key}_later`)) === "on" ? "yes" : "" });
+      }
       await setAnswers(db, c.id, entries, ed);
-      for (const q of POLICY_DOC_QUESTIONS) {
+      for (const q of qs) {
+        if (q.detailOnly) continue;
         const files = formData.getAll(`${q.key}_file`).filter((f): f is File => f instanceof File && f.size > 0);
         for (const f of files.slice(0, 3)) {
           if (f.size > 20 * 1024 * 1024) continue;
@@ -399,8 +407,9 @@ export async function savePageAction(formData: FormData) {
         }
       }
       if (mode === "continue") {
-        const missing = missingPolicyFields(await getAnswers(db, c.id));
-        if (missing.length) dest = `${back}?page=policies&error=required${qp(v2)}`;
+        const onFile = await loadUploadKinds(db, c.id);
+        const missing = missingPolicyFields(await getAnswers(db, c.id), onFile, c.product_groups);
+        if (missing.length) dest = `${back}?page=policies&error=policies${qp(v2)}`;
         else { await setPageComplete(db, c.id, "policies", true); dest = advance(); }
       }
     }
@@ -458,8 +467,11 @@ export async function submitForApprovalAction(formData: FormData) {
   if (requiresTuSection(c.product_groups) && missingInfosecFields(answers).length) {
     redirect(`${back}?page=infosec&error=required${qp(v2)}`);
   }
-  if (requiresPolicies(c.product_groups) && missingPolicyFields(answers).length) {
-    redirect(`${back}?page=policies&error=required${qp(v2)}`);
+  if (requiresPolicies(c.product_groups)) {
+    const onFile = await loadUploadKinds(db, c.id);
+    if (missingPolicyFields(answers, onFile, c.product_groups).length) {
+      redirect(`${back}?page=policies&error=policies${qp(v2)}`);
+    }
   }
 
   let failed = false;

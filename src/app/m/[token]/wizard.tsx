@@ -21,7 +21,7 @@ import {
   COMPANY_FIELDS, SOCIAL_FIELDS, DPO_FIELDS, collectDpos, dpoSummary, visibleFormPages,
   requiresTransactionProfile, paymentReasonProducts, productLabel, isCharityType,
   INFOSEC_SMALL, INFOSEC_LARGE, inputValidation, type AnswerFieldDef,
-  POLICY_DOC_QUESTIONS, POLICY_CERT_QUESTIONS, POLICY_QUESTIONS, type PolicyQuestion,
+  POLICY_DOC_QUESTIONS, policyCertQuestions, visiblePolicyQuestions, type PolicyQuestion,
 } from "./fields";
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
 import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
@@ -206,6 +206,7 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
       {error === "attest" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please confirm the beneficial-owner list is complete before continuing.</p>}
       {error === "account" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please add at least one bank account before continuing.</p>}
       {error === "ubo_docs" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">For payments onboarding, please upload a photo ID and a proof of address for each beneficial owner before continuing.</p>}
+      {error === "policies" && <p className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Please answer each question. Where you answered Yes, attach a document, paste the text, or tick &ldquo;I&apos;ll provide this later&rdquo; before continuing.</p>}
       {error === "save" && <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">Something went wrong saving - please try again.</p>}
 
       {/* One "Last updated" for the whole form (replaces the per-field markers). */}
@@ -222,7 +223,7 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
         {current === "accounts" && <AccountsPage token={token} c={c} merchant={merchant} v2={v2} />}
         {current === "payments" && <PaymentsPage token={token} c={c} answers={answers} companyName={enrichment.snapshot?.company_name ?? ""} charity={isCharityType(enrichment.snapshot?.company_type)} v2={v2} />}
         {current === "infosec" && <InfosecPage token={token} answers={answers} uploadCount={uploads.length} v2={v2} />}
-        {current === "policies" && <PoliciesPage token={token} answers={answers} policyKinds={policyKinds} v2={v2} />}
+        {current === "policies" && <PoliciesPage token={token} answers={answers} policyKinds={policyKinds} groups={c.product_groups} v2={v2} />}
         {current === "review" && <ReviewPage token={token} c={c} answers={answers} merchant={merchant} v2={v2} />}
       </div>
     </>
@@ -736,16 +737,22 @@ function TextareaA({ name, label, answers, placeholder, rows = 3 }: {
 }
 
 /** One policy question: Yes/No, then (if yes) a document upload + paste box, or
- *  a free-text detail box for the "other certifications" question. The upload /
- *  paste are always shown below the Yes/No (server-rendered, no client reveal),
- *  labelled "If yes - …", matching the infosec page. */
+ *  a free-text detail box for the "other certifications" question, plus an "I'll
+ *  provide this later" escape hatch. Everything is shown below the Yes/No
+ *  (server-rendered, no client reveal), labelled "If yes - …". */
 function PolicyRow({ q, answers, onFile }: { q: PolicyQuestion; answers: AnswerMap; onFile: boolean }) {
+  const later = (
+    <label className="mt-1 flex items-center gap-1.5 text-xs text-neutral-500">
+      <input type="checkbox" name={`${q.key}_later`} defaultChecked={(answers[`${q.key}_later`]?.value ?? "") === "yes"} /> I&apos;ll provide this later
+    </label>
+  );
   return (
     <div className="border-t border-neutral-100 pt-3 first:border-0 first:pt-0">
-      <RadioA name={q.key} label={q.label} answers={answers} options={YN} required />
+      <RadioA name={q.key} label={q.label} answers={answers} options={YN} required noUnknown />
       {q.detailOnly ? (
         <div className="mt-2">
           <TextareaA name={`${q.key}_detail`} label="If yes - please provide detail" answers={answers} />
+          {later}
         </div>
       ) : (
         <div className="mt-2 space-y-2">
@@ -755,25 +762,27 @@ function PolicyRow({ q, answers, onFile }: { q: PolicyQuestion; answers: AnswerM
             <input id={`${q.key}_file`} name={`${q.key}_file`} type="file" accept=".pdf,.doc,.docx,.txt,.md" className={fileInput} />
           </div>
           <TextareaA name={`${q.key}_text`} label="…or paste the text here instead" answers={answers} />
+          {later}
         </div>
       )}
     </div>
   );
 }
 
-function PoliciesPage({ token, answers, policyKinds, v2 }: {
-  token: string; answers: AnswerMap; policyKinds: Set<string>; v2?: string;
+function PoliciesPage({ token, answers, policyKinds, groups, v2 }: {
+  token: string; answers: AnswerMap; policyKinds: Set<string>; groups: string[]; v2?: string;
 }) {
+  const certQs = policyCertQuestions(groups);
   return (
     <PageForm token={token} page="policies" v2={v2} title="Policies &amp; certifications"
-      intro="Because you're onboarding for Faster Payments or Settlement Accounts, we need a view of your governance and financial-crime controls. Answer each question; where you answer Yes, attach the document or paste the text - or send it to us later.">
+      intro="Because you're onboarding for Faster Payments or Settlement Accounts, we need a view of your governance and financial-crime controls. Answer each question; where you answer Yes, attach the document, paste the text, or tick &ldquo;I'll provide this later&rdquo;.">
       <fieldset className="space-y-1 rounded-lg border border-neutral-200 bg-white p-4">
         <legend className="px-1 text-sm font-semibold text-[#003566]">Policies, procedures &amp; reports</legend>
         {POLICY_DOC_QUESTIONS.map((q) => <PolicyRow key={q.key} q={q} answers={answers} onFile={policyKinds.has(q.key)} />)}
       </fieldset>
       <fieldset className="mt-4 space-y-1 rounded-lg border border-neutral-200 bg-white p-4">
         <legend className="px-1 text-sm font-semibold text-[#003566]">Certifications</legend>
-        {POLICY_CERT_QUESTIONS.map((q) => <PolicyRow key={q.key} q={q} answers={answers} onFile={policyKinds.has(q.key)} />)}
+        {certQs.map((q) => <PolicyRow key={q.key} q={q} answers={answers} onFile={policyKinds.has(q.key)} />)}
       </fieldset>
     </PageForm>
   );
@@ -866,8 +875,10 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
       )}
 
       {requiresPolicies(c.product_groups) && (() => {
-        const answered = POLICY_QUESTIONS.filter((q) => (answers[q.key]?.value ?? "").trim() || answers[q.key]?.is_unknown).length;
-        const inPlace = POLICY_QUESTIONS.filter((q) => answers[q.key]?.value === "yes").length;
+        const qs = visiblePolicyQuestions(c.product_groups);
+        const answered = qs.filter((q) => (answers[q.key]?.value ?? "").trim()).length;
+        const inPlace = qs.filter((q) => answers[q.key]?.value === "yes").length;
+        const toFollow = qs.filter((q) => answers[`${q.key}_later`]?.value === "yes").length;
         return (
           <section className="rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm">
             <div className="flex items-center justify-between">
@@ -875,10 +886,10 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
               <Link href={changeHref("policies")} className="text-xs text-blue-700 hover:underline">Change</Link>
             </div>
             <p className="mt-1 text-neutral-600">
-              {answered < POLICY_QUESTIONS.length
-                ? <span className="text-amber-600">{answered} of {POLICY_QUESTIONS.length} answered</span>
-                : `${POLICY_QUESTIONS.length} answered`}
-              {" · "}{inPlace} confirmed in place
+              {answered < qs.length
+                ? <span className="text-amber-600">{answered} of {qs.length} answered</span>
+                : `${qs.length} answered`}
+              {" · "}{inPlace} in place{toFollow ? ` · ${toFollow} to follow` : ""}
             </p>
           </section>
         );
