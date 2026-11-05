@@ -62,12 +62,13 @@ export const COMPANY_FIELDS: AnswerFieldDef[] = [
   { key: "privacy_policy_url", label: "Privacy-policy URL", type: "url", unknownOk: true },
 ];
 
-/** HTML validation attributes for an input type (phone + URL).
- *  Phone must be international format "{country code} {number}", e.g.
- *  "+44 7590571361" — a leading +, 1–3 digit country code, a space, the number. */
-export const PHONE_PATTERN = "\\+\\d{1,3} \\d[\\d ]{5,15}";
-export const PHONE_TITLE = "Use the international format: country code, a space, then the number — e.g. +44 7590571361";
-export const PHONE_PLACEHOLDER = "+44 7590571361";
+/** HTML validation attributes for an input type (phone + URL). Phone accepts an
+ *  international number (+44 7700 900123, with or without a space/hyphen) OR a UK
+ *  local number (07700 900123) — more forgiving than requiring a space (item 5).
+ *  Placeholder uses Ofcom's reserved fictional range, not a real number. */
+export const PHONE_PATTERN = "(\\+\\d{1,3}[\\s-]?\\d[\\d\\s-]{5,15}|0\\d{2,4}[\\s-]?\\d[\\d\\s-]{4,10})";
+export const PHONE_TITLE = "Enter a valid phone number, e.g. +44 7700 900123 or 07700 900123";
+export const PHONE_PLACEHOLDER = "+44 7700 900123";
 export function inputValidation(type?: string): { inputMode?: "tel" | "url"; pattern?: string; title?: string; placeholder?: string } {
   if (type === "tel") return { inputMode: "tel", pattern: PHONE_PATTERN, title: PHONE_TITLE, placeholder: PHONE_PLACEHOLDER };
   if (type === "url") return { inputMode: "url" };
@@ -105,20 +106,24 @@ export const DPO_FIELDS: { key: keyof DpoRecord; label: string; type?: "text" | 
   { key: "phone", label: "Phone", type: "tel" },
 ];
 
-/** Collect the structured DPOs out of the flat answer keys (scan up to 20). */
+/** Collect the structured DPOs out of the flat answer keys (scan up to 20). A
+ *  DPO can be a person (first/last) or a company (item 3). */
 export function collectDpos(answers: AnswerMap): DpoRecord[] {
   const out: DpoRecord[] = [];
   for (let i = 0; i < 20; i++) {
     const g = (s: string) => (answers[`dpo_${i}_${s}`]?.value ?? "").trim();
-    const rec: DpoRecord = { first: g("first"), last: g("last"), title: g("title"), email: g("email"), phone: g("phone") };
-    if (rec.first || rec.last || rec.email) out.push(rec);
+    const kind: "person" | "company" = g("kind") === "company" ? "company" : "person";
+    const rec: DpoRecord = { kind, company: g("company"), first: g("first"), last: g("last"), title: g("title"), email: g("email"), phone: g("phone") };
+    const has = kind === "company" ? (rec.company || rec.email) : (rec.first || rec.last || rec.email);
+    if (has) out.push(rec);
   }
   return out;
 }
 
-/** At least one DPO with a name + email (the brief makes DPO required). */
+/** At least one valid DPO (person needs a name + email; company needs a company
+ *  name + email). DPO is required. */
 export function hasValidDpo(answers: AnswerMap): boolean {
-  return collectDpos(answers).some((d) => (d.first || d.last) && d.email);
+  return collectDpos(answers).some((d) => d.kind === "company" ? !!(d.company && d.email) : !!((d.first || d.last) && d.email));
 }
 
 const PERSONAL_EMAIL_DOMAINS = new Set([
@@ -139,7 +144,9 @@ export function isPersonalEmailDomain(email: string): boolean {
  *  internal review + document generation keep reading from one place. */
 export function dpoSummary(dpos: DpoRecord[]): string {
   return dpos
-    .map((d) => `${[d.first, d.last].filter(Boolean).join(" ")}${d.title ? ` (${d.title})` : ""}${d.email ? ` <${d.email}>` : ""}${d.phone ? ` ${d.phone}` : ""}`.trim())
+    .map((d) => d.kind === "company"
+      ? `${d.company ?? ""} (company)${d.email ? ` <${d.email}>` : ""}${d.phone ? ` ${d.phone}` : ""}`.trim()
+      : `${[d.first, d.last].filter(Boolean).join(" ")}${d.title ? ` (${d.title})` : ""}${d.email ? ` <${d.email}>` : ""}${d.phone ? ` ${d.phone}` : ""}`.trim())
     .filter(Boolean)
     .join("; ");
 }

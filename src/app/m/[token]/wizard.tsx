@@ -25,7 +25,7 @@ import {
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
 import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
 import { discoverPrivacyPolicyUrl } from "@/lib/onboarding/websiteScan";
-import { TradingAddress, TradeBody, SignatoryPicker, DpoList, type DpoContact } from "./CompanyFields";
+import { TradingAddress, TradeBody, SignatoryPicker, DpoList, type DpoContact, type DpoRowData } from "./CompanyFields";
 import { BankStatementQuestion } from "./PaymentFields";
 import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAccountAction } from "./actions";
 
@@ -146,8 +146,8 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
       const sigCt = sigStake ? byId.get(sigStake.hubspot_contact_id) : null;
       const signatory = sigCt ? { name: sigCt.full_name ?? "", email: sigCt.email ?? "", title: sigCt.job_title ?? "" } : null;
       const firstCt = cts[0];
-      const dpoPrefill = firstCt
-        ? (() => { const pn = parsePersonName(firstCt.full_name); return { first: pn.first, last: pn.last, title: firstCt.job_title ?? "", email: firstCt.email ?? "", phone: firstCt.mobile ?? "" }; })()
+      const dpoPrefill: DpoRowData | null = firstCt
+        ? (() => { const pn = parsePersonName(firstCt.full_name); return { kind: "person" as const, company: "", first: pn.first, last: pn.last, title: firstCt.job_title ?? "", email: firstCt.email ?? "", phone: firstCt.mobile ?? "" }; })()
         : null;
       const ro = enrichment.snapshot?.registered_office ?? null;
       const registered = ro ? [ro.premises, ro.address_line_1, ro.address_line_2, ro.locality, ro.region, ro.postal_code, ro.country].map((x) => (x ?? "").trim()).filter(Boolean).join(", ") : "";
@@ -242,7 +242,9 @@ function PageForm({ token, page, v2, title, intro, children }: {
       </div>
       {children}
       <div className="flex flex-wrap items-center gap-2">
-        <button type="submit" name="mode" value="draft" className={btnSecondary}>Save &amp; finish later</button>
+        <button type="submit" name="mode" value="draft" formNoValidate className={btnSecondary}>Save &amp; finish later</button>
+        {/* Save & continue anyway — advances without validation (item 6). */}
+        <button type="submit" name="mode" value="skip" formNoValidate className={btnSecondary}>Save &amp; continue anyway</button>
         <button type="submit" name="mode" value="continue" className={btnPrimary}>Continue →</button>
       </div>
     </form>
@@ -255,7 +257,10 @@ function AnswerField({ def, answers, fcaRequired, defaultValue }: { def: AnswerF
   return (
     <div>
       <label htmlFor={def.key} className={lbl}>{def.label}{required && <span className="text-red-600"> *</span>}</label>
-      <input id={def.key} name={def.key} type={def.type ?? "text"} defaultValue={a?.value ?? defaultValue ?? ""} className={field} required={required} {...inputValidation(def.type)} />
+      {/* No HTML `required` on fields that offer "don't know" — otherwise the
+          browser blocks submit even when the box is ticked (item 4). Server-side
+          validation still enforces them unless don't-know is set. */}
+      <input id={def.key} name={def.key} type={def.type ?? "text"} defaultValue={a?.value ?? defaultValue ?? ""} className={field} required={required && !def.unknownOk} {...inputValidation(def.type)} />
       <FieldMeta name={def.key} answers={answers} noUnknown={!def.unknownOk} />
     </div>
   );
@@ -267,7 +272,7 @@ interface CompanyPrefill {
   contacts: { id: string; name: string; email: string; title: string }[];
   dpoContacts: DpoContact[];
   signatory: { name: string; email: string; title: string } | null;
-  dpoPrefill: { first: string; last: string; title: string; email: string; phone: string } | null;
+  dpoPrefill: DpoRowData | null;
   registered: string;
   privacyUrl: string | null;
 }
@@ -277,10 +282,12 @@ function CompanyPage({ token, c, answers, prefill, v2 }: { token: string; c: Tok
   const tuCredit = c.product_groups.includes("tu_credit");
   const fields = COMPANY_FIELDS.filter((f) => !f.onlyIfTuCredit || tuCredit);
   // Existing DPOs from the answer store (so a return visit keeps what was typed).
-  const existingDpos: CompanyPrefill["dpoPrefill"][] = [];
+  const existingDpos: DpoRowData[] = [];
   for (let i = 0; i < 20; i++) {
     const g = (k: string) => (answers[`dpo_${i}_${k}`]?.value ?? "").trim();
-    if (g("first") || g("last") || g("email")) existingDpos.push({ first: g("first"), last: g("last"), title: g("title"), email: g("email"), phone: g("phone") });
+    const kind: "person" | "company" = g("kind") === "company" ? "company" : "person";
+    const has = kind === "company" ? (g("company") || g("email")) : (g("first") || g("last") || g("email"));
+    if (has) existingDpos.push({ kind, company: g("company"), first: g("first"), last: g("last"), title: g("title"), email: g("email"), phone: g("phone") });
   }
 
   return (
@@ -308,7 +315,7 @@ function CompanyPage({ token, c, answers, prefill, v2 }: { token: string; c: Tok
 
       {/* Data protection officers (item 6f): one by default, prefilled; each row
           can pick an existing contact or add a new one (added to HubSpot). */}
-      <DpoList initial={existingDpos.filter((d): d is NonNullable<typeof d> => !!d)} prefill={prefill.dpoPrefill} contacts={prefill.dpoContacts} />
+      <DpoList initial={existingDpos} prefill={prefill.dpoPrefill} contacts={prefill.dpoContacts} />
 
       {/* Social media (optional) */}
       <fieldset className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
@@ -491,7 +498,8 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
           <p className="mt-2 text-xs text-neutral-400">Leave rows blank if not needed. Save to add more rows.</p>
         </fieldset>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="submit" name="mode" value="draft" className={btnSecondary}>Save &amp; finish later</button>
+          <button type="submit" name="mode" value="draft" formNoValidate className={btnSecondary}>Save &amp; finish later</button>
+          <button type="submit" name="mode" value="skip" formNoValidate className={btnSecondary}>Save &amp; continue anyway</button>
           <button type="submit" name="mode" value="continue" className={btnPrimary}>Continue →</button>
         </div>
       </form>
