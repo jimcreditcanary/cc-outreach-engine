@@ -30,13 +30,14 @@ export default async function CompanyDetail({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ merge_q?: string }>;
+  searchParams: Promise<{ merge_q?: string; tab?: string; ob?: string; step?: string; q?: string }>;
 }) {
   const { id } = await params;
 
   // HubSpot-backed detail (P3) — isolated; Supabase detail below unchanged.
   if (activeBackend() === "hubspot") {
-    return <HubspotCompanyDetail id={id} />;
+    const sp = await searchParams;
+    return <HubspotCompanyDetail id={id} tab={sp.tab} ob={sp.ob} step={sp.step} q={sp.q} />;
   }
 
   const { merge_q } = await searchParams;

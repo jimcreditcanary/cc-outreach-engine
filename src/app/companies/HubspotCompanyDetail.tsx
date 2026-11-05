@@ -1,8 +1,8 @@
-// HubSpot-backed company detail (P3). Identity + the app's custom fields
-// (tier / partner / ICP / current-client / onboarding / target-group) +
-// associated contacts with their account-role tags. Isolated; the Supabase
-// detail page is untouched and used when CRM_BACKEND=supabase. Deals, notes,
-// events and conference panels are deferred with the operational-data decision.
+// HubSpot-backed company detail (P3), now organised into three tabs
+// (feedback items 2-4): Detail (identity + custom fields + deals + contacts),
+// Onboarding (the full onboarding case + review/approve, moved here from
+// /onboarding/[id]), and Billing (account summary). The persistent header keeps
+// the name, badges and the Active-Customer toggle visible on every tab.
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -18,13 +18,18 @@ import { companyDeals } from "@/lib/hubspot/repo";
 import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
 import { startOnboardingAction } from "@/app/onboarding/actions";
 import { setUpBillingAction } from "../billing/actions";
-import { merchantFormUrl } from "@/lib/onboarding/merchantForm";
-import { CopyButton } from "@/components/CopyButton";
+import { OnboardingCasePanel, OnboardingReviewPanel, companyTabNav } from "@/app/onboarding/[id]/CasePanel";
 
 const field = "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
 const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 mb-1";
 
-export async function HubspotCompanyDetail({ id }: { id: string }) {
+type Tab = "detail" | "onboarding" | "billing";
+const gbp = (pence: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(pence / 100);
+
+export async function HubspotCompanyDetail({ id, tab, ob, step, q }: {
+  id: string; tab?: string; ob?: string; step?: string; q?: string;
+}) {
+  const active: Tab = tab === "onboarding" ? "onboarding" : tab === "billing" ? "billing" : "detail";
   const crm = getCrm();
   const [co, contacts, onboardingOpts, targetOpts, deals, owners] = await Promise.all([
     crm.getCompany(id),
@@ -37,45 +42,21 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
   if (!co) notFound();
   const ownerList = ownerOptions(owners);
 
-  // Billing affordance: link to the account if one exists, else offer "Set up
-  // billing" when the company has an onboarded case (normally auto-created on
-  // approval). Scoped to this file — the Supabase detail page is unaffected.
   const bdb = serviceClient();
   const [{ data: billingAccts }, { data: caseRows }, customer] = await Promise.all([
-    bdb.from("billing_accounts").select("id, status").eq("hubspot_company_id", id).order("created_at", { ascending: false }).limit(1),
+    bdb.from("billing_accounts").select("id, status, contract_start_date, billing_frequency").eq("hubspot_company_id", id).order("created_at", { ascending: false }).limit(1),
     bdb.from("onboarding_cases").select("id, status, merchant_form_token, drive_folder_id").eq("hubspot_company_id", id).neq("status", "cancelled").order("updated_at", { ascending: false }).limit(1),
     isCustomer(bdb, id),
   ]);
-  // Customer status = the local "Active Customer" flag (the button), NOT
-  // HubSpot current_client. Clicking the button sets both; current_client on
-  // its own does not make a company a customer here.
   const billingAcct = (billingAccts ?? [])[0] ?? null;
   const onboardingCase = (caseRows ?? [])[0] ?? null;
   const hasOnboardedCase = onboardingCase?.status === "onboarded";
 
-  // "Onboarded by / date": the actor + time of the completion milestone — the
-  // sign-off (`approved`) if there is one, else the internal-onboarding step
-  // (`internal_complete`) that made the customer link live.
-  let onboardedBy: { label: string; email: string | null; at: string } | null = null;
-  if (onboardingCase) {
-    const { data: evRows } = await bdb
-      .from("onboarding_events")
-      .select("event, actor_email, created_at")
-      .eq("case_id", onboardingCase.id)
-      .in("event", ["approved", "internal_complete"])
-      .order("created_at", { ascending: false });
-    const evs = (evRows ?? []) as { event: string; actor_email: string | null; created_at: string }[];
-    const ev = evs.find((e) => e.event === "approved") ?? evs.find((e) => e.event === "internal_complete") ?? null;
-    if (ev) onboardedBy = { label: ev.event === "approved" ? "Onboarded" : "Internal onboarding", email: ev.actor_email, at: ev.created_at };
-  }
-  const driveFolderUrl = onboardingCase?.drive_folder_id ? `https://drive.google.com/drive/folders/${onboardingCase.drive_folder_id}` : null;
-  // Deal picker for "Start onboarding" uses these only when no case exists yet;
-  // the full list is also shown in the Deals section below.
-  const onboardDeals = onboardingCase ? [] : deals;
-
-  // HubSpot option values can differ from labels — show the label.
   const onboardingText = co.onboarding_status ? (onboardingOpts.find((o) => o.value === co.onboarding_status)?.label ?? co.onboarding_status) : null;
   const targetText = co.target_group ? (targetOpts.find((o) => o.value === co.target_group)?.label ?? co.target_group) : null;
+
+  const tabHref = (t: Tab) => `/companies/${id}${t === "detail" ? "" : `?tab=${t}`}`;
+  const tabCls = (t: Tab) => `rounded-t-md border-b-2 px-4 py-2 text-sm font-medium ${active === t ? "border-[#003566] text-[#003566]" : "border-transparent text-neutral-500 hover:text-neutral-800"}`;
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 md:px-8">
@@ -84,7 +65,8 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
         <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700">HubSpot</span>
       </div>
 
-      <header className="mb-5 border-b border-neutral-200 pb-3">
+      {/* Persistent header */}
+      <header className="mb-4 border-b border-neutral-200 pb-3">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold">{co.name || "Company"}</h1>
           {customer && <span className="rounded bg-teal-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Customer</span>}
@@ -112,77 +94,48 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
         </div>
       </header>
 
-      {/* Onboarding + billing blocks — appear once the company is an Active Customer.
-          The onboarding block carries the shareable customer link (salesperson sends
-          it; no email ever goes to the customer). */}
-      {customer && (
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <section className="rounded-lg border border-neutral-200 bg-white p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-700">Onboarding</h2>
-              {onboardingCase && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">{onboardingCase.status.replace(/_/g, " ")}</span>}
-            </div>
-            {onboardingCase ? (
-              <div className="space-y-2">
-                <Link href={`/onboarding/${onboardingCase.id}`} className="inline-block rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">Open onboarding case →</Link>
-                {(onboardedBy || driveFolderUrl) && (
-                  <div className="space-y-0.5 text-[11px] text-neutral-500">
-                    {onboardedBy && (
-                      <p>{onboardedBy.label} by <span className="text-neutral-700">{onboardedBy.email ?? "—"}</span> · {fmtDate(onboardedBy.at)}</p>
-                    )}
-                    {driveFolderUrl && (
-                      <a href={driveFolderUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-700 hover:underline">Drive folder ↗</a>
-                    )}
-                  </div>
-                )}
-                {onboardingCase.merchant_form_token && (
-                  <div className="rounded border border-dashed border-neutral-300 bg-neutral-50 p-2">
-                    <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500">Customer onboarding link</p>
-                    <div className="flex items-start gap-2">
-                      <a href={merchantFormUrl(onboardingCase.merchant_form_token)} target="_blank" rel="noopener noreferrer" className="break-all text-xs text-blue-700 hover:underline">{merchantFormUrl(onboardingCase.merchant_form_token)}</a>
-                      <CopyButton text={merchantFormUrl(onboardingCase.merchant_form_token)} label="Copy" />
-                    </div>
-                    <p className="mt-1 text-[11px] text-neutral-400">Send this to the customer to complete their onboarding form.</p>
-                  </div>
-                )}
-              </div>
-            ) : onboardDeals.length === 0 ? (
-              <p className="text-sm text-neutral-500">No deal to onboard — link a deal in HubSpot to start.</p>
-            ) : onboardDeals.length === 1 ? (
-              <form action={startOnboardingAction}>
-                <input type="hidden" name="deal_id" value={onboardDeals[0]!.id} />
-                <PendingButton className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700" pendingLabel="Starting…">Start onboarding</PendingButton>
-              </form>
-            ) : (
-              <form action={startOnboardingAction} className="flex flex-wrap items-center gap-2">
-                <select name="deal_id" defaultValue={onboardDeals[0]!.id} className="rounded border border-neutral-300 px-2 py-1 text-xs">
-                  {onboardDeals.map((d) => <option key={d.id} value={d.id}>{d.name ?? d.id}{d.stage ? ` · ${d.stage}` : ""}</option>)}
-                </select>
-                <PendingButton className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700" pendingLabel="Starting…">Start onboarding</PendingButton>
-              </form>
-            )}
-          </section>
+      {/* Tabs */}
+      <nav className="mb-6 flex gap-1 border-b border-neutral-200">
+        <Link href={tabHref("detail")} className={tabCls("detail")}>Detail</Link>
+        <Link href={tabHref("onboarding")} className={tabCls("onboarding")}>Onboarding{onboardingCase && <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-semibold uppercase text-amber-800">{onboardingCase.status.replace(/_/g, " ")}</span>}</Link>
+        <Link href={tabHref("billing")} className={tabCls("billing")}>Billing{billingAcct && <span className="ml-1 rounded bg-indigo-100 px-1 py-0.5 text-[9px] font-semibold uppercase text-indigo-700">{billingAcct.status.replace(/_/g, " ")}</span>}</Link>
+      </nav>
 
-          <section className="rounded-lg border border-neutral-200 bg-white p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-700">Billing</h2>
-              {billingAcct && <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">{billingAcct.status.replace(/_/g, " ")}</span>}
-            </div>
-            {billingAcct ? (
-              <Link href={`/billing/${billingAcct.id}`} className="inline-block rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">Open billing →</Link>
-            ) : hasOnboardedCase ? (
-              <form action={setUpBillingAction}>
-                <input type="hidden" name="company_id" value={id} />
-                <PendingButton className="rounded border border-indigo-300 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50" pendingLabel="Setting up…">Set up billing →</PendingButton>
-              </form>
-            ) : (
-              <p className="text-sm text-neutral-500">Billing opens once onboarding is approved.</p>
-            )}
-          </section>
-        </div>
+      {active === "detail" && (
+        <DetailTab id={id} co={co} targetOpts={targetOpts} ownerList={ownerList} deals={deals} contacts={contacts} onboardingDisplay={onboardingCase ? onboardingCase.status : onboardingText ?? "—"} />
       )}
 
-      {/* Edit */}
+      {active === "onboarding" && (
+        onboardingCase ? (
+          ob === "review"
+            ? <OnboardingReviewPanel caseId={onboardingCase.id} nav={companyTabNav(id, onboardingCase.id)} />
+            : <OnboardingCasePanel caseId={onboardingCase.id} nav={companyTabNav(id, onboardingCase.id)} step={step} q={q} />
+        ) : (
+          <StartOnboarding id={id} customer={customer} deals={deals} />
+        )
+      )}
+
+      {active === "billing" && (
+        <BillingTab id={id} billingAcct={billingAcct} hasOnboardedCase={hasOnboardedCase} customer={customer} />
+      )}
+    </main>
+  );
+}
+
+// ─── Detail tab ──────────────────────────────────────────────────────────────
+
+function DetailTab({ id, co, targetOpts, ownerList, deals, contacts, onboardingDisplay }: {
+  id: string;
+  co: Awaited<ReturnType<ReturnType<typeof getCrm>["getCompany"]>>;
+  targetOpts: { value: string; label: string }[];
+  ownerList: { id: string; name: string }[];
+  deals: Awaited<ReturnType<typeof companyDeals>>;
+  contacts: Awaited<ReturnType<ReturnType<typeof getCrm>["listCompanyContacts"]>>;
+  onboardingDisplay: string;
+}) {
+  if (!co) return null;
+  return (
+    <>
       <form action={updateHubspotCompany} className="grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 sm:grid-cols-2">
         <input type="hidden" name="id" value={co.id} />
         <div>
@@ -195,11 +148,7 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
         </div>
         <div>
           <label className={lbl}>Onboarding status</label>
-          {/* Read-only — a result of the onboarding case, not a free-edit field.
-              Change it by running the onboarding, not by picking here. */}
-          <div className={`${field} flex items-center bg-neutral-100 text-neutral-600`}>
-            {onboardingCase ? onboardingCase.status : onboardingText ?? "—"}
-          </div>
+          <div className={`${field} flex items-center bg-neutral-100 text-neutral-600`}>{onboardingDisplay}</div>
         </div>
         <div>
           <label className={lbl}>Target group</label>
@@ -224,7 +173,6 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
         </div>
       </form>
 
-      {/* Associated deals */}
       <section className="mt-6">
         <h2 className="mb-2 text-sm font-semibold text-neutral-700">Deals <span className="text-neutral-400">({deals.length})</span></h2>
         {deals.length === 0 ? (
@@ -244,7 +192,6 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
         )}
       </section>
 
-      {/* Associated contacts */}
       <section className="mt-6">
         <h2 className="mb-2 text-sm font-semibold text-neutral-700">Contacts <span className="text-neutral-400">({contacts.length})</span></h2>
         {contacts.length === 0 ? (
@@ -267,8 +214,103 @@ export async function HubspotCompanyDetail({ id }: { id: string }) {
       </section>
 
       <p className="mt-6 text-xs text-neutral-400">
-        Live HubSpot company. Deals, notes, events and the activity timeline live in HubSpot (↗) and move in with the operational-data step.
+        Live HubSpot company. Notes and the activity timeline live in HubSpot (↗) and move in with the operational-data step.
       </p>
-    </main>
+    </>
+  );
+}
+
+// ─── Onboarding tab: no-case start affordance ────────────────────────────────
+
+function StartOnboarding({ id, customer, deals }: { id: string; customer: boolean; deals: Awaited<ReturnType<typeof companyDeals>> }) {
+  if (!customer) {
+    return <p className="rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-500">Mark this company as an <strong>Active Customer</strong> (button above) to begin onboarding.</p>;
+  }
+  return (
+    <section className="rounded-lg border border-neutral-200 bg-white p-4">
+      <h2 className="mb-2 text-sm font-semibold text-neutral-700">Start onboarding</h2>
+      {deals.length === 0 ? (
+        <p className="text-sm text-neutral-500">No deal to onboard — link a deal in HubSpot to start.</p>
+      ) : deals.length === 1 ? (
+        <form action={startOnboardingAction}>
+          <input type="hidden" name="deal_id" value={deals[0]!.id} />
+          <PendingButton className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700" pendingLabel="Starting…">Start onboarding</PendingButton>
+        </form>
+      ) : (
+        <form action={startOnboardingAction} className="flex flex-wrap items-center gap-2">
+          <select name="deal_id" defaultValue={deals[0]!.id} className="rounded border border-neutral-300 px-2 py-1 text-xs">
+            {deals.map((d) => <option key={d.id} value={d.id}>{d.name ?? d.id}{d.stage ? ` · ${d.stage}` : ""}</option>)}
+          </select>
+          <PendingButton className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700" pendingLabel="Starting…">Start onboarding</PendingButton>
+        </form>
+      )}
+    </section>
+  );
+}
+
+// ─── Billing tab (item 3) ────────────────────────────────────────────────────
+
+async function BillingTab({ id, billingAcct, hasOnboardedCase, customer }: {
+  id: string; billingAcct: { id: string; status: string; contract_start_date: string | null; billing_frequency: string | null } | null; hasOnboardedCase: boolean; customer: boolean;
+}) {
+  if (!billingAcct) {
+    return (
+      <section className="rounded-lg border border-neutral-200 bg-white p-4 text-sm">
+        {!customer ? (
+          <p className="text-neutral-500">Mark this company as an <strong>Active Customer</strong> to set up billing.</p>
+        ) : hasOnboardedCase ? (
+          <form action={setUpBillingAction}>
+            <input type="hidden" name="company_id" value={id} />
+            <PendingButton className="rounded border border-indigo-300 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50" pendingLabel="Setting up…">Set up billing →</PendingButton>
+          </form>
+        ) : (
+          <p className="text-neutral-500">Billing opens once onboarding is approved.</p>
+        )}
+      </section>
+    );
+  }
+
+  // Invoices for this account — most recent first for "last invoice" + outstanding.
+  const bdb = serviceClient();
+  const { data: invRows } = await bdb
+    .from("billing_invoices")
+    .select("total_pence, period_month, due_date, paid_at")
+    .eq("account_id", billingAcct.id)
+    .order("period_month", { ascending: false });
+  const invs = (invRows ?? []) as { total_pence: number; period_month: string; due_date: string | null; paid_at: string | null }[];
+  const last = invs[0] ?? null;
+  const today = new Date().toISOString().slice(0, 10);
+  const overdue = invs.filter((i) => !i.paid_at && i.due_date && i.due_date < today);
+  const overdueTotal = overdue.reduce((s, i) => s + (i.total_pence ?? 0), 0);
+  // "Next payment due" = soonest unpaid invoice due date.
+  const nextDue = invs.filter((i) => !i.paid_at && i.due_date).map((i) => i.due_date!).sort()[0] ?? null;
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-semibold text-neutral-700">Billing</h2>
+        <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">{billingAcct.status.replace(/_/g, " ")}</span>
+        <Link href={`/billing/${billingAcct.id}`} className="ml-auto rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">Open billing account →</Link>
+      </div>
+
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Stat label="Status">{billingAcct.status.replace(/_/g, " ")}</Stat>
+        <Stat label="Billing frequency">{billingAcct.billing_frequency ?? "—"}</Stat>
+        <Stat label="Last invoice">{last ? `${gbp(last.total_pence)} · ${last.period_month.slice(0, 7)}` : "—"}</Stat>
+        <Stat label="Next payment due">{nextDue ? fmtDate(nextDue) : <span className="text-neutral-400">—</span>}</Stat>
+        <Stat label="Invoices to date">{invs.length}</Stat>
+        <Stat label="Overdue">{overdueTotal > 0 ? <span className="text-red-700">{gbp(overdueTotal)} ({overdue.length})</span> : <span className="text-emerald-700">none</span>}</Stat>
+      </dl>
+      <p className="text-xs text-neutral-400">Invoices are generated automatically each billing run. Open the billing account for the full schedule, line items and dunning.</p>
+    </section>
+  );
+}
+
+function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white p-3">
+      <dt className="text-xs font-medium uppercase tracking-wide text-neutral-400">{label}</dt>
+      <dd className="mt-0.5 text-sm text-neutral-800">{children}</dd>
+    </div>
   );
 }

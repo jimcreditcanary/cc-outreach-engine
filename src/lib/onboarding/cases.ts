@@ -61,7 +61,7 @@ export const WIZARD_STEPS: { id: WizardStepId; n: number; label: string }[] = [
   { id: "company", n: 1, label: "Company" },
   { id: "products", n: 2, label: "Products" },
   { id: "stakeholders", n: 3, label: "Stakeholders" },
-  { id: "finish", n: 4, label: "Finish" },
+  { id: "finish", n: 4, label: "Submit for Approval" },
 ];
 
 /** Which steps are done, from the case + stakeholder count. Pure. */
