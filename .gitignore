@@ -20,3 +20,6 @@ inputs/**
 !inputs/**/*.template.md
 .env*
 !.env.example
+
+# one-off reconcile snapshot (local, reversible artifact)
+scripts/.reconcile-current-client.snapshot.json
