@@ -5,6 +5,7 @@
 // ONBOARDING_FORM_V2 is on (or ?v2=1 for testing).
 
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
 import { serviceClient } from "@/lib/db/client";
 import { getCaseByToken, markFormOpened } from "@/lib/onboarding/merchantForm";
 import { getFormEditor } from "@/lib/onboarding/formEditor";
@@ -12,6 +13,7 @@ import { LegacyMerchantForm } from "./legacy";
 import { SelfIdentify, Wizard } from "./wizard";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Customer Onboarding" };
 
 function Shell({ children }: { children: ReactNode }) {
   return (
