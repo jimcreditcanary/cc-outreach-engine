@@ -27,8 +27,12 @@ function clientId(): string {
 }
 
 function clientSecret(): string {
-  const v = process.env.MS_CLIENT_SECRET;
-  if (!v) throw new Error("Missing MS_CLIENT_SECRET");
+  // Azure gives a client secret a *value* (the string used for OAuth) and an
+  // *ID* (a GUID that just identifies it). The value is in MS_CLIENT_SECRET_KEY;
+  // MS_CLIENT_SECRET holds the ID. Prefer the value; fall back for older setups
+  // where MS_CLIENT_SECRET held the value.
+  const v = process.env.MS_CLIENT_SECRET_KEY || process.env.MS_CLIENT_SECRET;
+  if (!v) throw new Error("Missing MS_CLIENT_SECRET_KEY (the Azure client-secret value)");
   return v;
 }
 
