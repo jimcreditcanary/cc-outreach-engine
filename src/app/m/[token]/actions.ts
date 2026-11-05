@@ -285,6 +285,9 @@ export async function savePageAction(formData: FormData) {
       }
       const dpoCount = Math.min(Number(str(formData.get("dpo_count")) || 0), 20);
       for (let i = 0; i < dpoCount; i++) {
+        // Person vs company DPO (item 3).
+        entries.push({ field_key: `dpo_${i}_kind`, value: str(formData.get(`dpo_${i}_kind`)) || "person" });
+        entries.push({ field_key: `dpo_${i}_company`, value: str(formData.get(`dpo_${i}_company`)) });
         for (const d of DPO_FIELDS) entries.push({ field_key: `dpo_${i}_${d.key}`, value: str(formData.get(`dpo_${i}_${d.key}`)) });
       }
       // Normalise URL answers (website / privacy / socials) to include a scheme (item 12).
@@ -383,6 +386,10 @@ export async function savePageAction(formData: FormData) {
         else { await setPageComplete(db, c.id, "infosec", true); dest = advance(); }
       }
     }
+    // "Save & continue anyway" (item 6): everything above has saved the page's
+    // answers; advance to the next page without validating (it isn't marked
+    // complete, and the final Submit re-checks everything).
+    if (mode === "skip") dest = advance();
   } catch (e) {
     console.error(`[merchant-page-save] ${page} failed for case ${c.id}:`, e);
     failed = true;

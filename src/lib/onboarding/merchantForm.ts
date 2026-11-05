@@ -33,6 +33,7 @@ export interface MerchantBusiness {
 }
 /** A data protection officer — the brief allows several per merchant. */
 export interface DpoRecord {
+  kind?: "person" | "company"; company?: string;
   first?: string; last?: string; title?: string; email?: string; phone?: string;
 }
 export interface MerchantCompliance {

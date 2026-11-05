@@ -2,20 +2,20 @@
 
 // Client-interactive company-page fields for the merchant form:
 //  • TradingAddress   — "same as registered" toggle + Postcoder postcode lookup
-//  • TradeBody        — Yes/No, with the "which?" field shown only on Yes (6d)
-//  • SignatoryPicker  — choose an existing contact or add a new one (6e); a new
-//                       one is created in HubSpot on submit
-//  • DpoList          — one DPO by default; each row can pick an existing contact
-//                       or add a new one (added to HubSpot on submit) (6f)
+//  • TradeBody        — Yes/No, with the "which?" field shown only on Yes
+//  • SignatoryPicker  — EITHER pick an existing contact (dropdown only) OR add a
+//                       new one (fields only) — never both (item 2)
+//  • DpoList          — one DPO by default; each row is an existing contact, a
+//                       new person, or a new company (items 2 & 3)
 // All degrade to plain typing when JS/lookup is unavailable.
 
 import { useState } from "react";
 
 const field = "w-full rounded-md border border-neutral-300 px-3 py-2.5 text-sm focus:border-[#003566] focus:outline-none focus:ring-1 focus:ring-[#003566]";
 const lbl = "block text-sm font-medium text-neutral-800 mb-1";
-// Phone format: "{country code} {number}", e.g. +44 7590571361 (6b). Kept inline
-// (not imported from fields.ts) so no server-only code leaks into this client bundle.
-const PHONE = { inputMode: "tel" as const, pattern: "\\+\\d{1,3} \\d[\\d ]{5,15}", title: "Use the international format: country code, a space, then the number — e.g. +44 7590571361", placeholder: "+44 7590571361" };
+// Phone: international (+44 7700 900123, space/hyphen optional) or UK local
+// (07700 900123). Placeholder uses Ofcom's fictional range, not a real number.
+const PHONE = { inputMode: "tel" as const, pattern: "(\\+\\d{1,3}[\\s-]?\\d[\\d\\s-]{5,15}|0\\d{2,4}[\\s-]?\\d[\\d\\s-]{4,10})", title: "Enter a valid phone number, e.g. +44 7700 900123 or 07700 900123", placeholder: "+44 7700 900123" };
 
 interface Addr { summaryline: string; line1: string; line2: string; city: string; county: string; postcode: string }
 
@@ -23,8 +23,6 @@ interface Addr { summaryline: string; line1: string; line2: string; city: string
 
 export function TradingAddress({ registered, defaultAddress }: { registered: string; defaultAddress: string }) {
   const hasReg = registered.trim().length > 0;
-  // Default to "same as registered" when we have a registered address and the
-  // trading address is empty or already equals it.
   const [same, setSame] = useState(hasReg && (!defaultAddress.trim() || defaultAddress.trim() === registered.trim()));
   const [addr, setAddr] = useState(defaultAddress);
   const [postcode, setPostcode] = useState("");
@@ -39,7 +37,7 @@ export function TradingAddress({ registered, defaultAddress }: { registered: str
       const res = await fetch(`/m/address?postcode=${encodeURIComponent(postcode.trim())}`);
       const list = res.ok ? ((await res.json()) as { addresses?: Addr[] }).addresses ?? [] : [];
       setResults(list);
-      if (list.length === 0) setManual(true); // nothing found → let them type it
+      if (list.length === 0) setManual(true);
     } catch { setResults([]); setManual(true); }
     setLoading(false);
   }
@@ -86,7 +84,7 @@ export function TradingAddress({ registered, defaultAddress }: { registered: str
   );
 }
 
-// ─── Trade body (6d) ─────────────────────────────────────────────────────────
+// ─── Trade body ──────────────────────────────────────────────────────────────
 
 export function TradeBody({ requiredDefault, bodyDefault }: { requiredDefault: string; bodyDefault: string }) {
   const [val, setVal] = useState(requiredDefault);
@@ -108,7 +106,7 @@ export function TradeBody({ requiredDefault, bodyDefault }: { requiredDefault: s
   );
 }
 
-// ─── Authorised signatory (6e) ───────────────────────────────────────────────
+// ─── Authorised signatory (items 2) ──────────────────────────────────────────
 
 interface ContactOpt { id: string; name: string; email: string; title: string }
 
@@ -118,15 +116,19 @@ export function SignatoryPicker({ contacts, prefill, defaults }: {
 }) {
   const hasContacts = contacts.length > 0;
   const start = prefill ?? (defaults.name || defaults.email ? { name: defaults.name, email: defaults.email, title: defaults.title } : null);
-  const [mode, setMode] = useState<"existing" | "new">(hasContacts ? "existing" : "new");
+  // If a signatory is already known, pre-select the matching contact (existing)
+  // or, if it isn't one of the company's contacts, start in "new" with it filled.
+  const matchCt = start?.email ? contacts.find((c) => c.email && c.email.toLowerCase() === start.email.toLowerCase()) ?? null : null;
+  const [mode, setMode] = useState<"existing" | "new">(matchCt ? "existing" : start ? "new" : hasContacts ? "existing" : "new");
+  const [selId, setSelId] = useState(matchCt?.id ?? "");
   const [name, setName] = useState(start?.name ?? "");
   const [title, setTitle] = useState(start?.title ?? defaults.title ?? "");
   const [email, setEmail] = useState(start?.email ?? "");
 
-  function pick(id: string) {
-    const ct = contacts.find((c) => c.id === id);
-    if (ct) { setName(ct.name); setTitle(ct.title); setEmail(ct.email); }
-  }
+  const selCt = contacts.find((c) => c.id === selId) ?? null;
+  const subName = mode === "existing" ? (selCt?.name ?? "") : name;
+  const subTitle = mode === "existing" ? (selCt?.title ?? "") : title;
+  const subEmail = mode === "existing" ? (selCt?.email ?? "") : email;
 
   return (
     <fieldset className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-neutral-200 bg-white p-4 sm:grid-cols-2">
@@ -137,55 +139,59 @@ export function SignatoryPicker({ contacts, prefill, defaults }: {
           <label className="flex items-center gap-1.5"><input type="radio" name="__sig_mode" checked={mode === "new"} onChange={() => setMode("new")} /> Add a new contact</label>
         </div>
       )}
-      {hasContacts && mode === "existing" && (
+      {mode === "existing" && hasContacts ? (
         <div className="sm:col-span-2">
           <label className={lbl}>Choose a contact</label>
-          <select defaultValue="" onChange={(e) => pick(e.target.value)} className={field}>
+          <select value={selId} onChange={(e) => setSelId(e.target.value)} className={field}>
             <option value="" disabled>Choose…</option>
             {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}{c.title ? ` - ${c.title}` : ""}</option>)}
           </select>
+          {selCt && <p className="mt-2 text-xs text-neutral-500">{[selCt.name, selCt.title, selCt.email].filter(Boolean).join(" · ")}</p>}
+          <input type="hidden" name="signatory_name" value={subName} />
+          <input type="hidden" name="signatory_title" value={subTitle} />
+          <input type="hidden" name="signatory_email" value={subEmail} />
         </div>
+      ) : (
+        <>
+          <p className="text-xs text-neutral-500 sm:col-span-2">We&apos;ll add this person to HubSpot as a contact automatically.</p>
+          <div>
+            <label htmlFor="signatory_name" className={lbl}>Full name <span className="text-red-600">*</span></label>
+            <input id="signatory_name" name="signatory_name" required value={name} onChange={(e) => setName(e.target.value)} className={field} />
+          </div>
+          <div>
+            <label htmlFor="signatory_title" className={lbl}>Title / role <span className="text-red-600">*</span></label>
+            <input id="signatory_title" name="signatory_title" required value={title} onChange={(e) => setTitle(e.target.value)} className={field} />
+          </div>
+          <div className="sm:col-span-2">
+            <label htmlFor="signatory_email" className={lbl}>Email <span className="text-red-600">*</span></label>
+            <input id="signatory_email" name="signatory_email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={field} />
+          </div>
+        </>
       )}
-      {mode === "new" && <p className="text-xs text-neutral-500 sm:col-span-2">We&apos;ll add this person to HubSpot as a contact automatically.</p>}
-      <div>
-        <label htmlFor="signatory_name" className={lbl}>Full name <span className="text-red-600">*</span></label>
-        <input id="signatory_name" name="signatory_name" required value={name} onChange={(e) => setName(e.target.value)} className={field} />
-      </div>
-      <div>
-        <label htmlFor="signatory_title" className={lbl}>Title / role <span className="text-red-600">*</span></label>
-        <input id="signatory_title" name="signatory_title" required value={title} onChange={(e) => setTitle(e.target.value)} className={field} />
-      </div>
-      <div className="sm:col-span-2">
-        <label htmlFor="signatory_email" className={lbl}>Email <span className="text-red-600">*</span></label>
-        <input id="signatory_email" name="signatory_email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={field} />
-      </div>
     </fieldset>
   );
 }
 
-// ─── Data protection officers (6f) ───────────────────────────────────────────
+// ─── Data protection officers (items 2 & 3) ──────────────────────────────────
 
-interface DpoRow { first: string; last: string; title: string; email: string; phone: string }
+export interface DpoRowData { kind: "person" | "company"; company: string; first: string; last: string; title: string; email: string; phone: string }
 export interface DpoContact { id: string; first: string; last: string; title: string; email: string; phone: string }
-const BLANK: DpoRow = { first: "", last: "", title: "", email: "", phone: "" };
-const DPO_COLS: { key: keyof DpoRow; label: string; type?: string }[] = [
-  { key: "first", label: "First name" }, { key: "last", label: "Last name" },
-  { key: "title", label: "Job title" }, { key: "email", label: "Email", type: "email" },
-  { key: "phone", label: "Phone", type: "tel" },
-];
+type Choice = "existing" | "person" | "company";
+interface Row extends DpoRowData { choice: Choice }
+const BLANK: DpoRowData = { kind: "person", company: "", first: "", last: "", title: "", email: "", phone: "" };
 
-export function DpoList({ initial, prefill, contacts }: { initial: DpoRow[]; prefill: DpoRow | null; contacts: DpoContact[] }) {
-  const seed: DpoRow[] = initial.length > 0 ? initial : [prefill ?? BLANK];
-  const [rows, setRows] = useState<DpoRow[]>(seed);
+export function DpoList({ initial, prefill, contacts }: { initial: DpoRowData[]; prefill: DpoRowData | null; contacts: DpoContact[] }) {
+  const hasContacts = contacts.length > 0;
+  const toRow = (d: DpoRowData): Row => ({ ...d, choice: d.kind === "company" ? "company" : "person" });
+  const seed: Row[] = initial.length > 0 ? initial.map(toRow) : [toRow(prefill ?? BLANK)];
+  const [rows, setRows] = useState<Row[]>(seed);
 
-  const update = (i: number, key: keyof DpoRow, val: string) =>
-    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, [key]: val } : r)));
-
-  function pick(i: number, id: string) {
-    if (id === "__new__") { setRows((rs) => rs.map((r, j) => (j === i ? { ...BLANK } : r))); return; }
+  const set = (i: number, patch: Partial<Row>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((rs) => [...rs, { ...BLANK, choice: hasContacts ? "existing" : "person" }]);
+  const pick = (i: number, id: string) => {
     const ct = contacts.find((c) => c.id === id);
-    if (ct) setRows((rs) => rs.map((r, j) => (j === i ? { first: ct.first, last: ct.last, title: ct.title, email: ct.email, phone: ct.phone } : r)));
-  }
+    if (ct) set(i, { first: ct.first, last: ct.last, title: ct.title, email: ct.email, phone: ct.phone, kind: "person", company: "" });
+  };
 
   return (
     <fieldset className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
@@ -194,41 +200,74 @@ export function DpoList({ initial, prefill, contacts }: { initial: DpoRow[]; pre
       <div className="mt-2 space-y-3">
         {rows.map((row, i) => (
           <div key={i} className="rounded border border-neutral-200 p-3">
-            <div className="mb-1 flex items-center justify-between">
+            <div className="mb-2 flex items-center justify-between">
               <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">Officer {i + 1}</p>
               {rows.length > 1 && (
                 <button type="button" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} className="text-[11px] text-neutral-400 hover:text-red-600">Remove</button>
               )}
             </div>
-            {contacts.length > 0 && (
-              <div className="mb-3">
-                <label htmlFor={`__dpo_pick_${i}`} className={lbl}>Select an existing contact, or add a new one</label>
+
+            {/* kind (person vs company) is submitted; "existing" is a person. */}
+            <input type="hidden" name={`dpo_${i}_kind`} value={row.choice === "company" ? "company" : "person"} />
+
+            <div className="mb-3 flex flex-wrap gap-4 text-sm">
+              {hasContacts && <label className="flex items-center gap-1.5"><input type="radio" name={`__dpo_choice_${i}`} checked={row.choice === "existing"} onChange={() => set(i, { choice: "existing" })} /> Existing contact</label>}
+              <label className="flex items-center gap-1.5"><input type="radio" name={`__dpo_choice_${i}`} checked={row.choice === "person"} onChange={() => set(i, { choice: "person" })} /> Add a person</label>
+              <label className="flex items-center gap-1.5"><input type="radio" name={`__dpo_choice_${i}`} checked={row.choice === "company"} onChange={() => set(i, { choice: "company" })} /> Add a company</label>
+            </div>
+
+            {row.choice === "existing" ? (
+              <div>
+                <label htmlFor={`__dpo_pick_${i}`} className={lbl}>Choose a contact</label>
                 <select id={`__dpo_pick_${i}`} defaultValue="" onChange={(e) => pick(i, e.target.value)} className={field}>
                   <option value="" disabled>Choose…</option>
                   {contacts.map((c) => <option key={c.id} value={c.id}>{[c.first, c.last].filter(Boolean).join(" ") || c.email}{c.title ? ` - ${c.title}` : ""}</option>)}
-                  <option value="__new__">Add a new contact</option>
                 </select>
+                {(row.first || row.last || row.email) && <p className="mt-2 text-xs text-neutral-500">{[[row.first, row.last].filter(Boolean).join(" "), row.title, row.email].filter(Boolean).join(" · ")}</p>}
+                {/* submitted (filled from the picked contact) */}
+                <input type="hidden" name={`dpo_${i}_first`} value={row.first} />
+                <input type="hidden" name={`dpo_${i}_last`} value={row.last} />
+                <input type="hidden" name={`dpo_${i}_title`} value={row.title} />
+                <input type="hidden" name={`dpo_${i}_email`} value={row.email} />
+                <input type="hidden" name={`dpo_${i}_phone`} value={row.phone} />
+                <input type="hidden" name={`dpo_${i}_company`} value="" />
+              </div>
+            ) : row.choice === "company" ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label htmlFor={`dpo_${i}_company`} className={lbl}>Company name</label>
+                  <input id={`dpo_${i}_company`} name={`dpo_${i}_company`} value={row.company} onChange={(e) => set(i, { company: e.target.value })} className={field} />
+                </div>
+                <div>
+                  <label htmlFor={`dpo_${i}_email`} className={lbl}>Email</label>
+                  <input id={`dpo_${i}_email`} name={`dpo_${i}_email`} type="email" value={row.email} onChange={(e) => set(i, { email: e.target.value })} className={field} />
+                </div>
+                <div>
+                  <label htmlFor={`dpo_${i}_phone`} className={lbl}>Phone</label>
+                  <input id={`dpo_${i}_phone`} name={`dpo_${i}_phone`} {...PHONE} value={row.phone} onChange={(e) => set(i, { phone: e.target.value })} className={field} />
+                </div>
+                {/* unused person fields submitted empty so the keys always exist */}
+                <input type="hidden" name={`dpo_${i}_first`} value="" />
+                <input type="hidden" name={`dpo_${i}_last`} value="" />
+                <input type="hidden" name={`dpo_${i}_title`} value="" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <input type="hidden" name={`dpo_${i}_company`} value="" />
+                <div><label htmlFor={`dpo_${i}_first`} className={lbl}>First name</label><input id={`dpo_${i}_first`} name={`dpo_${i}_first`} value={row.first} onChange={(e) => set(i, { first: e.target.value })} className={field} /></div>
+                <div><label htmlFor={`dpo_${i}_last`} className={lbl}>Last name</label><input id={`dpo_${i}_last`} name={`dpo_${i}_last`} value={row.last} onChange={(e) => set(i, { last: e.target.value })} className={field} /></div>
+                <div><label htmlFor={`dpo_${i}_title`} className={lbl}>Job title</label><input id={`dpo_${i}_title`} name={`dpo_${i}_title`} value={row.title} onChange={(e) => set(i, { title: e.target.value })} className={field} /></div>
+                <div><label htmlFor={`dpo_${i}_email`} className={lbl}>Email</label><input id={`dpo_${i}_email`} name={`dpo_${i}_email`} type="email" value={row.email} onChange={(e) => set(i, { email: e.target.value })} className={field} /></div>
+                <div className="sm:col-span-2"><label htmlFor={`dpo_${i}_phone`} className={lbl}>Phone</label><input id={`dpo_${i}_phone`} name={`dpo_${i}_phone`} {...PHONE} value={row.phone} onChange={(e) => set(i, { phone: e.target.value })} className={field} /></div>
               </div>
             )}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {DPO_COLS.map((d) => (
-                <div key={d.key}>
-                  <label htmlFor={`dpo_${i}_${d.key}`} className={lbl}>{d.label}</label>
-                  <input
-                    id={`dpo_${i}_${d.key}`} name={`dpo_${i}_${d.key}`} type={d.type ?? "text"}
-                    {...(d.type === "tel" ? PHONE : {})}
-                    value={row[d.key]} onChange={(e) => update(i, d.key, e.target.value)} className={field}
-                  />
-                </div>
-              ))}
-            </div>
           </div>
         ))}
       </div>
-      <button type="button" onClick={() => setRows((rs) => [...rs, { ...BLANK }])} className="mt-2 rounded-md border border-[#003566] px-3 py-1.5 text-sm font-medium text-[#003566] hover:bg-[#003566]/5">
+      <button type="button" onClick={addRow} className="mt-2 rounded-md border border-[#003566] px-3 py-1.5 text-sm font-medium text-[#003566] hover:bg-[#003566]/5">
         + Add another DPO
       </button>
-      {contacts.length > 0 && <p className="mt-2 text-xs text-neutral-500">New officers (not picked from the list) are added to HubSpot automatically.</p>}
+      {hasContacts && <p className="mt-2 text-xs text-neutral-500">New people (not picked from the list) are added to HubSpot automatically.</p>}
     </fieldset>
   );
 }
