@@ -56,41 +56,50 @@ export async function HubspotCompaniesView({
         <span className="text-sm text-neutral-500">{page.total.toLocaleString()}{q ? " matches" : ""} · showing {page.records.length}</span>
       </header>
 
-      <form className="mb-3">
-        <input name="q" defaultValue={q ?? ""} placeholder="Search companies…" className="w-full rounded border border-neutral-300 px-3 py-2 text-sm" />
-      </form>
-
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs uppercase tracking-wide text-neutral-400">Filter</span>
-        <NavSelect basePath="/companies" param="owner" value={filters.owner} allLabel="Any owner" ariaLabel="Filter by owner"
-          options={ownerOptions(owners).map((o) => ({ value: o.id, label: o.name }))} />
-        <NavSelect basePath="/companies" param="target" value={filters.target} allLabel="Any target group" ariaLabel="Filter by target group"
-          options={targetOpts.map((o) => ({ value: o.value, label: o.label }))} />
-        <NavSelect basePath="/companies" param="onb" value={filters.onb} allLabel="Any onboarding" ariaLabel="Filter by onboarding"
-          options={onboardingOpts.map((o) => ({ value: o.value, label: o.label }))} />
-        <NavSelect basePath="/companies" param="client" value={filters.client} allLabel="Customer: any" ariaLabel="Filter by customer"
-          options={[{ value: "yes", label: "Customers" }, { value: "no", label: "Non-customers" }]} />
-        <NavSelect basePath="/companies" param="icp" value={filters.icp} allLabel="ICP: any" ariaLabel="Filter by ICP"
-          options={[{ value: "yes", label: "ICP only" }, { value: "no", label: "Non-ICP" }]} />
-        <NavSelect basePath="/companies" param="partner" value={filters.partner} allLabel="Partner: any" ariaLabel="Filter by partner"
-          options={[{ value: "yes", label: "Partners" }, { value: "no", label: "Non-partners" }]} />
+      {/* Search + filters, grouped into one clean toolbar card. */}
+      <div className="mb-4 rounded-lg border border-neutral-200 bg-white p-3 shadow-sm">
+        <form className="relative">
+          <svg viewBox="0 0 20 20" aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="1.7">
+            <circle cx="9" cy="9" r="6" /><path d="m18 18-4.5-4.5" strokeLinecap="round" />
+          </svg>
+          <input name="q" defaultValue={q ?? ""} placeholder="Search companies…" className="w-full rounded-md border border-neutral-300 py-2 pl-9 pr-3 text-sm focus:border-[#003566] focus:outline-none focus:ring-1 focus:ring-[#003566]" />
+        </form>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Filters</span>
+          <NavSelect basePath="/companies" param="owner" value={filters.owner} allLabel="Any owner" ariaLabel="Filter by owner"
+            options={ownerOptions(owners).map((o) => ({ value: o.id, label: o.name }))} />
+          <NavSelect basePath="/companies" param="target" value={filters.target} allLabel="Any target group" ariaLabel="Filter by target group"
+            options={targetOpts.map((o) => ({ value: o.value, label: o.label }))} />
+          <NavSelect basePath="/companies" param="onb" value={filters.onb} allLabel="Any onboarding" ariaLabel="Filter by onboarding"
+            options={onboardingOpts.map((o) => ({ value: o.value, label: o.label }))} />
+          <NavSelect basePath="/companies" param="client" value={filters.client} allLabel="Customer: any" ariaLabel="Filter by customer"
+            options={[{ value: "yes", label: "Customers" }, { value: "no", label: "Non-customers" }]} />
+          <NavSelect basePath="/companies" param="icp" value={filters.icp} allLabel="ICP: any" ariaLabel="Filter by ICP"
+            options={[{ value: "yes", label: "ICP only" }, { value: "no", label: "Non-ICP" }]} />
+          <NavSelect basePath="/companies" param="partner" value={filters.partner} allLabel="Partner: any" ariaLabel="Filter by partner"
+            options={[{ value: "yes", label: "Partners" }, { value: "no", label: "Non-partners" }]} />
+          {Object.values(filters).some(Boolean) && (
+            <Link href={`/companies${q ? `?q=${encodeURIComponent(q)}` : ""}`} className="ml-1 text-xs font-medium text-blue-700 hover:underline">Clear filters</Link>
+          )}
+        </div>
       </div>
 
       <form action={bulkUpdateCompaniesAction}>
-      {/* Bulk-edit bar — applies to the rows you tick. No delete. */}
-      <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-2 text-sm">
-        <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">Bulk edit ticked</span>
-        <select name="owner_id" defaultValue="" className="rounded border border-neutral-300 px-2 py-1 text-xs">
+      {/* Bulk-edit toolbar — applies to the rows you tick. No delete. */}
+      <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Bulk edit ticked</span>
+        <span className="hidden h-4 w-px bg-neutral-300 sm:block" aria-hidden />
+        <select name="owner_id" defaultValue="" className="rounded-md border border-neutral-300 px-2 py-1 text-xs focus:border-[#003566] focus:outline-none focus:ring-1 focus:ring-[#003566]">
           <option value="">Owner: leave</option>
           <option value="__unassign__">— unassign —</option>
           {ownerOptions(owners).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
-        <select name="target_group" defaultValue="" className="rounded border border-neutral-300 px-2 py-1 text-xs">
+        <select name="target_group" defaultValue="" className="rounded-md border border-neutral-300 px-2 py-1 text-xs focus:border-[#003566] focus:outline-none focus:ring-1 focus:ring-[#003566]">
           <option value="">Target: leave</option>
           {targetOpts.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        <label className="text-xs text-neutral-600">Tier <input name="tier" type="number" min="1" placeholder="leave" className="ml-1 w-16 rounded border border-neutral-300 px-1 py-1 text-xs" /></label>
-        <PendingButton className="rounded bg-neutral-800 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-900" pendingLabel="Applying…">Apply to ticked</PendingButton>
+        <label className="text-xs text-neutral-600">Tier <input name="tier" type="number" min="1" placeholder="leave" className="ml-1 w-16 rounded-md border border-neutral-300 px-1 py-1 text-xs" /></label>
+        <PendingButton className="ml-auto rounded-md bg-[#003566] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#002a52]" pendingLabel="Applying…">Apply to ticked</PendingButton>
       </div>
       <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm">
         <thead className="text-left text-xs uppercase text-neutral-400">
