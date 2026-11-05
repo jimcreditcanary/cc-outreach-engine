@@ -110,8 +110,8 @@ export function StatusBadge({ status }: { status: string }) {
 
 // ─── Wizard panel ────────────────────────────────────────────────────────────
 
-export async function OnboardingCasePanel({ caseId, nav, step: stepParam, q }: {
-  caseId: string; nav: OnbNav; step?: string; q?: string;
+export async function OnboardingCasePanel({ caseId, nav, step: stepParam, q, companyName }: {
+  caseId: string; nav: OnbNav; step?: string; q?: string; companyName?: string;
 }) {
   const db = serviceClient();
   const c = await getCase(db, caseId);
@@ -163,7 +163,7 @@ export async function OnboardingCasePanel({ caseId, nav, step: stepParam, q }: {
         })}
       </nav>
 
-      {step === "company" && <CompanyStep c={c} deal={deal} q={q} nav={nav} />}
+      {step === "company" && <CompanyStep c={c} deal={deal} q={q} nav={nav} companyName={companyName} />}
       {step === "products" && <ProductsStep c={c} />}
       {step === "stakeholders" && <StakeholdersStep c={c} stakeholders={stakeholders} nav={nav} />}
       {step === "finish" && <FinishStep c={c} stakeholders={stakeholders} locked={locked} generatedDocs={docs} nav={nav} />}
@@ -173,7 +173,7 @@ export async function OnboardingCasePanel({ caseId, nav, step: stepParam, q }: {
 
 // ─── Step 1: Company ─────────────────────────────────────────────────────────
 
-async function CompanyStep({ c, deal, q, nav }: { c: OnboardingCase; deal: { name: string | null } | null; q?: string; nav: OnbNav }) {
+async function CompanyStep({ c, deal, q, nav, companyName }: { c: OnboardingCase; deal: { name: string | null } | null; q?: string; nav: OnbNav; companyName?: string }) {
   const query = (q ?? "").trim();
   let results: ChCompanySearchResult[] = [];
   let searchError: string | null = null;
@@ -197,7 +197,7 @@ async function CompanyStep({ c, deal, q, nav }: { c: OnboardingCase; deal: { nam
 
       <form method="get" className="mb-4 flex gap-2">
         {nav.searchHidden.map((h) => <input key={h.name} type="hidden" name={h.name} value={h.value} />)}
-        <input name="q" defaultValue={query || deal?.name || ""} placeholder="Company name or number…" className={field} />
+        <input name="q" defaultValue={query || companyName || deal?.name || ""} placeholder="Company name or number…" className={field} />
         <button className="rounded bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700">Search</button>
       </form>
 

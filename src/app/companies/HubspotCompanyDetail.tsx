@@ -26,9 +26,11 @@ const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 
 type Tab = "detail" | "onboarding" | "billing";
 const gbp = (pence: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(pence / 100);
 
-export async function HubspotCompanyDetail({ id, tab, ob, step, q }: {
-  id: string; tab?: string; ob?: string; step?: string; q?: string;
+export async function HubspotCompanyDetail({ id, tab, ob, step, q, from }: {
+  id: string; tab?: string; ob?: string; step?: string; q?: string; from?: string;
 }) {
+  // Back link follows where you came from (Customers vs Companies — item 6).
+  const back = from === "customers" ? { href: "/customers", label: "← Customers" } : { href: "/companies", label: "← Companies" };
   const active: Tab = tab === "onboarding" ? "onboarding" : tab === "billing" ? "billing" : "detail";
   const crm = getCrm();
   const [co, contacts, onboardingOpts, targetOpts, deals, owners] = await Promise.all([
@@ -55,13 +57,19 @@ export async function HubspotCompanyDetail({ id, tab, ob, step, q }: {
   const onboardingText = co.onboarding_status ? (onboardingOpts.find((o) => o.value === co.onboarding_status)?.label ?? co.onboarding_status) : null;
   const targetText = co.target_group ? (targetOpts.find((o) => o.value === co.target_group)?.label ?? co.target_group) : null;
 
-  const tabHref = (t: Tab) => `/companies/${id}${t === "detail" ? "" : `?tab=${t}`}`;
+  const tabHref = (t: Tab) => {
+    const qs = new URLSearchParams();
+    if (t !== "detail") qs.set("tab", t);
+    if (from) qs.set("from", from);
+    const s = qs.toString();
+    return `/companies/${id}${s ? `?${s}` : ""}`;
+  };
   const tabCls = (t: Tab) => `rounded-t-md border-b-2 px-4 py-2 text-sm font-medium ${active === t ? "border-[#003566] text-[#003566]" : "border-transparent text-neutral-500 hover:text-neutral-800"}`;
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6 md:px-8">
       <div className="mb-4 flex items-center justify-between">
-        <Link href="/companies" className="text-sm text-blue-700 hover:underline">← Companies</Link>
+        <Link href={back.href} className="text-sm text-blue-700 hover:underline">{back.label}</Link>
         <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-700">HubSpot</span>
       </div>
 
@@ -109,7 +117,7 @@ export async function HubspotCompanyDetail({ id, tab, ob, step, q }: {
         onboardingCase ? (
           ob === "review"
             ? <OnboardingReviewPanel caseId={onboardingCase.id} nav={companyTabNav(id, onboardingCase.id)} />
-            : <OnboardingCasePanel caseId={onboardingCase.id} nav={companyTabNav(id, onboardingCase.id)} step={step} q={q} />
+            : <OnboardingCasePanel caseId={onboardingCase.id} nav={companyTabNav(id, onboardingCase.id)} step={step} q={q} companyName={co.name ?? undefined} />
         ) : (
           <StartOnboarding id={id} customer={customer} deals={deals} />
         )

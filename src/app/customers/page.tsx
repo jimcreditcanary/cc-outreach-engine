@@ -115,7 +115,7 @@ export default async function CustomersPage() {
   return (
     <main className="px-4 py-6 md:px-8">
       <header className="mb-4 flex items-baseline justify-between border-b border-neutral-200 pb-3">
-        <h1 className="text-xl font-semibold">Customers &amp; onboarding</h1>
+        <h1 className="text-xl font-semibold">Customers</h1>
         <span className="text-sm text-neutral-500">{total} record{total === 1 ? "" : "s"}</span>
       </header>
 
@@ -128,7 +128,7 @@ export default async function CustomersPage() {
           <thead className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
             <tr>
               <th className="py-2">Company</th>
-              <th className="py-2">Onboarding</th>
+              <th className="py-2">Onboarding status</th>
               <th className="py-2">Progress</th>
               <th className="py-2">Last updated</th>
               <th className="py-2">Billing</th>
@@ -142,7 +142,7 @@ export default async function CustomersPage() {
               const onb = c?.status;
               const acct = acctFor.get(id);
               const inv = lastInvoice.get(id);
-              const href = c ? `/companies/${id}?tab=onboarding` : `/companies/${id}`;
+              const href = c ? `/companies/${id}?tab=onboarding&from=customers` : `/companies/${id}?from=customers`;
               return (
                 <tr key={id} className="border-b border-neutral-100 hover:bg-neutral-50">
                   <td className="py-2">
