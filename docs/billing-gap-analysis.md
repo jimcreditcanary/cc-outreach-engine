@@ -131,12 +131,13 @@ Two things are **decisions, not bugs** — resolve them first because they gate 
 - [ ] **M4** `delayed_billing_start_by_month` + `billing_term_months` windows — deferred (not needed by the current catalogue; platform steps use escalation). £0 flat lines still suppressed.
 - Follow-ups noted: A2 is a global ceiling (per-client needs a column); A5 reports+logs (persistent capture needs an unmatched-usage table).
 
-### Phase 3 — Xero / compliance correctness (before go-live with real creds)
-- [ ] **X2** read Xero tax types from the tax-rates endpoint; map standard/exempt to the org's codes.
-- [ ] **X1** add per-record `billing_type` (Auto→AUTHORISED+send, Draft→DRAFT); keep the global cutover as a safety override.
-- [ ] **X4** move all 1st/15th boundaries + pro-rata day counts to `Europe/London`.
-- [ ] **X3** rewire a true daily invoice-status-sync (persist amount-due + status); stop conflating it with provisioning.
-- [ ] **X5** add a `--dry-run` to every job; **X6** explicit per-owner-per-month chase guard.
+### Phase 3 — Xero / compliance correctness ✅ DONE (2026-11-06)
+- [x] **X2** Xero line tax types read from the org's `/TaxRates` (cached; UK defaults as fallback).
+- [x] **X1** per-account `billing_type` (migration 073) → Auto=AUTHORISED+send / Draft=DRAFT; global `XERO_AUTO_APPROVE_FROM` kept as a go-live safety gate; resilient select + setup-wizard selector.
+- [x] **X4** `Europe/London` clock for the 1st/15th + "today"/overdue boundaries (`clock.ts`).
+- [x] **X3** true daily invoice-status-sync (`syncInvoiceStatus`) persists `amount_due_pence` + `status_synced_at` (migration 073), wired into the daily reconcile cron + dunning.
+- [x] **X5** `?dry=1` dry-run on the run / dunning / nudge / reconcile crons. **X6** dunning skips an owner already chased earlier this month.
+- Needs migration **073** applied (`billing_type`, `amount_due_pence`, `status_synced_at`) — code degrades gracefully until then.
 
 ### Phase 4 — Lifecycle & snapshotting
 - [ ] **L1** add `term_months`, `auto_renew`, `break_months`, `notice_months`; compute `end_date` + `renewal_decision_date`; add `draft`/`ended` statuses.
