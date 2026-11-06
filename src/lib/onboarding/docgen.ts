@@ -106,6 +106,12 @@ async function buildData(db: DB, caseId: string): Promise<Rec> {
       seenUbo.add(k);
       return true;
     });
+  // Does the ownership chain actually have a corporate layer (a parent / holding
+  // / intermediate entity)? Drives the conditional tiers in the doc's visual
+  // ownership chain — for a simple company (direct individual PSCs) they're
+  // hidden (item 12).
+  const hasCorporateChain = ((ubos as Rec[] | null) ?? []).some((u) => u.is_corporate && !u.ceased_on);
+
   const business = form?.business ?? {};
   const comp = form?.compliance ?? {};
   const sig = form?.signatory ?? {};
@@ -148,6 +154,7 @@ async function buildData(db: DB, caseId: string): Promise<Rec> {
     signatory_name: s(sig.name),
     signatory_title: s(sig.title),
     signatory_email: s(sig.email),
+    has_corporate_chain: hasCorporateChain,
     agreement_version: "",
     // people loops
     directors: activeOfficers.map((o) => ({ director_name: s(o.name), director_details: officerDetail(o) })),
