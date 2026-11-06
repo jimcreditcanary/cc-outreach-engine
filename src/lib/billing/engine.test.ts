@@ -123,11 +123,20 @@ describe("computeInvoice — recurring + proration (arrears)", () => {
 });
 
 describe("computeInvoice — setup, cancellation, VAT, usage", () => {
-  const setup = (amt: number): EngineItem => ({ billing_item_id: "s", item_type: "setup_fee", label: "Setup fee", metric: "flat_monthly", vat_treatment: "standard", config: { amount_pence: amt }, bands: [] });
+  const setup = (amt: number, trigger?: "on_contract_signed" | "on_go_live"): EngineItem => ({ billing_item_id: "s", item_type: "setup_fee", label: "Setup fee", metric: "flat_monthly", vat_treatment: "standard", config: trigger ? { amount_pence: amt, billing_trigger: trigger } : { amount_pence: amt }, bands: [] });
 
-  it("setup fee one-off only on the first invoice", () => {
-    expect(computeInvoice(base([setup(50000)], { isFirstInvoice: true })).lines).toHaveLength(1);
-    expect(computeInvoice(base([setup(50000)], { isFirstInvoice: false })).lines).toHaveLength(0);
+  it("on_go_live setup fee bills on the first invoice only", () => {
+    expect(computeInvoice(base([setup(50000, "on_go_live")], { isFirstInvoice: true })).lines).toHaveLength(1);
+    expect(computeInvoice(base([setup(50000, "on_go_live")], { isFirstInvoice: false })).lines).toHaveLength(0);
+  });
+
+  it("on_contract_signed (default) setup fee defers until the contract is signed", () => {
+    // first invoice, not yet signed → no setup line
+    expect(computeInvoice(base([setup(50000)], { isFirstInvoice: true })).lines).toHaveLength(0);
+    // signed, even on a LATER invoice → bills (once)
+    expect(computeInvoice(base([setup(50000)], { isFirstInvoice: false, contractSigned: true })).lines).toHaveLength(1);
+    // already carried on a prior invoice → never re-bills
+    expect(computeInvoice(base([setup(50000)], { isFirstInvoice: false, contractSigned: true, setupFeeAlreadyBilled: true })).lines).toHaveLength(0);
   });
 
   it("no recurring after cancellation, but trailing usage is still billed", () => {

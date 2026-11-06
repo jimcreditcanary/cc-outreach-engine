@@ -12,6 +12,7 @@ import { reconcile, comparablePricePence, type ConfiguredItem, type DealLine, ty
 import { formatPence } from "@/lib/billing/money";
 import { isSuperAdmin } from "@/lib/auth/role";
 import { setItemOverrideAction } from "../actions";
+import { markContractSignedAction, resyncItemPricingAction } from "./setup/actions";
 import { fmtDate } from "@/lib/format/datetime";
 
 const RECON_FLAG: Record<ReconStatus, { label: string; cls: string }> = {
@@ -72,13 +73,35 @@ export default async function BillingAccountPage({ params }: { params: Promise<{
         <div className={row}><span className={key}>Onboarding case</span><span>{account.onboarding_case_id ? <Link className="text-blue-600 hover:underline" href={`/onboarding/${account.onboarding_case_id}/review`}>view</Link> : "—"}</span></div>
         <div className={row}><span className={key}>Finance contact</span><span>{account.finance_contact_id ?? "—"}</span></div>
         <div className={row}><span className={key}>Contract start</span><span>{account.contract_start_date ? fmtDate(account.contract_start_date) : "—"}</span></div>
-        <div className={row}><span className={key}>Notice period</span><span>{account.notice_period_days != null ? `${account.notice_period_days} days` : "—"}</span></div>
+        <div className={row}><span className={key}>Term</span><span>{account.term_months != null ? `${account.term_months} months${account.auto_renew === false ? "" : " · auto-renew"}` : "—"}</span></div>
+        <div className={row}><span className={key}>Term ends</span><span>{account.term_end_date ? fmtDate(account.term_end_date) : "—"}</span></div>
+        <div className={row}><span className={key}>Notice by (no auto-renew)</span><span>{account.renewal_decision_date ? fmtDate(account.renewal_decision_date) : (account.notice_period_days != null ? `${account.notice_period_days} days before end` : "—")}</span></div>
+        <div className={row}>
+          <span className={key}>Contract signed</span>
+          <span className="flex items-center gap-2">
+            {account.contract_signed_at ? <span className="text-emerald-700">{fmtDate(account.contract_signed_at)}</span> : <span className="text-amber-700">not signed</span>}
+            {!account.contract_signed_at && (
+              <form action={markContractSignedAction}>
+                <input type="hidden" name="account_id" value={accountId} />
+                <button type="submit" className="rounded border border-emerald-500 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50">Mark signed</button>
+              </form>
+            )}
+          </span>
+        </div>
         <div className={row}><span className={key}>PO number</span><span>{account.po_number ?? "—"}</span></div>
-        <div className={row}><span className={key}>Xero contact</span><span>{account.xero_contact_id ?? "— (Phase 4)"}</span></div>
+        <div className={row}><span className={key}>Xero contact</span><span>{account.xero_contact_id ?? "— (created at activation)"}</span></div>
       </section>
 
       <section className="mt-6">
-        <h2 className="mb-2 text-sm font-semibold">Items ({items.length})</h2>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Items ({items.length})</h2>
+          {superAdmin && items.length > 0 && (
+            <form action={resyncItemPricingAction}>
+              <input type="hidden" name="account_id" value={accountId} />
+              <button type="submit" className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-50" title="Re-freeze each item's pricing from the current catalogue. Future invoices only.">Re-sync pricing from catalogue</button>
+            </form>
+          )}
+        </div>
         {items.length === 0 ? (
           <p className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">No items configured — use <strong>Set up billing</strong>.</p>
         ) : (
@@ -90,7 +113,7 @@ export default async function BillingAccountPage({ params }: { params: Promise<{
                 <div key={it.id} className="rounded border border-neutral-200 p-2 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{labelFor(it.item_type)} <span className="font-mono text-xs text-neutral-400">{metric}</span></span>
-                    <span className="text-xs text-neutral-400">VAT {it.vat_treatment ?? "—"} {it.usage_api_key_hash ? "· key issued" : ""}</span>
+                    <span className="text-xs text-neutral-400">VAT {it.vat_treatment ?? "—"} {it.usage_api_key_hash ? "· key issued" : ""} {it.priced_at ? `· priced ${fmtDate(it.priced_at)}` : ""}</span>
                   </div>
                   <div className="mt-0.5 text-neutral-600">{describeConfig(metric, it.config as ItemConfig)}</div>
                   {hasOverride && (

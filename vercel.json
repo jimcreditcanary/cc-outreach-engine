@@ -67,7 +67,7 @@
     },
     {
       "path": "/api/cron/billing-nudge",
-      "schedule": "0 8 * * 1"
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/cron/billing-dunning",

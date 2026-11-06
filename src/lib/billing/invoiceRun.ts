@@ -10,6 +10,7 @@ import { listBillingItems, listBands, currentPricingByItemType, currentGroupMini
 import { computeInvoice, resolveEscalation, type EngineItem, type EngineInput, type GroupMinimumInput, type InvoiceResult } from "./engine";
 import type { Metric, VatTreatment } from "./catalogue";
 import type { ItemConfig } from "./itemConfig";
+import { asPricedSnapshot } from "./pricingSnapshot";
 import { londonToday, londonFirstOfThisMonth } from "./clock";
 
 type DB = SupabaseClient;
@@ -37,14 +38,20 @@ async function buildEngineItems(db: DB, accountId: string, usageMonth: string, c
   const out: EngineItem[] = [];
   for (const it of items) {
     if (!it.active) continue;
+
+    // Prefer the price SNAPSHOT frozen at activation (L2/L3) — so an in-place
+    // catalogue band edit never reprices a live contract. Fall back to the live
+    // catalogue only when the item has no snapshot (pre-074, or never activated).
+    const snap = asPricedSnapshot(it.priced_snapshot);
     const table = pricing.get(it.item_type);
-    const metric = (table?.metric ?? "flat_monthly") as Metric;
-    const bands = table ? await listBands(db, table.id) : [];
-    // Config = product-library defaults (fixed/pct/cap/amount/escalation) with
-    // the per-account item config layered on top, then resolve any escalation
-    // schedule to absolute dates against the contract start.
-    const tableCfg = (table?.config ?? {}) as unknown as ItemConfig;
-    const cfg: ItemConfig = { ...tableCfg, ...(it.config as ItemConfig) };
+    const metric = (snap?.metric ?? table?.metric ?? "flat_monthly") as Metric;
+    const bands = snap ? snap.bands : (table ? (await listBands(db, table.id)).map((b) => ({ from_units: b.from_units, to_units: b.to_units, unit_price_pence: b.unit_price_pence, minimum_type: b.minimum_type, minimum_pence: b.minimum_pence, unit_cap_pence: b.unit_cap_pence })) : []);
+
+    // Config = snapshot (catalogue ⊕ item, frozen) or, when none, the live
+    // catalogue defaults with the per-account item config layered on top. Then
+    // resolve any relative escalation schedule to absolute dates vs the start.
+    const baseCfg: ItemConfig = snap ? { ...snap.config } : { ...((table?.config ?? {}) as unknown as ItemConfig), ...(it.config as ItemConfig) };
+    const cfg: ItemConfig = baseCfg;
     if (!cfg.escalation) {
       const esc = resolveEscalation(cfg.escalation_relative, contractStartDate);
       if (esc) cfg.escalation = esc;
@@ -55,16 +62,26 @@ async function buildEngineItems(db: DB, accountId: string, usageMonth: string, c
       item_type: it.item_type,
       label: table?.name ?? it.item_type,
       metric,
-      vat_treatment: (it.vat_treatment as VatTreatment) ?? (table?.vat_treatment as VatTreatment) ?? "standard",
-      product_group: table?.product_group ?? null,
-      band_mode: table?.band_mode ?? "volume",
+      vat_treatment: (snap?.vat_treatment ?? (it.vat_treatment as VatTreatment) ?? (table?.vat_treatment as VatTreatment) ?? "standard"),
+      product_group: snap?.product_group ?? table?.product_group ?? null,
+      band_mode: snap?.band_mode ?? table?.band_mode ?? "volume",
       config: cfg,
       override: (it.override as ItemConfig) ?? null,
-      bands: bands.map((b) => ({ from_units: b.from_units, to_units: b.to_units, unit_price_pence: b.unit_price_pence, minimum_type: b.minimum_type, minimum_pence: b.minimum_pence, unit_cap_pence: b.unit_cap_pence })),
+      bands,
       usage: await aggregateUsage(db, it.id, usageMonth),
     });
   }
   return out;
+}
+
+/** Has a setup fee already been carried on a prior invoice for this account?
+ *  Gates the one-off so a trigger that fires in a later month never double-bills
+ *  (and never silently drops the fee when it fires after the first invoice). */
+async function setupFeeBilled(db: DB, accountId: string): Promise<boolean> {
+  const { data: setupItem } = await db.from("billing_items").select("id").eq("account_id", accountId).eq("item_type", "setup_fee").maybeSingle();
+  if (!setupItem) return false;
+  const { count } = await db.from("billing_invoice_lines").select("id", { count: "exact", head: true }).eq("billing_item_id", (setupItem as { id: string }).id);
+  return (count ?? 0) > 0;
 }
 
 async function persistInvoice(db: DB, accountId: string, runId: string, result: InvoiceResult, xero: { invoiceId: string; status: string }): Promise<void> {
@@ -119,8 +136,8 @@ export async function runBilling(db: DB, period?: string, opts: { dryRun?: boole
   // Active + notice_given bill normally; cancelled may still have trailing usage; disputed are flagged.
   // billing_type is selected resiliently (added in migration 073) — before it
   // exists every account falls back to 'auto'.
-  type AccRow = { id: string; status: string; contract_start_date: string | null; contract_end_date: string | null; hubspot_company_id: string | null; finance_contact_id: string | null; xero_contact_id: string | null; billing_type?: string };
-  const baseCols = "id, status, contract_start_date, contract_end_date, hubspot_company_id, finance_contact_id, xero_contact_id";
+  type AccRow = { id: string; status: string; contract_start_date: string | null; contract_end_date: string | null; contract_signed_at: string | null; hubspot_company_id: string | null; finance_contact_id: string | null; xero_contact_id: string | null; billing_type?: string };
+  const baseCols = "id, status, contract_start_date, contract_end_date, contract_signed_at, hubspot_company_id, finance_contact_id, xero_contact_id";
   const statuses = ["active", "notice_given", "cancelled", "disputed"];
   const q = (cols: string) => db.from("billing_accounts").select(cols).in("status", statuses) as unknown as Promise<{ data: AccRow[] | null; error: { message: string } | null }>;
   let accRes = await q(`${baseCols}, billing_type`);
@@ -141,7 +158,13 @@ export async function runBilling(db: DB, period?: string, opts: { dryRun?: boole
       const isFirstInvoice = (priorCount ?? 0) === 0;
 
       const items = await buildEngineItems(db, acc.id, periodMonth, acc.contract_start_date);
-      const input: EngineInput = { periodMonth, isFirstInvoice, contractStartDate: acc.contract_start_date, contractEndDate: acc.contract_end_date, items, groupMinimums, issueDate };
+      // L4: a setup fee bills per its trigger (default on_contract_signed), once.
+      const hasSetup = items.some((i) => i.item_type === "setup_fee");
+      const setupFeeAlreadyBilled = hasSetup ? await setupFeeBilled(db, acc.id) : false;
+      const input: EngineInput = {
+        periodMonth, isFirstInvoice, contractStartDate: acc.contract_start_date, contractEndDate: acc.contract_end_date,
+        items, groupMinimums, issueDate, contractSigned: !!acc.contract_signed_at, setupFeeAlreadyBilled,
+      };
       const result = computeInvoice(input);
       if (result.lines.length === 0) { summary.skipped += 1; continue; }
 

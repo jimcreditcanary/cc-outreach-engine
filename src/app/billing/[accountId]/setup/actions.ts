@@ -13,14 +13,18 @@ import { isSuperAdmin } from "@/lib/auth/role";
 import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
 import {
-  getBillingAccountById, updateBillingAccount, replaceBillingItems, listBillingItems,
-  currentPricingByItemType, logBillingAudit, logContractStatusEvent, type BillingItemInput,
+  getBillingAccountById, updateBillingAccount, updateBillingAccountExtended, replaceBillingItems, listBillingItems, listBands,
+  currentPricingByItemType, setItemPricingSnapshot, logBillingAudit, logContractStatusEvent, type BillingItemInput,
 } from "@/lib/billing/repo";
 import { CATALOGUE, type Metric } from "@/lib/billing/catalogue";
 import { parseItemConfig } from "@/lib/billing/itemConfig";
+import { buildPricingSnapshot } from "@/lib/billing/pricingSnapshot";
 import { generateUsageKey } from "@/lib/billing/usageKey";
+import { getXero } from "@/lib/integrations/xero";
+import { getCrm } from "@/lib/crm";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
+const intOrNull = (v: string): number | null => { const n = Number(v); return v.trim() === "" || Number.isNaN(n) ? null : Math.trunc(n); };
 
 // Metrics that report usage → get a usage API key at activation.
 const USAGE_METRICS = new Set<Metric>([
@@ -66,13 +70,19 @@ export async function saveBillingSetupAction(formData: FormData) {
     await replaceBillingItems(db, id, items);
     await updateBillingAccount(db, id, {
       contract_start_date: str(formData.get("contract_start_date")) || null,
-      notice_period_days: Number(str(formData.get("notice_period_days"))) || null,
       finance_contact_id: str(formData.get("finance_contact_id")) || null,
       po_number: str(formData.get("po_number")) || null,
     });
-    // Invoice mode (X1) — separate best-effort write so it no-ops before migration 073.
-    const billing_type = str(formData.get("billing_type")) === "draft" ? "draft" : "auto";
-    await db.from("billing_accounts").update({ billing_type }).eq("id", id);
+    // 073/074 columns (invoice mode + contract lifecycle) — best-effort so they
+    // no-op before those migrations are applied. term_end_date /
+    // renewal_decision_date are generated from these.
+    await updateBillingAccountExtended(db, id, {
+      billing_type: str(formData.get("billing_type")) === "draft" ? "draft" : "auto",
+      term_months: intOrNull(str(formData.get("term_months"))),
+      notice_months: intOrNull(str(formData.get("notice_months"))),
+      break_months: intOrNull(str(formData.get("break_months"))),
+      auto_renew: str(formData.get("auto_renew")) === "on",
+    });
     await logBillingAudit(db, { account_id: id, actor_user_id: me.id, actor_email: me.email ?? null, action: "items_configured", payload: { count: items.length } });
     await flash("success", `Saved ${items.length} item${items.length === 1 ? "" : "s"}. Review the first-invoice preview below, then activate.`);
   } catch (e) {
@@ -99,13 +109,36 @@ export async function activateBillingAction(formData: FormData) {
   const reveals: { item_type: string; label: string; key: string }[] = [];
   let nonce = "";
   try {
+    const nowIso = new Date().toISOString();
     for (const it of items) {
-      const metric = (pricing.get(it.item_type)?.metric ?? "") as Metric;
+      const table = pricing.get(it.item_type) ?? null;
+      const metric = (table?.metric ?? "flat_monthly") as Metric;
+      // L3: freeze the pricing in force so a later catalogue edit never reprices
+      // this contract. The invoice run reads this snapshot in preference to live.
+      const bands = table ? await listBands(db, table.id) : [];
+      const snapshot = buildPricingSnapshot(table, bands, it.config, it.vat_treatment, metric, nowIso);
+      await setItemPricingSnapshot(db, it.id, snapshot as unknown as Record<string, unknown>, 1, nowIso);
+      // Usage key only for usage-reporting metrics that aren't sold as included.
       if (!USAGE_METRICS.has(metric)) continue;
       if ((it.config as { included?: boolean }).included) continue;
       const { key, hash } = generateUsageKey();
       await db.from("billing_items").update({ usage_api_key_hash: hash }).eq("id", it.id);
       reveals.push({ item_type: it.item_type, label: CATALOGUE.find((c) => c.key === it.item_type)?.label ?? it.item_type, key });
+    }
+    // L6: create the Xero contact at activation (not lazily at first run). Non-
+    // fatal — the invoice run still creates it lazily if this fails.
+    if (!account.xero_contact_id) {
+      try {
+        const crm = getCrm();
+        const company = account.hubspot_company_id ? await crm.getCompany(account.hubspot_company_id).catch(() => null) : null;
+        const fin = account.finance_contact_id ? await crm.getContact(account.finance_contact_id).catch(() => null) : null;
+        const c = await getXero().ensureContact({
+          accountKey: account.id,
+          name: company?.name ?? account.hubspot_company_id ?? account.id,
+          financeContact: fin ? { name: fin.full_name, email: fin.email, phone: null } : null,
+        });
+        await updateBillingAccount(db, id, { xero_contact_id: c.contactId });
+      } catch { /* non-fatal */ }
     }
     await updateBillingAccount(db, id, { status: "active" });
     await logContractStatusEvent(db, id, "active", "ui", { activated_by: me.email });
@@ -121,4 +154,63 @@ export async function activateBillingAction(formData: FormData) {
   }
   revalidatePath(`/billing/${id}`);
   redirect(nonce ? `/billing/${id}/keys/${nonce}` : `/billing/${id}`);
+}
+
+// D1 — "Mark contract signed". Stamps contract_signed_at so the setup fee bills
+// per its trigger (L4). Any operator may mark it; it's append-logged.
+export async function markContractSignedAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("account_id"));
+  if (!id) return redirect("/billing");
+  const db = serviceClient();
+  const account = await getBillingAccountById(db, id);
+  if (!account) { await flash("error", "Billing account not found."); return redirect("/billing"); }
+  const signedAt = new Date().toISOString();
+  try {
+    await updateBillingAccount(db, id, { contract_signed_at: signedAt });
+    await logContractStatusEvent(db, id, "signed", "ui", { effective_at: signedAt, marked_by: me.email });
+    await logBillingAudit(db, { account_id: id, actor_user_id: me.id, actor_email: me.email ?? null, action: "contract_signed", payload: { signed_at: signedAt } });
+    await flash("success", "Contract marked as signed. The setup fee will bill on the next run.");
+  } catch (e) {
+    await flash("error", `Could not mark signed: ${(e as Error).message}`);
+  }
+  revalidatePath(`/billing/${id}`);
+  revalidatePath(`/billing/${id}/setup`);
+  redirect(`/billing/${id}`);
+}
+
+// L3 — re-sync an account's item pricing from the current catalogue (supersede).
+// Super-admin only. Future invoices use the refreshed snapshot; invoices already
+// raised are untouched (they were computed from the snapshot then in force).
+export async function resyncItemPricingAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  if (!(await isSuperAdmin())) { await flash("error", "Only a super-admin can re-sync pricing."); return redirect("/billing"); }
+  const id = str(formData.get("account_id"));
+  if (!id) return redirect("/billing");
+  const db = serviceClient();
+  const account = await getBillingAccountById(db, id);
+  if (!account) { await flash("error", "Billing account not found."); return redirect("/billing"); }
+
+  try {
+    const [items, pricing] = await Promise.all([listBillingItems(db, id), currentPricingByItemType(db)]);
+    const nowIso = new Date().toISOString();
+    let n = 0;
+    for (const it of items) {
+      if (!it.active) continue;
+      const table = pricing.get(it.item_type) ?? null;
+      const bands = table ? await listBands(db, table.id) : [];
+      const metric = (table?.metric ?? "flat_monthly") as Metric;
+      const snapshot = buildPricingSnapshot(table, bands, it.config, it.vat_treatment, metric, nowIso);
+      await setItemPricingSnapshot(db, it.id, snapshot as unknown as Record<string, unknown>, (it.pricing_snapshot_version ?? 0) + 1, nowIso);
+      n += 1;
+    }
+    await logBillingAudit(db, { account_id: id, actor_user_id: me.id, actor_email: me.email ?? null, action: "pricing_resynced", payload: { items: n } });
+    await flash("success", `Re-synced pricing for ${n} item${n === 1 ? "" : "s"} from the catalogue.`);
+  } catch (e) {
+    await flash("error", `Re-sync failed: ${(e as Error).message}`);
+  }
+  revalidatePath(`/billing/${id}`);
+  redirect(`/billing/${id}`);
 }

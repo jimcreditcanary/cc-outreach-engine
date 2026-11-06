@@ -57,17 +57,26 @@ function line(label: string, description: string, net: number, treatment: VatTre
   return { label, description, net_pence: net, vat_pence: vat, gross_pence: net + vat };
 }
 
-/** Build the first-invoice preview for a set of configured items. */
-export function previewFirstInvoice(items: PreviewItem[], contractStartISO: string): InvoicePreview {
+/** Build the first-invoice preview for a set of configured items. `contractSigned`
+ *  gates a setup fee whose trigger is on_contract_signed (L4): it only appears on
+ *  the first invoice once the contract is marked signed. */
+export function previewFirstInvoice(items: PreviewItem[], contractStartISO: string, opts: { contractSigned?: boolean } = {}): InvoicePreview {
   const lines: PreviewLine[] = [];
   const notes: string[] = [];
   const pro = firstMonthProration(contractStartISO);
+  const contractSigned = opts.contractSigned ?? false;
 
   for (const it of items) {
     const cfg = it.config;
-    // Setup fee — one-off, on the first invoice.
+    // Setup fee — one-off, gated by its trigger (L4). on_go_live bills at the
+    // first invoice; on_contract_signed (default) waits for the signed flag.
     if (it.item_type === "setup_fee" && !cfg.included && (cfg.amount_pence ?? 0) > 0) {
-      lines.push(line(it.label, "One-off setup fee", cfg.amount_pence!, it.vat_treatment));
+      const trigger = cfg.billing_trigger ?? "on_contract_signed";
+      if (trigger === "on_go_live" || contractSigned) {
+        lines.push(line(it.label, trigger === "on_go_live" ? "One-off setup fee (on go-live)" : "One-off setup fee", cfg.amount_pence!, it.vat_treatment));
+      } else {
+        notes.push(`${it.label}: £${(cfg.amount_pence! / 100).toFixed(2)} setup fee bills once the contract is marked signed.`);
+      }
       continue;
     }
     // Recurring monthly fees (platform / support) — arrears: the first invoice

@@ -97,7 +97,7 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
     const metric = (pricing.get(it.item_type)?.metric ?? "flat_monthly") as Metric;
     return { item_type: it.item_type, label: CATALOGUE.find((c) => c.key === it.item_type)?.label ?? it.item_type, metric, vat_treatment: (it.vat_treatment as PreviewItem["vat_treatment"]) ?? "standard", config: it.config as ItemConfig };
   });
-  const preview = account.contract_start_date ? previewFirstInvoice(previewItems, account.contract_start_date) : null;
+  const preview = account.contract_start_date ? previewFirstInvoice(previewItems, account.contract_start_date, { contractSigned: !!account.contract_signed_at }) : null;
 
   if (account.status === "active") {
     return (
@@ -122,7 +122,10 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
           <h2 className="mb-2 text-sm font-semibold">Contract terms</h2>
           <div className="flex flex-wrap gap-4">
             <label className={lbl}>Contract start<input type="date" name="contract_start_date" defaultValue={account.contract_start_date ?? ""} className={`${field} mt-0.5`} /></label>
-            <label className={lbl}>Notice period (days)<input name="notice_period_days" type="number" defaultValue={account.notice_period_days ?? ""} placeholder="e.g. 90" className={`${field} mt-0.5 w-28`} /></label>
+            <label className={lbl}>Term (months)<input name="term_months" type="number" min="0" defaultValue={account.term_months ?? ""} placeholder="e.g. 24" className={`${field} mt-0.5 w-24`} /></label>
+            <label className={lbl}>Notice (months)<input name="notice_months" type="number" min="0" defaultValue={account.notice_months ?? ""} placeholder="e.g. 3" className={`${field} mt-0.5 w-24`} /></label>
+            <label className={lbl}>Break (months, optional)<input name="break_months" type="number" min="0" defaultValue={account.break_months ?? ""} placeholder="e.g. 12" className={`${field} mt-0.5 w-28`} /></label>
+            <label className="flex items-center gap-1.5 self-end pb-1 text-xs text-neutral-600"><input type="checkbox" name="auto_renew" defaultChecked={account.auto_renew ?? true} /> auto-renew</label>
             <label className={lbl}>Finance contact (HubSpot id)<input name="finance_contact_id" defaultValue={financePrefill} placeholder="prefilled from onboarding" className={`${field} mt-0.5 w-56`} /></label>
             <label className={lbl}>PO number (optional)<input name="po_number" defaultValue={account.po_number ?? ""} className={`${field} mt-0.5 w-40`} /></label>
             <label className={lbl}>Invoice mode<select name="billing_type" defaultValue={billingType} className={`${field} mt-0.5`}>
@@ -130,6 +133,17 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
               <option value="draft">Draft — manual review in Xero</option>
             </select></label>
           </div>
+          {(account.term_end_date || account.renewal_decision_date) && (
+            <p className="mt-2 text-xs text-neutral-500">
+              {account.term_end_date && <>Term ends <strong>{account.term_end_date}</strong>. </>}
+              {account.renewal_decision_date && <>Give notice by <strong>{account.renewal_decision_date}</strong> to avoid auto-renewal.</>}
+            </p>
+          )}
+          <p className="mt-1 text-xs text-neutral-500">
+            Contract signed: {account.contract_signed_at
+              ? <strong className="text-emerald-700">{account.contract_signed_at.slice(0, 10)}</strong>
+              : <span className="text-amber-700">not yet — an “on contract signed” setup fee waits for this.</span>}
+          </p>
         </section>
 
         <section className="mb-4">

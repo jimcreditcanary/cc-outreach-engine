@@ -139,12 +139,15 @@ Two things are **decisions, not bugs** — resolve them first because they gate 
 - [x] **X5** `?dry=1` dry-run on the run / dunning / nudge / reconcile crons. **X6** dunning skips an owner already chased earlier this month.
 - Needs migration **073** applied (`billing_type`, `amount_due_pence`, `status_synced_at`) — code degrades gracefully until then.
 
-### Phase 4 — Lifecycle & snapshotting
-- [ ] **L1** add `term_months`, `auto_renew`, `break_months`, `notice_months`; compute `end_date` + `renewal_decision_date`; add `draft`/`ended` statuses.
-- [ ] **L2** versioned billing record (effective_from, supersede, frozen-after-invoice).
-- [ ] **L3** snapshot price terms onto the line at activation; add per-client "re-sync from catalogue".
-- [ ] **L4** enforce `billing_trigger` (setup fee only after `contract_signed`); **L5** daily notice nudge keyed to `renewal_decision_date` (−30 and on-date); **L6** create Xero contact at activation.
-- [ ] **D1** add a "Mark contract signed" button; align the status endpoint (config enum, `contract_signed`).
+### Phase 4 — Lifecycle & snapshotting ✅ DONE (2026-11-06)
+- [x] **L1** `term_months`, `auto_renew`, `break_months`, `notice_months` on `billing_accounts`; `term_end_date` + `renewal_decision_date` as **generated/stored** columns (start + term − notice); `draft`/`ended` added to `ACCOUNT_STATUSES`. Setup form + account page expose and display them. (migration 074)
+- [x] **L2/L3** **line-level price snapshot** on `billing_items` (`priced_snapshot`/`priced_at`/`pricing_snapshot_version`). At activation each item freezes its resolved metric/VAT/bands/config/band-mode/group + catalogue version (`buildPricingSnapshot`); the invoice run reads the snapshot in preference to the live catalogue (`buildEngineItems`), so an in-place band edit never reprices a live contract. Super-admin **"Re-sync pricing from catalogue"** supersedes it (bumps version); invoices already raised are unaffected because they were computed from the snapshot then in force — that is the freeze-after-invoice guarantee. *(Scope call: delivered via the per-item snapshot + version bump rather than a separate `billing_account_versions` supersession table; the snapshot gives the money-correct freeze without the extra table. Flag if a full versioned-account audit trail is wanted.)*
+- [x] **L4** setup fee gated by `billing_trigger` — `on_go_live` bills at the first invoice, `on_contract_signed` (default) waits for `contract_signed_at` then bills on the next run, guarded by `setupFeeAlreadyBilled` so it fires exactly once even when signing lands after the first invoice.
+- [x] **L5** notice nudge now **daily**, keyed to `renewal_decision_date` at **−30 days and on the day** (exact-day match → at most two emails/renewal, no spam); legacy fallback to `contract_end_date − notice_period_days`. `vercel.json` cron → daily.
+- [x] **L6** Xero contact created **at activation** (non-fatal; the run still creates it lazily as a backstop).
+- [x] **D1** **"Mark contract signed"** button on the account page (`markContractSignedAction`); status endpoint now accepts `contract_signed`/`signed`, `occurred_at` (aliases `effective_at`), passthrough `source` + `meta`.
+- Needs migration **074** applied (`term_months`/`auto_renew`/`break_months`/`notice_months` + generated `term_end_date`/`renewal_decision_date`; `priced_snapshot`/`priced_at`/`pricing_snapshot_version`) — code degrades gracefully until then (account/item reads fall back to the base column set; the run reads live catalogue when an item has no snapshot; nudge falls back to the days formula).
+- Fixed in passing: `billing_type` (073) wasn't in the account read, so the setup wizard's Invoice-mode selector always showed "auto" — now selected via the resilient read.
 
 ### Phase 5 — Catalogue/seed + UI polish
 - [ ] **C1** comms per-number £2.50 rows; **C2** OB fixed £0 row; **C3** `currency`/`unit_discount`/typed overrides (and `variant_id` iff Phase-0 refactor chosen).

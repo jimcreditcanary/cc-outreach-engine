@@ -63,6 +63,15 @@ export interface BillingAccount {
   po_number: string | null;
   created_at: string;
   updated_at: string;
+  // Added by later migrations — optional so a pre-migration read (which falls
+  // back to the base column set) still type-checks.
+  billing_type?: "auto" | "draft";            // 073 (X1 invoice mode)
+  term_months?: number | null;                // 074 (L1 lifecycle)
+  auto_renew?: boolean | null;
+  break_months?: number | null;
+  notice_months?: number | null;
+  term_end_date?: string | null;              // generated
+  renewal_decision_date?: string | null;      // generated (term end − notice)
 }
 
 const TABLE_COLS =
@@ -70,6 +79,12 @@ const TABLE_COLS =
 const BAND_COLS = "id, pricing_table_id, from_units, to_units, unit_price_pence, minimum_type, minimum_pence, unit_cap_pence, sort_order";
 const ACCT_COLS =
   "id, onboarding_case_id, hubspot_company_id, hubspot_deal_id, xero_contact_id, contract_start_date, contract_signed_at, notice_period_days, contract_end_date, status, finance_contact_id, deal_owner_user_id, po_number, created_at, updated_at";
+// Extended set incl. columns from migrations 073/074. Reads try this first and
+// fall back to ACCT_COLS when the columns don't exist yet (graceful degradation).
+const ACCT_COLS_EXT =
+  `${ACCT_COLS}, billing_type, term_months, auto_renew, break_months, notice_months, term_end_date, renewal_decision_date`;
+
+const isMissingColumn = (msg: string | undefined): boolean => !!msg && /does not exist|column/i.test(msg);
 
 // ─── pricing tables ───────────────────────────────────────────────────────────
 
@@ -232,22 +247,28 @@ export async function createPricingVersion(db: DB, fromId: string, effectiveFrom
 
 // ─── billing accounts ─────────────────────────────────────────────────────────
 
+// Resilient single-account read: try the extended column set (073/074), fall
+// back to the base set if those columns don't exist yet.
+async function selectAccount(db: DB, col: "id" | "onboarding_case_id", val: string): Promise<BillingAccount | null> {
+  let r = await db.from("billing_accounts").select(ACCT_COLS_EXT).eq(col, val).maybeSingle();
+  if (r.error && isMissingColumn(r.error.message)) r = await db.from("billing_accounts").select(ACCT_COLS).eq(col, val).maybeSingle() as typeof r;
+  if (r.error) throw r.error;
+  return (r.data as BillingAccount | null) ?? null;
+}
+
 export async function getBillingAccountByCase(db: DB, caseId: string): Promise<BillingAccount | null> {
-  const { data, error } = await db.from("billing_accounts").select(ACCT_COLS).eq("onboarding_case_id", caseId).maybeSingle();
-  if (error) throw error;
-  return (data as BillingAccount | null) ?? null;
+  return selectAccount(db, "onboarding_case_id", caseId);
 }
 
 export async function getBillingAccountById(db: DB, id: string): Promise<BillingAccount | null> {
-  const { data, error } = await db.from("billing_accounts").select(ACCT_COLS).eq("id", id).maybeSingle();
-  if (error) throw error;
-  return (data as BillingAccount | null) ?? null;
+  return selectAccount(db, "id", id);
 }
 
 export async function listBillingAccounts(db: DB): Promise<BillingAccount[]> {
-  const { data, error } = await db.from("billing_accounts").select(ACCT_COLS).order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as BillingAccount[];
+  let r = await db.from("billing_accounts").select(ACCT_COLS_EXT).order("created_at", { ascending: false });
+  if (r.error && isMissingColumn(r.error.message)) r = await db.from("billing_accounts").select(ACCT_COLS).order("created_at", { ascending: false }) as typeof r;
+  if (r.error) throw r.error;
+  return (r.data ?? []) as BillingAccount[];
 }
 
 export type NewBillingAccount = Pick<
@@ -280,6 +301,19 @@ export async function updateBillingAccount(db: DB, id: string, patch: AccountPat
   if (error) throw error;
 }
 
+// 073/074 columns, written best-effort: a pre-migration DB silently no-ops
+// rather than failing the whole save. (term_end_date / renewal_decision_date
+// are generated, so they are never written here.)
+export type AccountExtendedPatch = Partial<
+  Pick<BillingAccount, "billing_type" | "term_months" | "auto_renew" | "break_months" | "notice_months">
+>;
+
+export async function updateBillingAccountExtended(db: DB, id: string, patch: AccountExtendedPatch): Promise<void> {
+  if (!Object.keys(patch).length) return;
+  const { error } = await db.from("billing_accounts").update(patch).eq("id", id);
+  if (error && !isMissingColumn(error.message)) throw error;
+}
+
 // ─── billing items (Phase 2 setup) ────────────────────────────────────────────
 
 export interface BillingItem {
@@ -296,21 +330,37 @@ export interface BillingItem {
   active: boolean;
   created_at: string;
   updated_at: string;
+  // 074 — line-level price snapshot (L2/L3). Optional: a pre-migration read
+  // falls back to the base column set and these come back undefined.
+  priced_snapshot?: Record<string, unknown> | null;
+  priced_at?: string | null;
+  pricing_snapshot_version?: number | null;
 }
 
 const ITEM_COLS =
   "id, account_id, pricing_table_id, item_type, config, vat_treatment, override, override_by, override_reason, usage_api_key_hash, active, created_at, updated_at";
+const ITEM_COLS_EXT = `${ITEM_COLS}, priced_snapshot, priced_at, pricing_snapshot_version`;
 
 export async function listBillingItems(db: DB, accountId: string): Promise<BillingItem[]> {
-  const { data, error } = await db.from("billing_items").select(ITEM_COLS).eq("account_id", accountId).order("created_at", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as BillingItem[];
+  let r = await db.from("billing_items").select(ITEM_COLS_EXT).eq("account_id", accountId).order("created_at", { ascending: true });
+  if (r.error && isMissingColumn(r.error.message)) r = await db.from("billing_items").select(ITEM_COLS).eq("account_id", accountId).order("created_at", { ascending: true }) as typeof r;
+  if (r.error) throw r.error;
+  return (r.data ?? []) as BillingItem[];
 }
 
 export async function getBillingItemById(db: DB, id: string): Promise<BillingItem | null> {
-  const { data, error } = await db.from("billing_items").select(ITEM_COLS).eq("id", id).maybeSingle();
-  if (error) throw error;
-  return (data as BillingItem | null) ?? null;
+  let r = await db.from("billing_items").select(ITEM_COLS_EXT).eq("id", id).maybeSingle();
+  if (r.error && isMissingColumn(r.error.message)) r = await db.from("billing_items").select(ITEM_COLS).eq("id", id).maybeSingle() as typeof r;
+  if (r.error) throw r.error;
+  return (r.data as BillingItem | null) ?? null;
+}
+
+/** Freeze (or re-sync) one item's resolved pricing (L2/L3). Best-effort on the
+ *  snapshot columns so it no-ops before migration 074. `version` bumps on each
+ *  re-sync (supersede). */
+export async function setItemPricingSnapshot(db: DB, itemId: string, snapshot: Record<string, unknown>, version: number, snappedAt: string): Promise<void> {
+  const { error } = await db.from("billing_items").update({ priced_snapshot: snapshot, priced_at: snappedAt, pricing_snapshot_version: version }).eq("id", itemId);
+  if (error && !isMissingColumn(error.message)) throw error;
 }
 
 export interface BillingItemInput {

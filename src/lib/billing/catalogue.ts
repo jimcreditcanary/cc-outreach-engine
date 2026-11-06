@@ -27,7 +27,7 @@ export type Metric = (typeof METRICS)[number];
 export const VAT_TREATMENTS = ["standard", "exempt", "out_of_scope"] as const;
 export type VatTreatment = (typeof VAT_TREATMENTS)[number];
 
-export const ACCOUNT_STATUSES = ["setup_pending", "active", "notice_given", "cancelled", "disputed"] as const;
+export const ACCOUNT_STATUSES = ["draft", "setup_pending", "active", "notice_given", "cancelled", "ended", "disputed"] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 
 export interface CatalogueEntry {

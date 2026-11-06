@@ -47,11 +47,21 @@ describe("previewFirstInvoice", () => {
         { item_type: "settlement_accounts", label: "Settlement accounts", metric: "per_account_month", vat_treatment: "exempt", config: { included: true } },
       ],
       "2026-03-01",
+      { contractSigned: true },
     );
     const setup = inv.lines.find((l) => l.label === "Setup fee");
     expect(setup).toMatchObject({ net_pence: 50000, vat_pence: 10000 });
     const settle = inv.lines.find((l) => l.label === "Settlement accounts");
     expect(settle).toMatchObject({ net_pence: 0, vat_pence: 0 });
+  });
+
+  it("on_contract_signed setup fee is deferred (note) until signed", () => {
+    const items: PreviewItem[] = [{ item_type: "setup_fee", label: "Setup fee", metric: "flat_monthly", vat_treatment: "standard", config: { amount_pence: 50000 } }];
+    const unsigned = previewFirstInvoice(items, "2026-03-01");
+    expect(unsigned.lines.find((l) => l.label === "Setup fee")).toBeUndefined();
+    expect(unsigned.notes.some((n) => n.includes("marked signed"))).toBe(true);
+    const signed = previewFirstInvoice(items, "2026-03-01", { contractSigned: true });
+    expect(signed.lines.find((l) => l.label === "Setup fee")?.net_pence).toBe(50000);
   });
 
   it("usage/transaction items produce a note, not a line", () => {

@@ -52,13 +52,20 @@ export interface GroupMinimumInput {
 
 export interface EngineInput {
   periodMonth: string;         // "YYYY-MM-01" — the month being invoiced (the just-ended month)
-  isFirstInvoice: boolean;     // first invoice for the account (gates the setup fee)
+  isFirstInvoice: boolean;     // first invoice for the account (gates an on_go_live setup fee)
   contractStartDate: string;   // "YYYY-MM-DD"
   contractEndDate: string | null; // cancellation effective date (last active day, inclusive)
   items: EngineItem[];
   groupMinimums?: GroupMinimumInput[]; // category floors (e.g. all TU ≥ £X/mo)
   issueDate?: string;          // when the invoice is raised (drives the due date); default = periodMonth
   dueDays?: number;            // net terms; default 14
+  // L4 setup-fee trigger. A setup fee defaults to billing_trigger
+  // 'on_contract_signed' — it bills on the first invoice AFTER the contract is
+  // marked signed (which may be later than isFirstInvoice). 'on_go_live' bills
+  // on the first invoice regardless. setupFeeAlreadyBilled guards the one-off
+  // against re-billing once a prior invoice has carried it.
+  contractSigned?: boolean;
+  setupFeeAlreadyBilled?: boolean;
 }
 
 export interface InvoiceLine {
@@ -281,10 +288,16 @@ export function computeInvoice(input: EngineInput): InvoiceResult {
   for (const item of input.items) {
     const cfg = { ...item.config, ...(item.override ?? {}) } as ItemConfig & { escalation?: { from_date: string; amount_pence: number }[] };
 
-    // Setup fee — one-off on the first invoice.
+    // Setup fee — one-off, gated by its billing_trigger (L4). 'on_go_live' bills
+    // on the first invoice; 'on_contract_signed' (the default) waits until the
+    // contract is marked signed, then bills on the next invoice. Either way it
+    // bills at most once — setupFeeAlreadyBilled blocks a repeat.
     if (item.item_type === "setup_fee") {
-      if (input.isFirstInvoice && !cfg.included && (cfg.amount_pence ?? 0) > 0) {
-        lines.push(line(item, `${item.label} — one-off`, 1, cfg.amount_pence!, cfg.amount_pence!, { one_off: true }));
+      if (cfg.included || (cfg.amount_pence ?? 0) <= 0 || input.setupFeeAlreadyBilled) continue;
+      const trigger = cfg.billing_trigger ?? "on_contract_signed";
+      const triggerMet = trigger === "on_go_live" ? input.isFirstInvoice : !!input.contractSigned;
+      if (triggerMet) {
+        lines.push(line(item, `${item.label} — one-off`, 1, cfg.amount_pence!, cfg.amount_pence!, { one_off: true, trigger }));
       }
       continue;
     }
