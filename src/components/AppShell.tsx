@@ -19,6 +19,7 @@ import {
   UserCheck,
   Telescope,
   Megaphone,
+  BookOpen,
   Settings as SettingsIcon,
   ChevronsLeft,
   ChevronsRight,
@@ -67,6 +68,7 @@ const SECTIONS: Section[] = [
   {
     header: "Admin",
     items: [
+      { href: "/docs",     label: "Docs",     Icon: BookOpen },
       { href: "/settings", label: "Settings", Icon: SettingsIcon },
     ],
   },

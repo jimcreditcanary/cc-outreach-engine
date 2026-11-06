@@ -28,6 +28,10 @@ const nextConfig: NextConfig = {
   // so Next won't include them automatically).
   outputFileTracingIncludes: {
     "/onboarding/**": ["./src/lib/onboarding/templates/**"],
+    // The Docs tab reads docs/*.md from disk at runtime (not code → not traced
+    // automatically), so include the folder for the /docs routes.
+    "/docs/**": ["./docs/**/*.md"],
+    "/docs": ["./docs/**/*.md"],
   },
 };
 
