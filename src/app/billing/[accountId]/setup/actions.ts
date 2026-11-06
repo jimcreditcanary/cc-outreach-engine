@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { randomBytes } from "crypto";
 import { currentUser } from "@/lib/auth/server";
+import { isSuperAdmin } from "@/lib/auth/role";
 import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
 import {
@@ -36,6 +37,10 @@ export async function saveBillingSetupAction(formData: FormData) {
   const account = await getBillingAccountById(db, id);
   if (!account) { await flash("error", "Billing account not found."); return redirect("/billing"); }
 
+  // Only a super-admin may set unit prices (S2). For everyone else the price
+  // comes from the catalogue; the deal owner may still toggle "included" and the
+  // setup-fee trigger. Enforced here so a crafted POST can't bypass the UI.
+  const canEditPrices = await isSuperAdmin();
   const pricing = await currentPricingByItemType(db);
   const items: BillingItemInput[] = [];
   for (const entry of CATALOGUE) {
@@ -43,8 +48,18 @@ export async function saveBillingSetupAction(formData: FormData) {
     const table = pricing.get(entry.key);
     const metric = (table?.metric ?? entry.metric) as Metric;
     const vat = table?.vat_treatment ?? entry.vat;
-    const config = parseItemConfig(metric, (field) => str(formData.get(`cfg_${entry.key}_${field}`)));
-    items.push({ pricing_table_id: table?.id ?? null, item_type: entry.key, config: config as unknown as Record<string, unknown>, vat_treatment: vat, usage_api_key_hash: null });
+    let config: Record<string, unknown>;
+    if (canEditPrices) {
+      config = parseItemConfig(metric, (field) => str(formData.get(`cfg_${entry.key}_${field}`))) as unknown as Record<string, unknown>;
+    } else {
+      // Catalogue prices + only the non-price controls the deal owner may set.
+      const base = { ...((table?.config as Record<string, unknown>) ?? {}) };
+      base.included = str(formData.get(`cfg_${entry.key}_included`)) === "on";
+      const trigger = str(formData.get(`cfg_${entry.key}_billing_trigger`));
+      if (trigger) base.billing_trigger = trigger;
+      config = base;
+    }
+    items.push({ pricing_table_id: table?.id ?? null, item_type: entry.key, config, vat_treatment: vat, usage_api_key_hash: null });
   }
 
   try {

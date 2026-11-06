@@ -9,6 +9,7 @@ import { authClient, currentUser } from "@/lib/auth/server";
 import { adminClient } from "@/lib/auth/admin";
 import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
+import { isSuperAdmin } from "@/lib/auth/role";
 
 const str = (v: FormDataEntryValue | null): string =>
   String(v ?? "").trim();
@@ -85,6 +86,12 @@ export async function updateUserProfileAction(formData: FormData) {
 export async function setUserRoleAction(formData: FormData) {
   const me = await currentUser();
   if (!me) redirect("/login");
+  // Only a super-admin may grant/revoke roles — otherwise any operator could
+  // escalate themselves to super-admin (gap analysis S1).
+  if (!(await isSuperAdmin())) {
+    await flash("error", "Only a super-admin can change user roles.");
+    return redirect("/admin/users");
+  }
   const id = str(formData.get("id"));
   if (!id) return;
   const role = str(formData.get("role")) === "super_admin" ? "super_admin" : "operator";

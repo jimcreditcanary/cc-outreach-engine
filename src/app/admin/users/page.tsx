@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/server";
+import { isSuperAdmin } from "@/lib/auth/role";
 import { listOperators, displayName } from "@/lib/auth/owner";
 import {
   createUserAction,
@@ -20,6 +22,10 @@ const cell = "rounded border border-neutral-300 px-2 py-1 text-xs";
 
 export default async function UsersPage() {
   const me = await currentUser();
+  if (!me) redirect("/login");
+  // User administration (create/delete/reset-password/role) is a super-admin
+  // surface — operators are bounced out (gap analysis S1).
+  if (!(await isSuperAdmin())) redirect("/settings");
   // listOperators returns auth users joined with user_settings, so we get
   // first/last/job_title alongside email in one shot.
   const users = await listOperators();

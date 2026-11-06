@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
+import { isSuperAdmin } from "@/lib/auth/role";
 import { getBillingAccountById, listBillingItems, currentPricingByItemType } from "@/lib/billing/repo";
 import { CATALOGUE, type Metric } from "@/lib/billing/catalogue";
 import { fieldsForMetric, type ItemConfig } from "@/lib/billing/itemConfig";
@@ -19,7 +20,22 @@ const lbl = "block text-xs text-neutral-500";
 
 function num(v: unknown): number | undefined { return typeof v === "number" ? v : undefined; }
 
-function ItemConfigFields({ k, metric, cfg }: { k: string; metric: Metric; cfg: ItemConfig }) {
+// Prices are catalogue-controlled: only a super-admin can edit them here. Deal
+// owners see them read-only and can still set non-price controls (included,
+// setup-fee trigger). The save action enforces this server-side too (S2).
+function Price({ canEdit, name, label, value, placeholder, width }: {
+  canEdit: boolean; name: string; label: string; value: string | number; placeholder?: string; width: string;
+}) {
+  return (
+    <label className={lbl}>{label}
+      {canEdit
+        ? <input name={name} defaultValue={value} placeholder={placeholder} className={`${field} mt-0.5 ${width}`} />
+        : <span className={`mt-0.5 block ${width} rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-sm text-neutral-600`}>{value === "" || value == null ? "—" : value}</span>}
+    </label>
+  );
+}
+
+function ItemConfigFields({ k, metric, cfg, canEditPrices }: { k: string; metric: Metric; cfg: ItemConfig; canEditPrices: boolean }) {
   const f = fieldsForMetric(metric);
   const p = (field: string) => `cfg_${k}_${field}`;
   const gbp = (pence?: number) => (pence != null ? (pence / 100).toFixed(2) : "");
@@ -30,13 +46,13 @@ function ItemConfigFields({ k, metric, cfg }: { k: string; metric: Metric; cfg: 
           <input type="checkbox" name={p("included")} defaultChecked={cfg.included} /> included (£0)
         </label>
       )}
-      {f.monthly && <label className={lbl}>£/month<input name={p("amount")} defaultValue={gbp(num(cfg.amount_pence))} placeholder="0.00" className={`${field} mt-0.5 w-24`} /></label>}
-      {f.perUnit && <label className={lbl}>pence/unit<input name={p("amount_pence")} defaultValue={num(cfg.amount_pence) ?? ""} placeholder="e.g. 50" className={`${field} mt-0.5 w-24`} /></label>}
-      {f.fixed && <label className={lbl}>pence/txn<input name={p("fixed_pence")} defaultValue={num(cfg.fixed_pence) ?? ""} placeholder="e.g. 20" className={`${field} mt-0.5 w-24`} /></label>}
-      {f.pct && <label className={lbl}>% of value<input name={p("pct")} defaultValue={cfg.pct ?? ""} placeholder="e.g. 1.5" className={`${field} mt-0.5 w-20`} /></label>}
-      {f.cap && <label className={lbl}>cap pence<input name={p("cap_pence")} defaultValue={num(cfg.cap_pence ?? undefined) ?? ""} placeholder="optional" className={`${field} mt-0.5 w-24`} /></label>}
-      {f.perApplication && <label className={lbl}>pence/application<input name={p("per_application_pence")} defaultValue={num(cfg.per_application_pence) ?? ""} placeholder="e.g. 500" className={`${field} mt-0.5 w-28`} /></label>}
-      {f.perNumberMonth && <label className={lbl}>pence/number/mo<input name={p("per_number_month_pence")} defaultValue={num(cfg.per_number_month_pence) ?? ""} placeholder="e.g. 100" className={`${field} mt-0.5 w-28`} /></label>}
+      {f.monthly && <Price canEdit={canEditPrices} name={p("amount")} label="£/month" value={gbp(num(cfg.amount_pence))} placeholder="0.00" width="w-24" />}
+      {f.perUnit && <Price canEdit={canEditPrices} name={p("amount_pence")} label="pence/unit" value={num(cfg.amount_pence) ?? ""} placeholder="e.g. 50" width="w-24" />}
+      {f.fixed && <Price canEdit={canEditPrices} name={p("fixed_pence")} label="pence/txn" value={num(cfg.fixed_pence) ?? ""} placeholder="e.g. 20" width="w-24" />}
+      {f.pct && <Price canEdit={canEditPrices} name={p("pct")} label="% of value" value={cfg.pct ?? ""} placeholder="e.g. 1.5" width="w-20" />}
+      {f.cap && <Price canEdit={canEditPrices} name={p("cap_pence")} label="cap pence" value={num(cfg.cap_pence ?? undefined) ?? ""} placeholder="optional" width="w-24" />}
+      {f.perApplication && <Price canEdit={canEditPrices} name={p("per_application_pence")} label="pence/application" value={num(cfg.per_application_pence) ?? ""} placeholder="e.g. 500" width="w-28" />}
+      {f.perNumberMonth && <Price canEdit={canEditPrices} name={p("per_number_month_pence")} label="pence/number/mo" value={num(cfg.per_number_month_pence) ?? ""} placeholder="e.g. 100" width="w-28" />}
       {metric === "flat_monthly" && k === "setup_fee" && (
         <label className={lbl}>billed<select name={p("billing_trigger")} defaultValue={cfg.billing_trigger ?? "on_contract_signed"} className={`${field} mt-0.5`}>
           <option value="on_contract_signed">on contract signed</option>
@@ -52,6 +68,8 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
   const db = serviceClient();
   const account = await getBillingAccountById(db, accountId);
   if (!account) notFound();
+  // Only super-admins may set unit prices; deal owners select items + terms (S2).
+  const canEditPrices = await isSuperAdmin();
 
   // Case → product groups (which items are offered) + finance stakeholder prefill.
   let productGroups: string[] = [];
@@ -111,6 +129,7 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
 
         <section className="mb-4">
           <h2 className="mb-2 text-sm font-semibold">Items</h2>
+          {!canEditPrices && <p className="mb-2 text-xs text-neutral-500">Prices are set from the catalogue (read-only). Select items and terms; a super-admin can adjust prices or set per-client overrides.</p>}
           <div className="space-y-2">
             {offered.map((e) => {
               const table = pricing.get(e.key);
@@ -129,7 +148,7 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
                     <span className="text-xs text-neutral-400">VAT {table?.vat_treatment ?? e.vat}</span>
                   </div>
                   {/* Prefill from the account's saved config, else the catalogue standard price. */}
-                  <ItemConfigFields k={e.key} metric={metric} cfg={(it?.config as ItemConfig) ?? (table?.config as ItemConfig) ?? {}} />
+                  <ItemConfigFields k={e.key} metric={metric} cfg={(it?.config as ItemConfig) ?? (table?.config as ItemConfig) ?? {}} canEditPrices={canEditPrices} />
                 </div>
               );
             })}
