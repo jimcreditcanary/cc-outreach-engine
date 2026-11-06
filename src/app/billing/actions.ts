@@ -10,7 +10,7 @@ import { currentUser } from "@/lib/auth/server";
 import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
 import { isSuperAdmin } from "@/lib/auth/role";
-import { ensureBillingForCase } from "@/lib/billing/provision";
+import { ensureBillingForCase, refreshLineItemsMirror } from "@/lib/billing/provision";
 import { getBillingItemById, setBillingItemOverride, currentPricingByItemType, logBillingAudit } from "@/lib/billing/repo";
 import { fieldsForMetric } from "@/lib/billing/itemConfig";
 import { penceInput, poundsToPence } from "@/lib/billing/money";
@@ -144,4 +144,22 @@ export async function markContactedAction(formData: FormData) {
   }
   revalidatePath("/billing/outstanding");
   redirect("/billing/outstanding");
+}
+
+/** Re-pull the deal's HubSpot line items into the read-only mirror (reporting
+ *  only). Any operator may refresh; nothing billable changes. */
+export async function refreshLineItemsAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const accountId = str(formData.get("account_id"));
+  const back = accountId ? `/billing/${accountId}` : "/billing";
+  if (!accountId) return redirect(back);
+  try {
+    const n = await refreshLineItemsMirror(serviceClient(), accountId);
+    await flash("success", `Mirrored ${n} line item${n === 1 ? "" : "s"} from HubSpot.`);
+  } catch (e) {
+    await flash("error", `Refresh failed: ${(e as Error).message}`);
+  }
+  revalidatePath(back);
+  redirect(back);
 }

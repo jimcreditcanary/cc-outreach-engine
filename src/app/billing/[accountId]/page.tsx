@@ -12,7 +12,7 @@ import { reconcile, comparablePricePence, type ConfiguredItem, type DealLine, ty
 import { dryRunAccountInvoice } from "@/lib/billing/invoiceRun";
 import { formatPence } from "@/lib/billing/money";
 import { isSuperAdmin } from "@/lib/auth/role";
-import { setItemOverrideTypedAction } from "../actions";
+import { setItemOverrideTypedAction, refreshLineItemsAction } from "../actions";
 import { markContractSignedAction, resyncItemPricingAction } from "./setup/actions";
 import { fmtDate } from "@/lib/format/datetime";
 
@@ -226,7 +226,13 @@ export default async function BillingAccountPage({ params, searchParams }: { par
       </section>
 
       <section className="mt-6">
-        <h2 className="mb-2 text-sm font-semibold">HubSpot line items (mirror, read-only)</h2>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold">HubSpot line items (mirror, read-only)</h2>
+          <form action={refreshLineItemsAction}>
+            <input type="hidden" name="account_id" value={accountId} />
+            <button type="submit" className="rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-50" title="Re-pull the deal's line items from HubSpot (reporting only).">Refresh from HubSpot</button>
+          </form>
+        </div>
         {!lineItems?.length ? (
           <p className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">None mirrored — the deal has no line items, or the token lacks line-item read scope.</p>
         ) : (

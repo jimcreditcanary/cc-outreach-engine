@@ -9,7 +9,7 @@ import { adminClient } from "@/lib/auth/admin";
 import { sendTransactional } from "@/lib/send/postmark";
 import { appendSignatureHtml, appendSignatureText } from "@/lib/send/signature";
 import { getDealLineItems } from "@/lib/hubspot/repo";
-import { createBillingAccount, getBillingAccountByCase, logContractStatusEvent, type BillingAccount } from "./repo";
+import { createBillingAccount, getBillingAccountByCase, getBillingAccountById, logContractStatusEvent, type BillingAccount } from "./repo";
 
 type DB = SupabaseClient;
 
@@ -34,12 +34,14 @@ async function financeContactId(db: DB, caseId: string): Promise<string | null> 
   return (data?.hubspot_contact_id as string | undefined) ?? null;
 }
 
-/** Copy the deal's HubSpot line items into the read-only mirror. Best-effort. */
-async function mirrorLineItems(db: DB, account: BillingAccount): Promise<number> {
+/** Copy the deal's HubSpot line items into the read-only mirror (reporting only).
+ *  Best-effort: a deal with no line items (or a token lacking line-item read
+ *  scope) clears the mirror and returns 0. */
+export async function mirrorLineItems(db: DB, account: BillingAccount): Promise<number> {
   if (!account.hubspot_deal_id) return 0;
   const items = await getDealLineItems(account.hubspot_deal_id);
-  if (!items.length) return 0;
   await db.from("billing_hubspot_line_items_mirror").delete().eq("account_id", account.id);
+  if (!items.length) return 0;
   const rows = items.map((it) => ({
     account_id: account.id,
     hubspot_line_item_id: it.id,
@@ -53,6 +55,14 @@ async function mirrorLineItems(db: DB, account: BillingAccount): Promise<number>
   }));
   const ins = await db.from("billing_hubspot_line_items_mirror").insert(rows);
   return ins.error ? 0 : rows.length;
+}
+
+/** Re-pull the deal's line items into the mirror for an existing account
+ *  (reporting refresh). Returns the number mirrored. */
+export async function refreshLineItemsMirror(db: DB, accountId: string): Promise<number> {
+  const account = await getBillingAccountById(db, accountId);
+  if (!account) throw new Error("billing account not found");
+  return mirrorLineItems(db, account);
 }
 
 /** Email the deal owner a link to set billing up (Jim's signature). Best-effort. */

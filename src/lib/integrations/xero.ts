@@ -43,6 +43,51 @@ export interface XeroClient {
 
 const p2 = (pence: number) => (pence / 100).toFixed(2);
 
+// ─── pure helpers (unit-tested; no network) ───────────────────────────────────
+
+export interface XeroTaxRate { Name: string; TaxType: string; EffectiveRate: number; Status: string; CanApplyToRevenue: boolean }
+
+/** Pick the org's standard-rated (20% income) and exempt output tax-type codes
+ *  from Xero's /TaxRates, with the UK defaults as fallback. Pure (X2). */
+export function pickTaxTypes(taxRates: XeroTaxRate[]): { standard: string; exempt: string } {
+  const revenue = (taxRates ?? []).filter((r) => r.Status === "ACTIVE" && r.CanApplyToRevenue);
+  const standard = revenue.find((r) => r.EffectiveRate === 20)?.TaxType;
+  const exempt = revenue.find((r) => r.EffectiveRate === 0 && (/exempt/i.test(r.Name) || /EXEMPT/i.test(r.TaxType)))?.TaxType
+    ?? revenue.find((r) => r.EffectiveRate === 0)?.TaxType;
+  return { standard: standard ?? "OUTPUT2", exempt: exempt ?? "EXEMPTOUTPUT" };
+}
+
+/** Build the Xero ACCREC invoice request body. Pure — maps our pence lines to
+ *  Xero's pounds, picks the tax type per line's VAT rate, and sets the status. */
+export function buildXeroInvoiceBody(input: XeroInvoiceInput, approve: boolean, tax: { standard: string; exempt: string }) {
+  return {
+    Invoices: [{
+      Type: "ACCREC",
+      Contact: { ContactID: input.contactId },
+      Date: input.periodMonth.slice(0, 10),
+      DueDate: input.dueDate,
+      Reference: input.reference,
+      Status: approve ? "AUTHORISED" : "DRAFT",
+      LineAmountTypes: "Exclusive",
+      LineItems: input.lines.map((l) => ({
+        Description: l.description,
+        Quantity: l.quantity,
+        UnitAmount: Number(p2(l.unitAmountPence)),
+        TaxType: l.vatRate > 0 ? tax.standard : tax.exempt,
+      })),
+    }],
+  };
+}
+
+/** Interpret a Xero invoice's status + amount-due into our shape. Pure. */
+export function interpretInvoiceStatus(status: string | undefined, amountDue: number | undefined): { status: string; paid: boolean; amountDuePence?: number } {
+  return {
+    status: status ?? "UNKNOWN",
+    paid: status === "PAID" || (amountDue ?? 1) === 0,
+    amountDuePence: amountDue != null ? Math.round(amountDue * 100) : undefined,
+  };
+}
+
 // ─── mock ─────────────────────────────────────────────────────────────────────
 function mockClient(): XeroClient {
   const id = (prefix: string, seed: string) => `${prefix}_${createHash("sha1").update(seed).digest("hex").slice(0, 16)}`;
@@ -90,12 +135,8 @@ let taxTypeCache: { standard: string; exempt: string } | null = null;
 async function resolveTaxTypes(): Promise<{ standard: string; exempt: string }> {
   if (taxTypeCache) return taxTypeCache;
   try {
-    const j = await xeroFetch<{ TaxRates: { Name: string; TaxType: string; EffectiveRate: number; Status: string; CanApplyToRevenue: boolean }[] }>("/TaxRates");
-    const revenue = (j.TaxRates ?? []).filter((r) => r.Status === "ACTIVE" && r.CanApplyToRevenue);
-    const standard = revenue.find((r) => r.EffectiveRate === 20)?.TaxType;
-    const exempt = revenue.find((r) => r.EffectiveRate === 0 && (/exempt/i.test(r.Name) || /EXEMPT/i.test(r.TaxType)))?.TaxType
-      ?? revenue.find((r) => r.EffectiveRate === 0)?.TaxType;
-    taxTypeCache = { standard: standard ?? "OUTPUT2", exempt: exempt ?? "EXEMPTOUTPUT" };
+    const j = await xeroFetch<{ TaxRates: XeroTaxRate[] }>("/TaxRates");
+    taxTypeCache = pickTaxTypes(j.TaxRates ?? []);
   } catch {
     taxTypeCache = { standard: "OUTPUT2", exempt: "EXEMPTOUTPUT" };
   }
@@ -119,23 +160,7 @@ function liveClient(): XeroClient {
     },
     async createInvoice(input, approve) {
       const tax = await resolveTaxTypes();
-      const body = {
-        Invoices: [{
-          Type: "ACCREC",
-          Contact: { ContactID: input.contactId },
-          Date: input.periodMonth.slice(0, 10),
-          DueDate: input.dueDate,
-          Reference: input.reference,
-          Status: approve ? "AUTHORISED" : "DRAFT",
-          LineAmountTypes: "Exclusive",
-          LineItems: input.lines.map((l) => ({
-            Description: l.description,
-            Quantity: l.quantity,
-            UnitAmount: Number(p2(l.unitAmountPence)),
-            TaxType: l.vatRate > 0 ? tax.standard : tax.exempt,
-          })),
-        }],
-      };
+      const body = buildXeroInvoiceBody(input, approve, tax);
       const j = await xeroFetch<{ Invoices: { InvoiceID: string; Status: string }[] }>("/Invoices", { method: "POST", body: JSON.stringify(body) });
       return { invoiceId: j.Invoices[0]!.InvoiceID, status: j.Invoices[0]!.Status };
     },
@@ -143,8 +168,7 @@ function liveClient(): XeroClient {
     async getInvoiceStatus(invoiceId) {
       const j = await xeroFetch<{ Invoices: { Status: string; AmountDue: number }[] }>(`/Invoices/${invoiceId}`);
       const inv = j.Invoices[0];
-      const amountDue = inv?.AmountDue;
-      return { status: inv?.Status ?? "UNKNOWN", paid: inv?.Status === "PAID" || (amountDue ?? 1) === 0, amountDuePence: amountDue != null ? Math.round(amountDue * 100) : undefined };
+      return interpretInvoiceStatus(inv?.Status, inv?.AmountDue);
     },
   };
 }

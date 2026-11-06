@@ -4,6 +4,8 @@
 **Target:** `billing-agent-claude-code-brief.md` (v2 brief, 06-Nov decisions)
 **Against:** the shipped billing subsystem (migrations 058–063, `src/lib/billing/*`, `src/app/billing/*`, `src/app/admin/*`).
 
+**Status (2026-11-06): all six fix phases complete.** Outstanding operator steps: migration **073** applied ✅; **apply migration 074** (lifecycle + price snapshot — code degrades gracefully until then); run **`npx tsx scripts/billing-add-products.ts`** once (C1/C2 catalogue rows); set `XERO_CLIENT_ID`/`SECRET`/`TENANT_ID` + `XERO_AUTO_APPROVE_FROM` at go-live. See each phase below.
+
 ## Verdict
 
 The billing agent is **substantially built and runs end-to-end on mocks** — catalogue, billing accounts, the pricing engine (bands, escalation, category minimums, rounding, first-month pro-rata), the monthly Xero ACCREC run (idempotent), the 15th overdue chase, super-admin pricing, and a live Xero client sitting behind the mock. **None of the gaps below stop it running.**
@@ -159,9 +161,11 @@ Two things are **decisions, not bugs** — resolve them first because they gate 
 - [ ] **U3** deal-page billing controls — **not done, deliberately.** Jim removed the onboarding/billing buttons from the deal/`/hot` page this session; the controls (incl. "Mark contract signed") live on the billing account page instead. Reopen if the deal page should carry them.
 - Run **`npx tsx scripts/billing-add-products.ts`** once (adds the 3 catalogue rows; idempotent).
 
-### Phase 6 — tests + HubSpot line-item pull (last, lowest risk)
-- [ ] Extend tests per §11 (band boundaries, pre-computed amounts, arrears, cancellation pro-rata, term windows, escalation step boundaries); integration test vs a Xero demo org.
-- [ ] HubSpot line-item pull (reporting only).
+### Phase 6 — tests + HubSpot line-item pull ✅ DONE (2026-11-06)
+- [x] **Engine tests extended** (§11): volume-tier inclusive boundaries (1000 vs 1001, incl. the band-7 £5,000 floor), graduated boundary-unit counting, the DD/CVRP pre-computed example (fixed from count + %-value billed as posted, cap not re-applied), per_number_month (C1), escalation on the exact step month, and lifecycle edges (cancel on the 1st = 1 day, month after cancel = nothing, month before start = nothing). 279 tests pass.
+- [x] **Xero logic unit-tested** — extracted pure helpers (`pickTaxTypes`, `buildXeroInvoiceBody`, `interpretInvoiceStatus`) and tested tax-code resolution (20% output / exempt + fallback), pence→pounds line mapping, ACCREC/approve status, and the mock client's deterministic ids. *A live integration test against a Xero demo org still needs `XERO_CLIENT_ID`/`SECRET`/`TENANT_ID` + a demo org — deferred to go-live config; the deterministic payload/tax logic is now locked.*
+- [x] **HubSpot line-item pull (reporting only)** — `refreshLineItemsMirror` + a **"Refresh from HubSpot"** button on the account page re-pull the deal's line items into the read-only mirror on demand (clears stale rows when a deal's items change). Pull-on-provision already existed; this adds the refresh.
+- No migration. Nothing to apply.
 
 ---
 

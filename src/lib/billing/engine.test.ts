@@ -242,4 +242,78 @@ describe("computeInvoice — Billing v2: volume, included, group minimums, escal
     expect(pf("2027-06-01").lines[0]?.line_amount_pence).toBe(350000); // Yr2
     expect(pf("2028-06-01").lines[0]?.line_amount_pence).toBe(450000); // Yr3
   });
+
+  it("escalation steps on the EXACT boundary month (start+12), not the month before", () => {
+    const esc = resolveEscalation([{ start_month: 0, amount_pence: 250000 }, { start_month: 12, amount_pence: 350000 }], "2026-03-01")!;
+    const pf = (period: string) => computeInvoice(base([platform(250000, { config: { amount_pence: 250000, escalation: esc } })], { contractStartDate: "2026-03-01", periodMonth: period }));
+    expect(pf("2027-02-01").lines[0]?.line_amount_pence).toBe(250000); // month 11 → still Yr1
+    expect(pf("2027-03-01").lines[0]?.line_amount_pence).toBe(350000); // month 12 → Yr2 begins
+  });
+});
+
+describe("computeInvoice — §11 band boundaries, pre-computed amounts, lifecycle edges", () => {
+  // The real OB AIS volume bands incl. the band-7 £5,000 floor (M5 fix).
+  const OB_BANDS: EngineBand[] = [
+    band(0, 1000, 33, "monthly", 25000), band(1001, 5000, 25, "monthly", 100000),
+    band(5001, 12500, 20, "monthly", 150000), band(12501, 25000, 16, "monthly", 200000),
+    band(25001, 50000, 10, "monthly", 250000), band(50001, 100000, 8, "monthly", 400000),
+    band(100001, null, 4, "monthly", 500000),
+  ];
+  const ob = (q: number): EngineItem => ({ billing_item_id: "ob", item_type: "open_banking_ais", label: "OB", metric: "per_account_month", vat_treatment: "standard", product_group: "open_banking_data", band_mode: "volume", config: {}, bands: OB_BANDS, usage: { quantity: q } });
+
+  it("volume tiers select on the inclusive boundary (…,1000]=t1, [1001,…]=t2)", () => {
+    expect(computeInvoice(base([ob(1000)])).lines[0]?.line_amount_pence).toBe(Math.max(1000 * 33, 25000)); // 33000 at tier-1 rate
+    expect(computeInvoice(base([ob(1001)])).lines[0]?.line_amount_pence).toBe(Math.max(1001 * 25, 100000)); // tier-2 floor 100000
+  });
+
+  it("the top band applies its £5,000 floor past 100,000 accounts (M5)", () => {
+    expect(computeInvoice(base([ob(100000)])).lines[0]?.line_amount_pence).toBe(Math.max(100000 * 8, 400000)); // 800000, band-6 rate
+    expect(computeInvoice(base([ob(100001)])).lines[0]?.line_amount_pence).toBe(Math.max(100001 * 4, 500000)); // 500004, band-7 floor cleared
+    expect(computeInvoice(base([ob(10000)])).lines[0]?.line_amount_pence).toBe(Math.max(10000 * 20, 150000)); // 200000 tier-3
+  });
+
+  it("graduated bands count boundary units once across tiers", () => {
+    const g: EngineItem = { billing_item_id: "g", item_type: "cop", label: "CoP", metric: "per_request", vat_treatment: "standard", band_mode: "graduated",
+      config: {}, bands: [band(0, 1000, 50), band(1000, 5000, 25), band(5000, null, 10)], usage: { quantity: 2000 } };
+    // 1000@50 + 1000@25 = 50000 + 25000 = 75000
+    expect(computeInvoice(base([g])).lines[0]?.line_amount_pence).toBe(75000);
+  });
+
+  it("DD/CVRP: fixed from COUNT, %-value billed AS POSTED, cap NOT re-applied (M1, Jim 2026-11-06)", () => {
+    // Direct debits £0.10/txn + 0.75% (cap £3) — source pre-computes the %
+    // component and posts it as `value` (pence); VeepVeep never recomputes/caps.
+    const dd: EngineItem = { billing_item_id: "dd", item_type: "direct_debits", label: "Direct Debits", metric: "per_txn_fixed_and_pct", vat_treatment: "exempt",
+      config: { fixed_pence: 10, pct: 0.75, cap_pence: 300 }, bands: [], usage: { quantity: 1222, value: 1232343 } };
+    const inv = computeInvoice(base([dd]));
+    expect(inv.lines).toHaveLength(2);
+    const fixed = inv.lines.find((l) => l.calc.component === "fixed")!;
+    const val = inv.lines.find((l) => l.calc.component === "value")!;
+    expect(fixed.line_amount_pence).toBe(1222 * 10); // 12220 = £122.20
+    expect(val.line_amount_pence).toBe(1232343);     // posted as-is, cap ignored
+    expect(val.quantity).toBe(1);
+    expect(val.calc.as_posted).toBe(true);
+    expect(inv.vat_pence).toBe(0);                   // exempt rail
+  });
+
+  it("per_number_month (comms numbers, C1) bills active numbers × unit", () => {
+    const nums: EngineItem = { billing_item_id: "n", item_type: "comms_sms_numbers", label: "SMS numbers", metric: "per_number_month", vat_treatment: "standard",
+      config: {}, bands: [band(0, null, 250)], usage: { quantity: 3 } };
+    expect(computeInvoice(base([nums])).lines[0]?.line_amount_pence).toBe(750); // 3 × £2.50
+  });
+
+  it("cancellation on the 1st bills a single active day (1/N pro-rata)", () => {
+    const inv = computeInvoice(base([platform(31000)], { contractStartDate: "2026-01-01", contractEndDate: "2026-01-01", periodMonth: "2026-01-01" }));
+    expect(inv.lines[0]?.line_amount_pence).toBe(1000); // 31000 × 1/31
+    expect(inv.prorated).toBe(true);
+  });
+
+  it("a month entirely after cancellation bills nothing recurring", () => {
+    const inv = computeInvoice(base([platform(10000)], { contractStartDate: "2026-01-01", contractEndDate: "2026-02-28", periodMonth: "2026-03-01" }));
+    expect(inv.lines).toHaveLength(0);
+  });
+
+  it("a month before the contract starts bills nothing", () => {
+    const inv = computeInvoice(base([platform(10000)], { contractStartDate: "2026-05-01", periodMonth: "2026-03-01" }));
+    expect(inv.lines).toHaveLength(0);
+  });
 });
