@@ -17,6 +17,7 @@ import {
   currentPricingByItemType, setItemPricingSnapshot, logBillingAudit, logContractStatusEvent, type BillingItemInput,
 } from "@/lib/billing/repo";
 import { CATALOGUE, type Metric } from "@/lib/billing/catalogue";
+import { itemInScope } from "@/lib/billing/offering";
 import { parseItemConfig } from "@/lib/billing/itemConfig";
 import { buildPricingSnapshot } from "@/lib/billing/pricingSnapshot";
 import { generateUsageKey } from "@/lib/billing/usageKey";
@@ -45,10 +46,18 @@ export async function saveBillingSetupAction(formData: FormData) {
   // comes from the catalogue; the deal owner may still toggle "included" and the
   // setup-fee trigger. Enforced here so a crafted POST can't bypass the UI.
   const canEditPrices = await isSuperAdmin();
+  // Case product groups — gate which items may be configured (U4 server guard,
+  // mirrors the greyed-out items in the wizard).
+  let productGroups: string[] = [];
+  if (account.onboarding_case_id) {
+    const { data: c } = await db.from("onboarding_cases").select("product_groups").eq("id", account.onboarding_case_id).maybeSingle();
+    productGroups = (c?.product_groups as string[] | undefined) ?? [];
+  }
   const pricing = await currentPricingByItemType(db);
   const items: BillingItemInput[] = [];
   for (const entry of CATALOGUE) {
     if (str(formData.get(`item_${entry.key}`)) !== "on") continue;
+    if (!itemInScope(entry, productGroups)) continue; // refuse out-of-scope even via a crafted POST
     const table = pricing.get(entry.key);
     const metric = (table?.metric ?? entry.metric) as Metric;
     const vat = table?.vat_treatment ?? entry.vat;

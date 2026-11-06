@@ -22,6 +22,13 @@ function prevMonth(periodISO: string): string {
   return `${py}-${String(pm).padStart(2, "0")}-01`;
 }
 
+function nextMonth(periodISO: string): string {
+  const [y, m] = periodISO.split("-").map(Number) as [number, number];
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, "0")}-01`;
+}
+
 async function aggregateUsage(db: DB, itemId: string, usageMonth: string): Promise<{ quantity: number; value: number | null; principal: number | null }> {
   const { data } = await db.from("billing_usage_records").select("quantity, value, principal").eq("billing_item_id", itemId).eq("period_month", usageMonth);
   let quantity = 0, value = 0, principal = 0, hasV = false, hasP = false;
@@ -108,6 +115,25 @@ export interface RunSummary {
   flagged: { account_id: string; reason: string }[];
   errors: { account_id: string; error: string }[];
   total_pence: number;
+}
+
+/** U2 — compute (but never persist) the invoice one account would get for an
+ *  arbitrary billed month. Reads the price snapshot like the real run, so the
+ *  numbers match what would actually bill. Returns null if the account has no
+ *  contract start / starts after the month. */
+export async function dryRunAccountInvoice(db: DB, accountId: string, periodMonth: string): Promise<InvoiceResult | null> {
+  const { data: acc } = await db.from("billing_accounts").select("id, contract_start_date, contract_end_date, contract_signed_at").eq("id", accountId).maybeSingle();
+  const a = acc as { contract_start_date: string | null; contract_end_date: string | null; contract_signed_at: string | null } | null;
+  if (!a?.contract_start_date || a.contract_start_date.slice(0, 7) > periodMonth.slice(0, 7)) return null;
+  const groupMinimums: GroupMinimumInput[] = (await currentGroupMinimums(db)).map((g) => ({ product_group: g.product_group, minimum_pence: g.minimum_pence }));
+  const items = await buildEngineItems(db, accountId, periodMonth, a.contract_start_date);
+  const { count: priorCount } = await db.from("billing_invoices").select("id", { count: "exact", head: true }).eq("account_id", accountId);
+  const hasSetup = items.some((i) => i.item_type === "setup_fee");
+  return computeInvoice({
+    periodMonth, isFirstInvoice: (priorCount ?? 0) === 0, contractStartDate: a.contract_start_date, contractEndDate: a.contract_end_date,
+    items, groupMinimums, issueDate: nextMonth(periodMonth), contractSigned: !!a.contract_signed_at,
+    setupFeeAlreadyBilled: hasSetup ? await setupFeeBilled(db, accountId) : false,
+  });
 }
 
 export async function runBilling(db: DB, period?: string, opts: { dryRun?: boolean } = {}): Promise<RunSummary> {

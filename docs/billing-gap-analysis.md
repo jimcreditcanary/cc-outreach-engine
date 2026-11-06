@@ -149,9 +149,15 @@ Two things are **decisions, not bugs** — resolve them first because they gate 
 - Needs migration **074** applied (`term_months`/`auto_renew`/`break_months`/`notice_months` + generated `term_end_date`/`renewal_decision_date`; `priced_snapshot`/`priced_at`/`pricing_snapshot_version`) — code degrades gracefully until then (account/item reads fall back to the base column set; the run reads live catalogue when an item has no snapshot; nudge falls back to the days formula).
 - Fixed in passing: `billing_type` (073) wasn't in the account read, so the setup wizard's Invoice-mode selector always showed "auto" — now selected via the resilient read.
 
-### Phase 5 — Catalogue/seed + UI polish
-- [ ] **C1** comms per-number £2.50 rows; **C2** OB fixed £0 row; **C3** `currency`/`unit_discount`/typed overrides (and `variant_id` iff Phase-0 refactor chosen).
-- [ ] **U1** grouped read-only selection + computed dates + VAT-per-line + escalation editor + version history; **U2** client+month dry-run screen; **U3** deal-page controls; **U4** grey out-of-scope items with a reason + config-drive the onboarding map; **U5** client-override admin view.
+### Phase 5 — Catalogue/seed + UI polish ✅ DONE (2026-11-06)
+- [x] **C1** `comms_sms_numbers` + `comms_whatsapp_numbers` (£2.50/number/month, `per_number_month`) added to `productSeed`; **C2** `open_banking_ais_fixed` (£0 included flat) added. Live DB gets them via `scripts/billing-add-products.ts` (additive, safe while `billing_items` exist — the full seed refuses to run then).
+- [~] **C3** typed overrides delivered via the U5 UI (metric-aware fields → override jsonb using the engine's own keys). *Deferred:* `currency` (GBP-only, YAGNI), `unit_discount` (unused by the catalogue), band-level overrides (the override merges as `ItemConfig` over config, so unit-price/min/cap per band aren't expressible without carrying bands in the override — flag if wanted). `variant_id` stays rejected (Jim: product + bands).
+- [x] **U1** wizard items **grouped by product_group**, prices **read-only** for non-super-admins (S2), **computed term/renewal dates** shown (L1), **VAT shown per item**, **escalation schedule shown read-only**. *Deferred:* an in-wizard escalation **editor** and version-history (both live in the `/admin` product library).
+- [x] **U2** per-account **any-month dry-run** on the account page (`dryRunAccountInvoice`, `?dry=YYYY-MM`) — reads the price snapshot so figures match a real run; nothing persisted.
+- [x] **U4** out-of-scope items **greyed with a reason** (not hidden); the onboarding→catalogue map centralised in `offering.ts` (`itemInScope`) and enforced server-side in the save action. *Note:* map is still code, not a DB table — a full config-drive is deferred.
+- [x] **U5** per-client override is now **typed, metric-aware fields** (`setItemOverrideTypedAction`) instead of raw JSON; per-client **"Re-sync pricing from catalogue"** shipped in Phase 4 (L3). *Deferred:* a standalone `/admin` override screen (override stays on the account page).
+- [ ] **U3** deal-page billing controls — **not done, deliberately.** Jim removed the onboarding/billing buttons from the deal/`/hot` page this session; the controls (incl. "Mark contract signed") live on the billing account page instead. Reopen if the deal page should carry them.
+- Run **`npx tsx scripts/billing-add-products.ts`** once (adds the 3 catalogue rows; idempotent).
 
 ### Phase 6 — tests + HubSpot line-item pull (last, lowest risk)
 - [ ] Extend tests per §11 (band boundaries, pre-computed amounts, arrears, cancellation pro-rata, term windows, escalation step boundaries); integration test vs a Xero demo org.

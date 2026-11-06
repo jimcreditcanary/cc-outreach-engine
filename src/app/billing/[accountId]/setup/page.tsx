@@ -7,7 +7,8 @@ import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { isSuperAdmin } from "@/lib/auth/role";
 import { getBillingAccountById, listBillingItems, currentPricingByItemType } from "@/lib/billing/repo";
-import { CATALOGUE, type Metric } from "@/lib/billing/catalogue";
+import { CATALOGUE, type CatalogueEntry, type Metric } from "@/lib/billing/catalogue";
+import { itemInScope, scopeReason } from "@/lib/billing/offering";
 import { fieldsForMetric, type ItemConfig } from "@/lib/billing/itemConfig";
 import { previewFirstInvoice, type PreviewItem } from "@/lib/billing/preview";
 import { formatPence } from "@/lib/billing/money";
@@ -83,10 +84,15 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
       financePrefill = (fin?.hubspot_contact_id as string | undefined) ?? "";
     }
   }
-  const hasSettlement = productGroups.includes("settlement_accounts");
-  const offered = CATALOGUE.filter(
-    (e) => e.productGroup === "core" || e.productGroup === "comms" || productGroups.includes(e.productGroup) || (e.key === "faster_payments" && hasSettlement),
-  );
+  // Show EVERY catalogue item grouped by product_group; out-of-scope ones are
+  // greyed with a reason rather than hidden (U4). Groups keep catalogue order.
+  const groupOrder: string[] = [];
+  const byGroup = new Map<string, CatalogueEntry[]>();
+  for (const e of CATALOGUE) {
+    if (!byGroup.has(e.productGroup)) { byGroup.set(e.productGroup, []); groupOrder.push(e.productGroup); }
+    byGroup.get(e.productGroup)!.push(e);
+  }
+  const groupLabel = (g: string) => g.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   const pricing = await currentPricingByItemType(db);
   const existing = await listBillingItems(db, accountId);
@@ -149,28 +155,47 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
         <section className="mb-4">
           <h2 className="mb-2 text-sm font-semibold">Items</h2>
           {!canEditPrices && <p className="mb-2 text-xs text-neutral-500">Prices are set from the catalogue (read-only). Select items and terms; a super-admin can adjust prices or set per-client overrides.</p>}
-          <div className="space-y-2">
-            {offered.map((e) => {
-              const table = pricing.get(e.key);
-              const metric = (table?.metric ?? e.metric) as Metric;
-              const it = byType.get(e.key);
-              const selected = !!it;
-              return (
-                <div key={e.key} className="rounded border border-neutral-200 p-2">
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input type="checkbox" name={`item_${e.key}`} defaultChecked={selected} />
-                      <span className="font-medium">{e.label}</span>
-                      <span className="font-mono text-xs text-neutral-400">{metric}</span>
-                      {!table && <span className="rounded bg-red-100 px-1 text-[10px] text-red-700">no pricing table</span>}
-                    </label>
-                    <span className="text-xs text-neutral-400">VAT {table?.vat_treatment ?? e.vat}</span>
-                  </div>
-                  {/* Prefill from the account's saved config, else the catalogue standard price. */}
-                  <ItemConfigFields k={e.key} metric={metric} cfg={(it?.config as ItemConfig) ?? (table?.config as ItemConfig) ?? {}} canEditPrices={canEditPrices} />
+          <div className="space-y-4">
+            {groupOrder.map((g) => (
+              <div key={g}>
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-400">{groupLabel(g)}</h3>
+                <div className="space-y-2">
+                  {byGroup.get(g)!.map((e) => {
+                    const table = pricing.get(e.key);
+                    const metric = (table?.metric ?? e.metric) as Metric;
+                    const it = byType.get(e.key);
+                    const selected = !!it;
+                    const inScope = itemInScope(e, productGroups);
+                    const esc = ((table?.config as ItemConfig | undefined)?.escalation_relative) ?? undefined;
+                    return (
+                      <div key={e.key} className={`rounded border p-2 ${inScope ? "border-neutral-200" : "border-neutral-100 bg-neutral-50 opacity-60"}`}>
+                        <div className="flex items-center justify-between">
+                          <label className="flex items-center gap-2 text-sm">
+                            {/* Out-of-scope: show as disabled but keep any existing selection honest. */}
+                            <input type="checkbox" name={`item_${e.key}`} defaultChecked={selected} disabled={!inScope && !selected} />
+                            <span className="font-medium">{e.label}</span>
+                            <span className="font-mono text-xs text-neutral-400">{metric}</span>
+                            {!table && <span className="rounded bg-red-100 px-1 text-[10px] text-red-700">no pricing table</span>}
+                          </label>
+                          <span className="text-xs text-neutral-400">VAT {table?.vat_treatment ?? e.vat}</span>
+                        </div>
+                        {!inScope ? (
+                          <p className="mt-1 text-xs text-neutral-500">{scopeReason(e)}</p>
+                        ) : (
+                          <>
+                            {/* Prefill from the account's saved config, else the catalogue standard price. */}
+                            <ItemConfigFields k={e.key} metric={metric} cfg={(it?.config as ItemConfig) ?? (table?.config as ItemConfig) ?? {}} canEditPrices={canEditPrices} />
+                            {esc && esc.length > 0 && (
+                              <p className="mt-1 text-xs text-neutral-500">Escalates: {esc.map((s) => `£${((s.amount_pence ?? 0) / 100).toFixed(0)} from m${s.start_month}`).join(" → ")} (resolved against contract start).</p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </section>
 

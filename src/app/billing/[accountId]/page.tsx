@@ -7,13 +7,36 @@ import { notFound } from "next/navigation";
 import { serviceClient } from "@/lib/db/client";
 import { getBillingAccountById, listBillingItems, listBands, currentPricingByItemType } from "@/lib/billing/repo";
 import { labelFor, type Metric } from "@/lib/billing/catalogue";
-import { describeConfig, type ItemConfig } from "@/lib/billing/itemConfig";
+import { describeConfig, fieldsForMetric, type ItemConfig } from "@/lib/billing/itemConfig";
 import { reconcile, comparablePricePence, type ConfiguredItem, type DealLine, type ReconStatus } from "@/lib/billing/reconcile";
+import { dryRunAccountInvoice } from "@/lib/billing/invoiceRun";
 import { formatPence } from "@/lib/billing/money";
 import { isSuperAdmin } from "@/lib/auth/role";
-import { setItemOverrideAction } from "../actions";
+import { setItemOverrideTypedAction } from "../actions";
 import { markContractSignedAction, resyncItemPricingAction } from "./setup/actions";
 import { fmtDate } from "@/lib/format/datetime";
+
+// Typed super-admin override inputs (U5), metric-aware, prefilled from the
+// current override. Blank fields leave that key unset; all blank clears it.
+function OverrideFields({ metric, ovr }: { metric: Metric; ovr: ItemConfig }) {
+  const f = fieldsForMetric(metric);
+  const gbp = (p?: number) => (p != null ? (p / 100).toFixed(2) : "");
+  const num = (v: unknown) => (typeof v === "number" ? v : "");
+  const fld = "mt-0.5 block rounded border border-neutral-300 px-2 py-1 text-xs";
+  const lbl = "text-xs text-neutral-500";
+  return (
+    <>
+      {f.includable && <label className="flex items-center gap-1 self-end pb-1 text-xs text-neutral-600"><input type="checkbox" name="ovr_included" defaultChecked={ovr.included} /> included (£0)</label>}
+      {f.monthly && <label className={lbl}>£/mo<input name="ovr_amount" defaultValue={gbp(ovr.amount_pence)} placeholder="0.00" className={`${fld} w-24`} /></label>}
+      {f.perUnit && <label className={lbl}>pence/unit<input name="ovr_amount_pence" defaultValue={num(ovr.amount_pence)} className={`${fld} w-24`} /></label>}
+      {f.fixed && <label className={lbl}>pence/txn<input name="ovr_fixed_pence" defaultValue={num(ovr.fixed_pence)} className={`${fld} w-24`} /></label>}
+      {f.pct && <label className={lbl}>% of value<input name="ovr_pct" defaultValue={ovr.pct ?? ""} className={`${fld} w-20`} /></label>}
+      {f.cap && <label className={lbl}>cap pence<input name="ovr_cap_pence" defaultValue={num(ovr.cap_pence ?? undefined)} className={`${fld} w-24`} /></label>}
+      {f.perApplication && <label className={lbl}>pence/application<input name="ovr_per_application_pence" defaultValue={num(ovr.per_application_pence)} className={`${fld} w-28`} /></label>}
+      {f.perNumberMonth && <label className={lbl}>pence/number/mo<input name="ovr_per_number_month_pence" defaultValue={num(ovr.per_number_month_pence)} className={`${fld} w-28`} /></label>}
+    </>
+  );
+}
 
 const RECON_FLAG: Record<ReconStatus, { label: string; cls: string }> = {
   ok: { label: "✓ matches", cls: "bg-emerald-100 text-emerald-700" },
@@ -25,11 +48,18 @@ const RECON_FLAG: Record<ReconStatus, { label: string; cls: string }> = {
 
 export const dynamic = "force-dynamic";
 
-export default async function BillingAccountPage({ params }: { params: Promise<{ accountId: string }> }) {
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+export default async function BillingAccountPage({ params, searchParams }: { params: Promise<{ accountId: string }>; searchParams: Promise<{ dry?: string }> }) {
   const { accountId } = await params;
+  const { dry } = await searchParams;
   const db = serviceClient();
   const account = await getBillingAccountById(db, accountId);
   if (!account) notFound();
+
+  // U2 — any-month dry-run (never persisted). Billed month = `dry` (YYYY-MM).
+  const dryMonth = dry && MONTH_RE.test(dry) ? dry : null;
+  const dryResult = dryMonth ? await dryRunAccountInvoice(db, accountId, `${dryMonth}-01`).catch(() => null) : null;
 
   const [items, pricing, superAdmin] = await Promise.all([
     listBillingItems(db, accountId),
@@ -92,6 +122,33 @@ export default async function BillingAccountPage({ params }: { params: Promise<{
         <div className={row}><span className={key}>Xero contact</span><span>{account.xero_contact_id ?? "— (created at activation)"}</span></div>
       </section>
 
+      <section className="mt-6 max-w-xl rounded-lg border border-neutral-200 p-3">
+        <h2 className="mb-2 text-sm font-semibold">Preview any month <span className="font-normal text-neutral-400">(dry-run — nothing is saved)</span></h2>
+        <form method="get" className="flex items-end gap-2">
+          <label className="text-xs text-neutral-500">Billed month
+            <input type="month" name="dry" defaultValue={dryMonth ?? ""} className="mt-0.5 block rounded border border-neutral-300 px-2 py-1 text-sm" />
+          </label>
+          <button type="submit" className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-700">Compute</button>
+          {dryMonth && <Link href={`/billing/${accountId}`} className="text-xs text-neutral-500 hover:underline">clear</Link>}
+        </form>
+        {dryMonth && (
+          dryResult && dryResult.lines.length ? (
+            <table className="mt-3 w-full text-sm">
+              <thead className="text-left text-xs uppercase tracking-wide text-neutral-500"><tr><th className="py-1">Description</th><th className="text-right">Qty</th><th className="text-right">Net</th><th className="text-right">VAT</th></tr></thead>
+              <tbody>
+                {dryResult.lines.map((l, i) => (
+                  <tr key={i} className="border-t border-neutral-100"><td className="py-1">{l.description}</td><td className="text-right">{l.quantity}</td><td className="text-right">{formatPence(l.line_amount_pence)}</td><td className="text-right">{formatPence(l.vat_pence)}</td></tr>
+                ))}
+              </tbody>
+              <tfoot><tr className="border-t border-neutral-300 font-semibold"><td className="py-1 text-right" colSpan={2}>Total (inc. VAT)</td><td className="text-right" colSpan={2}>{formatPence(dryResult.total_pence)}</td></tr></tfoot>
+            </table>
+          ) : (
+            <p className="mt-3 text-sm text-neutral-500">No billable lines for {dryMonth} — the account may start later, be cancelled, or have only usage not yet reported for that month.</p>
+          )
+        )}
+        <p className="mt-2 text-xs text-neutral-400">Usage lines reflect usage already recorded for that month; months with no reported usage show recurring/minimum lines only.</p>
+      </section>
+
       <section className="mt-6">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Items ({items.length})</h2>
@@ -122,16 +179,15 @@ export default async function BillingAccountPage({ params }: { params: Promise<{
                     </div>
                   )}
                   {superAdmin && (
-                    <form action={setItemOverrideAction} className="mt-2 flex flex-wrap items-end gap-2 border-t border-neutral-100 pt-2">
+                    <form action={setItemOverrideTypedAction} className="mt-2 flex flex-wrap items-end gap-2 border-t border-neutral-100 pt-2">
                       <input type="hidden" name="item_id" value={it.id} />
                       <input type="hidden" name="account_id" value={accountId} />
-                      <label className="text-xs text-neutral-500">Override JSON
-                        <input name="override" defaultValue={it.override ? JSON.stringify(it.override) : ""} placeholder='{"amount_pence":9000}' className="mt-0.5 w-56 rounded border border-neutral-300 px-2 py-1 font-mono text-xs" />
-                      </label>
+                      <OverrideFields metric={metric} ovr={(it.override as ItemConfig) ?? {}} />
                       <label className="text-xs text-neutral-500">Reason (required)
-                        <input name="reason" defaultValue={it.override_reason ?? ""} className="mt-0.5 w-56 rounded border border-neutral-300 px-2 py-1 text-xs" />
+                        <input name="reason" defaultValue={it.override_reason ?? ""} className="mt-0.5 block w-48 rounded border border-neutral-300 px-2 py-1 text-xs" />
                       </label>
                       <button type="submit" className="rounded border border-amber-400 px-2 py-1 text-xs text-amber-800 hover:bg-amber-50">Save override</button>
+                      <span className="w-full text-[11px] text-neutral-400">Overrides this client only; blank fields unset that price, all blank clears it.</span>
                     </form>
                   )}
                 </div>

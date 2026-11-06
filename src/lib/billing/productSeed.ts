@@ -71,6 +71,11 @@ const OPEN_BANKING: SeedProduct[] = [
       { from: 100001, to: null,   unit_pence: gbp(0.04), min_monthly_pence: gbp(5000) }, // band 7 minimum £5,000 (Jim 2026-11-06)
     ],
     notes: "Can be sold INCLUDED (fixed, zero-rated): set the account item's config.included=true and any OB usage reported via the API is ignored (not double-billed)." },
+  // C2 — explicit £0 fixed line for OB AIS sold as part of a package (as opposed
+  // to the variable banded product above with included=true). A visible £0
+  // monthly line on the invoice; no usage key.
+  { key: "open_banking_ais_fixed", label: "Open Banking (AIS) — included (fixed)", group: "open_banking_data", metric: "flat_monthly", type: "fixed", vat: "standard", frequency: "monthly",
+    config: { included: true, amount_pence: gbp(0) }, notes: "OB AIS sold included in a package — bills a £0 monthly line; OB usage reported via the API is ignored." },
 ];
 
 // ─── TU credit (flat per-request) ─────────────────────────────────────────────
@@ -136,6 +141,11 @@ const COMMS: SeedProduct[] = [
   { key: "comms_email", label: "Communications — Email", group: "comms", metric: "per_message", type: "variable", vat: "standard", unit_pence: gbp(0) },
   { key: "comms_sms", label: "Communications — SMS", group: "comms", metric: "per_message", type: "variable", vat: "standard", unit_pence: gbp(0.06), notes: "Could be banded like other volume products in future." },
   { key: "comms_whatsapp", label: "Communications — WhatsApp", group: "comms", metric: "per_message", type: "variable", vat: "standard", unit_pence: gbp(0.01) },
+  // C1 — the per-number-per-month rental (£2.50/number/mo) that sits alongside
+  // the per-message charge for SMS and WhatsApp. Usage reports quantity = active
+  // numbers. VAT standard (comms are chargeable).
+  { key: "comms_sms_numbers", label: "Communications — SMS numbers", group: "comms", metric: "per_number_month", type: "variable", vat: "standard", unit_pence: gbp(2.50), notes: "£2.50 per SMS number per month." },
+  { key: "comms_whatsapp_numbers", label: "Communications — WhatsApp numbers", group: "comms", metric: "per_number_month", type: "variable", vat: "standard", unit_pence: gbp(2.50), notes: "£2.50 per WhatsApp number per month." },
 ];
 
 export const PRODUCTS: SeedProduct[] = [

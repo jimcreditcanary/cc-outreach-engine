@@ -11,7 +11,10 @@ import { serviceClient } from "@/lib/db/client";
 import { flash } from "@/lib/flash";
 import { isSuperAdmin } from "@/lib/auth/role";
 import { ensureBillingForCase } from "@/lib/billing/provision";
-import { getBillingItemById, setBillingItemOverride, logBillingAudit } from "@/lib/billing/repo";
+import { getBillingItemById, setBillingItemOverride, currentPricingByItemType, logBillingAudit } from "@/lib/billing/repo";
+import { fieldsForMetric } from "@/lib/billing/itemConfig";
+import { penceInput, poundsToPence } from "@/lib/billing/money";
+import type { Metric } from "@/lib/billing/catalogue";
 import { recordContacted } from "@/lib/billing/dunning";
 
 const str = (v: FormDataEntryValue | null): string => String(v ?? "").trim();
@@ -68,6 +71,51 @@ export async function setItemOverrideAction(formData: FormData) {
   const db = serviceClient();
   const item = await getBillingItemById(db, itemId);
   if (!item) { await flash("error", "Item not found."); return redirect(back); }
+  try {
+    await setBillingItemOverride(db, itemId, override, me.id, reason);
+    await logBillingAudit(db, { account_id: item.account_id, billing_item_id: itemId, actor_user_id: me.id, actor_email: me.email ?? null, action: "item_override", reason, payload: { override } });
+    await flash("success", override ? "Override applied." : "Override cleared.");
+  } catch (e) {
+    await flash("error", `Override failed: ${(e as Error).message}`);
+  }
+  revalidatePath(back);
+  redirect(back);
+}
+
+/** Typed super-admin override (U5) — metric-aware fields instead of raw JSON.
+ *  Only the price keys the engine actually reads are settable (they merge over
+ *  the item's config at invoice time); a blank field leaves that key unset. All
+ *  fields blank clears the override. Mandatory reason; logged. */
+export async function setItemOverrideTypedAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const itemId = str(formData.get("item_id"));
+  const accountId = str(formData.get("account_id"));
+  const back = accountId ? `/billing/${accountId}` : "/billing";
+  if (!(await isSuperAdmin())) { await flash("error", "Overrides are super-admin only."); return redirect(back); }
+  const reason = str(formData.get("reason"));
+  if (!reason) { await flash("error", "An override reason is required."); return redirect(back); }
+
+  const db = serviceClient();
+  const item = await getBillingItemById(db, itemId);
+  if (!item) { await flash("error", "Item not found."); return redirect(back); }
+  const metric = ((await currentPricingByItemType(db)).get(item.item_type)?.metric ?? "flat_monthly") as Metric;
+  const f = fieldsForMetric(metric);
+  const get = (name: string) => str(formData.get(`ovr_${name}`));
+  const o: Record<string, unknown> = {};
+  const setPence = (key: string, raw: string) => { if (raw.trim() !== "") o[key] = penceInput(raw); };
+  if (get("included") === "on") {
+    o.included = true; // included wins — zero everything else
+  } else {
+    if (f.monthly && get("amount").trim() !== "") o.amount_pence = poundsToPence(get("amount"));
+    if (f.perUnit) setPence("amount_pence", get("amount_pence"));
+    if (f.fixed) setPence("fixed_pence", get("fixed_pence"));
+    if (f.pct && get("pct").trim() !== "") o.pct = Number(get("pct")) || 0;
+    if (f.cap && get("cap_pence").trim() !== "") o.cap_pence = penceInput(get("cap_pence"));
+    if (f.perApplication) setPence("per_application_pence", get("per_application_pence"));
+    if (f.perNumberMonth) setPence("per_number_month_pence", get("per_number_month_pence"));
+  }
+  const override = Object.keys(o).length ? o : null;
   try {
     await setBillingItemOverride(db, itemId, override, me.id, reason);
     await logBillingAudit(db, { account_id: item.account_id, billing_item_id: itemId, actor_user_id: me.id, actor_email: me.email ?? null, action: "item_override", reason, payload: { override } });
