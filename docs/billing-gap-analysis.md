@@ -4,7 +4,9 @@
 **Target:** `billing-agent-claude-code-brief.md` (v2 brief, 06-Nov decisions)
 **Against:** the shipped billing subsystem (migrations 058–063, `src/lib/billing/*`, `src/app/billing/*`, `src/app/admin/*`).
 
-**Status (2026-11-06): all six fix phases complete.** Outstanding operator steps: migration **073** applied ✅; **apply migration 074** (lifecycle + price snapshot — code degrades gracefully until then); run **`npx tsx scripts/billing-add-products.ts`** once (C1/C2 catalogue rows); set `XERO_CLIENT_ID`/`SECRET`/`TENANT_ID` + `XERO_AUTO_APPROVE_FROM` at go-live. See each phase below.
+**Status (2026-11-06): all six fix phases complete.** Outstanding operator steps: migrations **073 + 074 applied ✅**; catalogue rows added ✅; **apply migration 075** (fixes `renewal_decision_date` to be a generated column — see note below); set `XERO_CLIENT_ID`/`SECRET`/`TENANT_ID` + `XERO_AUTO_APPROVE_FROM` at go-live. See each phase below.
+
+> **074/063 overlap (found 2026-11-06 after applying 074):** migration **063** had already added `auto_renew`, `term_months`, `break_months`, `renewal_decision_date` and `billing_type` to `billing_accounts`, so 074's `add column if not exists` skipped them. Consequences: (a) `renewal_decision_date` stayed a *plain* column, not generated → **migration 075 fixes this** (drop + re-add generated); until applied, the notice nudge uses its legacy `contract_end_date − notice_period_days` fallback. (b) `billing_type` keeps 063's `default 'draft'` (the safe/manual-review default; the wizard writes an explicit value anyway). (c) `auto_renew` is nullable with no default; app code treats null as `true`. `term_end_date` and `notice_months` were genuinely new and are correct.
 
 ## Verdict
 
