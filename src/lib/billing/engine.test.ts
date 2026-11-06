@@ -133,12 +133,18 @@ describe("computeInvoice — setup, cancellation, VAT, usage", () => {
     expect(inv.lines[0]).toMatchObject({ line_amount_pence: 20000, vat_pence: 0, vat_rate: 0 });
   });
 
-  it("per_txn fixed+pct with a per-txn cap", () => {
-    // 100 txns, £950 total value, 20p fixed + 1% → 100*20 + round(95000*0.01)=2000+950=2950; cap 25p/txn → 2500
+  it("per_txn fixed+pct: fixed from count, % value billed as posted (no recompute/cap) — M1", () => {
+    // pay_by_bank: 100 txns @ 20p fixed = 2000; the % component is pre-computed
+    // at source and posted as value=95000 → billed AS-IS on a 1-unit line.
     const it: EngineItem = { billing_item_id: "x", item_type: "pay_by_bank", label: "PbB", metric: "per_txn_fixed_and_pct", vat_treatment: "exempt", config: { fixed_pence: 20, pct: 1, cap_pence: 25 }, bands: [], usage: { quantity: 100, value: 95000 } };
     const inv = computeInvoice(base([it]));
-    expect(inv.lines[0]?.line_amount_pence).toBe(2500);
-    expect(inv.lines[0]?.calc.capped_from).toBe(2950);
+    expect(inv.lines).toHaveLength(2);
+    const fixed = inv.lines.find((l) => l.calc.component === "fixed");
+    const val = inv.lines.find((l) => l.calc.component === "value");
+    expect(fixed?.line_amount_pence).toBe(2000); // 100 × 20p
+    expect(val?.line_amount_pence).toBe(95000);  // posted value as-is, NOT recomputed or capped
+    expect(val?.quantity).toBe(1);
+    expect(inv.subtotal_pence).toBe(97000);
   });
 
   it("zero usage produces no line", () => {

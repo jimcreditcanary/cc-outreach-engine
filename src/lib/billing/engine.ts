@@ -161,16 +161,17 @@ function line(item: EngineItem, description: string, quantity: number, unit: num
 /** Usage-based charge for a transaction/usage item from aggregated M-1 usage.
  *  billMinimums applies committed monthly floors (volume minimums) — true within
  *  contract, false after cancellation so trailing usage never conjures a floor. */
-function usageCharge(item: EngineItem, cfg: ItemConfig, usage: EngineUsage, billMinimums: boolean): InvoiceLine | null {
+function usageCharge(item: EngineItem, cfg: ItemConfig, usage: EngineUsage, billMinimums: boolean): InvoiceLine[] {
   const q = usage.quantity ?? 0;
   const value = usage.value ?? 0;
   const principal = usage.principal ?? 0;
   const pct = cfg.pct ?? 0;
   const cap = cfg.cap_pence ?? null;
+  const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
 
   // Included (sold as part of a fixed line): bill £0 and ignore any reported
   // usage — the "OB can be included or sold separately" rule, for every metric.
-  if (cfg.included) return line(item, `${item.label} — included`, q, 0, 0, { included: true });
+  if (cfg.included) return [line(item, `${item.label} — included`, q, 0, 0, { included: true })];
 
   switch (item.metric) {
     case "per_request":
@@ -181,40 +182,48 @@ function usageCharge(item: EngineItem, cfg: ItemConfig, usage: EngineUsage, bill
       if (priced) {
         if ((item.band_mode ?? "volume") === "graduated") {
           const g = graduatedCharge(q, item.bands);
-          return line(item, `${item.label} — ${q} units`, q, 0, g.amount_pence, { metric: item.metric, mode: "graduated", graduated: g.breakdown, floor_pence: g.floor_pence });
+          return [line(item, `${item.label} — ${q} units`, q, 0, g.amount_pence, { metric: item.metric, mode: "graduated", graduated: g.breakdown, floor_pence: g.floor_pence })];
         }
         const v = volumeCharge(q, item.bands);
         const net = billMinimums ? v.amount_pence : q * (v.band?.unit_price_pence ?? 0);
-        return line(item, `${item.label} — ${q} units`, q, v.band?.unit_price_pence ?? 0, net, {
+        return [line(item, `${item.label} — ${q} units`, q, v.band?.unit_price_pence ?? 0, net, {
           metric: item.metric, mode: "volume", floor_pence: billMinimums ? v.floor_pence : 0,
           band: v.band ? { from: v.band.from_units, to: v.band.to_units, unit_price_pence: v.band.unit_price_pence } : null,
-        });
+        })];
       }
       const unit = cfg.amount_pence ?? 0;
-      return line(item, `${item.label} — ${q} units`, q, unit, q * unit, { metric: item.metric, unit_pence: unit });
+      return [line(item, `${item.label} — ${q} units`, q, unit, q * unit, { metric: item.metric, unit_pence: unit })];
     }
     case "per_txn_fixed":
     case "per_txn_pct":
     case "per_txn_fixed_and_pct": {
+      // Payment rails. The £/txn (fixed) component is priced by VeepVeep from the
+      // transaction COUNT. The %-of-value component is PRE-COMPUTED at source
+      // (per-txn cap already applied there) and posted as `value` — VeepVeep
+      // bills it AS-IS on its own "1 unit" line and never re-applies the % or
+      // cap; those are contractual/description only (M1, Jim 2026-11-06).
+      const out: InvoiceLine[] = [];
       const fixed = cfg.fixed_pence ?? 0;
-      const fixedPart = item.metric === "per_txn_pct" ? 0 : q * fixed;
-      const pctPart = item.metric === "per_txn_fixed" ? 0 : Math.round(value * (pct / 100));
-      let net = fixedPart + pctPart;
-      const calc: Record<string, unknown> = { metric: item.metric, quantity: q, value, fixed_pence: fixed, pct, fixed_part: fixedPart, pct_part: pctPart };
-      if (cap != null) { const capTotal = q * cap; if (net > capTotal) { calc.capped_from = net; net = capTotal; } calc.cap_pence = cap; }
-      return line(item, `${item.label} — ${q} txns`, q, 0, net, calc);
+      if (item.metric !== "per_txn_pct" && fixed > 0 && q > 0) {
+        out.push(line(item, `${item.label} — ${q} txns × ${gbp(fixed)}`, q, fixed, q * fixed, { metric: item.metric, component: "fixed", quantity: q, fixed_pence: fixed }));
+      }
+      if (item.metric !== "per_txn_fixed" && value > 0) {
+        const capTxt = cap != null ? `, capped at ${gbp(cap)}/txn` : "";
+        out.push(line(item, `${item.label} — ${pct}% of value${capTxt} (computed at source)`, 1, value, value, { metric: item.metric, component: "value", value, pct, cap_pence: cap, as_posted: true }));
+      }
+      return out;
     }
     case "pct_of_principal": {
       const pctPart = Math.round(principal * (pct / 100));
       const perApp = (cfg.per_application_pence ?? 0) * q;
-      return line(item, `${item.label}`, q, 0, pctPart + perApp, { metric: item.metric, principal, pct, pct_part: pctPart, per_application_pence: cfg.per_application_pence ?? 0, applications: q });
+      return [line(item, `${item.label}`, q, 0, pctPart + perApp, { metric: item.metric, principal, pct, pct_part: pctPart, per_application_pence: cfg.per_application_pence ?? 0, applications: q })];
     }
     case "per_application": {
       const per = cfg.per_application_pence ?? cfg.amount_pence ?? 0;
-      return line(item, `${item.label} — ${q} applications`, q, per, q * per, { metric: item.metric, per_application_pence: per });
+      return [line(item, `${item.label} — ${q} applications`, q, per, q * per, { metric: item.metric, per_application_pence: per })];
     }
     default:
-      return null;
+      return [];
   }
 }
 
@@ -271,10 +280,14 @@ export function computeInvoice(input: EngineInput): InvoiceResult {
     // at zero usage WHILE in contract; after cancellation only real trailing
     // usage bills (no phantom floor).
     const usage = item.usage ?? { quantity: 0 };
-    if (recurringStopped && (usage.quantity ?? 0) === 0 && !cfg.included) { noteGroup(item.product_group, 0); continue; }
-    const ul = usageCharge(item, cfg, usage, !recurringStopped);
-    if (ul && (ul.line_amount_pence !== 0 || cfg.included)) lines.push(ul);
-    noteGroup(item.product_group, ul?.line_amount_pence ?? 0);
+    if (recurringStopped && (usage.quantity ?? 0) === 0 && (usage.value ?? 0) === 0 && !cfg.included) { noteGroup(item.product_group, 0); continue; }
+    const uls = usageCharge(item, cfg, usage, !recurringStopped);
+    let groupSum = 0;
+    for (const ul of uls) {
+      if (ul.line_amount_pence !== 0 || cfg.included) lines.push(ul);
+      groupSum += ul.line_amount_pence;
+    }
+    noteGroup(item.product_group, groupSum);
   }
 
   // Category minimums: top up any product_group whose billed net falls short of
