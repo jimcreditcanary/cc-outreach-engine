@@ -113,10 +113,10 @@ Two things are **decisions, not bugs** — resolve them first because they gate 
 
 ## Fix plan (ordered by go-live risk)
 
-### Phase 0 — Decisions (blocking)
-- [ ] **Comms VAT:** standard (brief) vs exempt (code). → sets C1-adjacent VAT + the fix for comms rows.
-- [ ] **Catalogue architecture:** keep product+bands (recommended) vs refactor to `variant_id`. → gates the usage-API contract and whether C3's `variant_id` is in scope.
-- [ ] **Usage integration shape:** will the payments platform post **pre-computed** `txn_value` amounts (brief §5.5) or **raw transaction value** (current engine)? → gates M1/A5. The brief's answer is pre-computed; confirm with whoever builds the payments feed.
+### Phase 0 — Decisions ✅ RESOLVED (Jim, 2026-11-06)
+- [x] **Comms VAT → standard** (overrides the code's `exempt`). Fix the three comms rows in `productSeed.ts`.
+- [x] **Catalogue architecture → keep product + bands** (no `variant_id`; many products have no bands). No refactor — close the gaps on the current model; `variant_id` is **out of scope** (drop it from C3).
+- [x] **Payment % component →** the feed posts a monthly figure per client+product; VeepVeep bills the **% line as `quantity 1 × £amount`** and **does NOT apply the per-transaction cap** (can't from an aggregate — cap becomes description-only). Accepted trade-off: can slightly over-bill when per-txn caps would have bound. Flat £/txn part still bills per count as its own line. **Build:** feed posts the transaction value, VeepVeep applies the product rate → 1 unit (or, if the feed posts the final amount, bill as-is). This replaces the brief's §5.5 "pre-computed at source" wording.
 
 ### Phase 1 — Security ✅ DONE (2026-11-06)
 - [x] **S1** gate `setUserRoleAction` with `isSuperAdmin()` (server-side) + gate the `/admin/users` page.
@@ -158,8 +158,8 @@ Two things are **decisions, not bugs** — resolve them first because they gate 
 ---
 
 ## Open questions for Jim
-1. Comms VAT — standard or exempt? (Phase 0)
-2. Keep the product+bands catalogue model, or refactor to the brief's `variant_id` flat model? (Phase 0)
-3. Will the payments feed post pre-computed `txn_value` amounts, or raw transaction value? (Phase 0 / M1)
-4. Payment caps: confirm `cap 3` = £3.00/txn (only affects the invoice-line description once the platform applies it).
+1. ~~Comms VAT~~ — ✅ standard.
+2. ~~Catalogue model~~ — ✅ keep product + bands (no `variant_id`).
+3. ~~Payments feed shape~~ — ✅ bill `1 unit × amount`, no cap (see Phase 0); confirm whether the feed posts the transaction value (VeepVeep applies the rate) or the final amount.
+4. Payment `cap 3` = £3.00/txn — now description-only (cap not enforced), so this only affects the invoice-line text.
 5. Onboarding→catalogue product-group mapping to confirm before go-live (§4).
