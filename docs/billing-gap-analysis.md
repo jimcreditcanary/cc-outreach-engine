@@ -122,16 +122,14 @@ Two things are **decisions, not bugs** — resolve them first because they gate 
 - [x] **S1** gate `setUserRoleAction` with `isSuperAdmin()` (server-side) + gate the `/admin/users` page.
 - [x] **S2** gate the setup-wizard price inputs to super-admin; deal owners get read-only catalogue prices + select/terms only (enforced in the save action too).
 
-### Phase 2 — Money correctness + API guardrails (before any real invoice)
-- [ ] **M5** OB band-7 minimum → £5,000 (one-line seed fix + re-seed).
-- [ ] **M1 / A5** bill `txn_value` as posted (`line_net = value`); add the `quantity:1` pre-computed path + `txn_count`/`txn_value` fields; move `unit_price`/`cap` to description only; **fix the tests that assert the recompute**.
-- [ ] **M2** switch recurring/flat to **arrears** (bill the just-ended month); drop "in advance".
-- [ ] **M3** day-level pro-rata of the final month's flat fees to `cancelled_effective_date`.
-- [ ] **M4** implement `delayed_billing_start_by_month` + `billing_term_months` windows; allow £0 flat lines.
-- [ ] **A1** reject unknown `item_type` atomically (400, list bad keys).
-- [ ] **A2** per-client monthly ceiling → hold invoice in DRAFT when exceeded.
-- [ ] **A3** reject usage for an already-invoiced period (409 + invoice ref).
-- [ ] **A4** metric-shape validation; **A5** store (don't drop) unselected-item usage + flag it.
+### Phase 2 — Money correctness + API guardrails ✅ DONE (2026-11-06)
+- [x] **M5** OB band-7 minimum → £5,000 (seed + live rows). **Comms VAT → standard** (seed + live).
+- [x] **M1** payment % billed as posted (`line_net = value`, quantity 1); fixed billed from the count on its own line; `pct`/`cap` are description-only; recompute test replaced.
+- [x] **M2** recurring/flat switched to **arrears** (bill the just-ended month); due date from the issue date.
+- [x] **M3** day-level pro-rata of flat fees to the cancellation date, via one `monthActiveFactor` covering mid-month start **and** cancellation.
+- [x] **A1** unknown `item_type` → atomic 400 (lists bad keys). **A2** value/principal over a configurable ceiling → 400. **A3** already-invoiced period → 409 + invoice ref. **A4** metric-shape validation. **A5** unconfigured-but-valid usage logged + reported, not dropped.
+- [ ] **M4** `delayed_billing_start_by_month` + `billing_term_months` windows — deferred (not needed by the current catalogue; platform steps use escalation). £0 flat lines still suppressed.
+- Follow-ups noted: A2 is a global ceiling (per-client needs a column); A5 reports+logs (persistent capture needs an unmatched-usage table).
 
 ### Phase 3 — Xero / compliance correctness (before go-live with real creds)
 - [ ] **X2** read Xero tax types from the tax-rates endpoint; map standard/exempt to the org's codes.
