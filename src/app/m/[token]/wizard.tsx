@@ -26,9 +26,9 @@ import {
 import type { FormEditorIdentity } from "@/lib/onboarding/formEditor";
 import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
 import { discoverPrivacyPolicyUrl } from "@/lib/onboarding/websiteScan";
-import { TradingAddress, TradeBody, SignatoryPicker, DpoList, type DpoContact, type DpoRowData } from "./CompanyFields";
+import { TradingAddress, TradeBody, SignatoryPicker, DpoList, PepField, type DpoContact, type DpoRowData } from "./CompanyFields";
 import { BankStatementQuestion } from "./PaymentFields";
-import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAccountAction } from "./actions";
+import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAccountAction, saveAndCloseAction } from "./actions";
 
 // ─── Design tokens (B9 — locked) ─────────────────────────────────────────────
 // Accent  #003566 navy (brand, every interactive/accent surface)
@@ -58,13 +58,12 @@ function LockNote({ children }: { children: ReactNode }) {
 // Per-field meta is now just the optional "don't know" toggle — the per-field
 // "updated by" attribution was removed in favour of one "Last updated" at the
 // top of the form (item 6a). Attribution is still recorded on save.
-function FieldMeta({ name, answers, noUnknown }: { name: string; answers: AnswerMap; noUnknown?: boolean }) {
-  if (noUnknown) return null;
-  return (
-    <label className="mt-1 flex items-center gap-1.5 text-xs text-neutral-400">
-      <input type="checkbox" name={`${name}__unknown`} defaultChecked={answers[name]?.is_unknown} /> Don&apos;t know - ask later
-    </label>
-  );
+// The per-field "Don't know - ask later" toggle was removed across the form
+// (item 9) — every question is now answered outright. Kept as a no-op so the
+// field helpers don't each need editing; the server still records is_unknown
+// (always false now) harmlessly.
+function FieldMeta(_props: { name: string; answers: AnswerMap; noUnknown?: boolean }) {
+  return null;
 }
 
 // ─── Self-identify ───────────────────────────────────────────────────────────
@@ -224,7 +223,7 @@ export async function Wizard({ token, c, editor, page, v2, error }: {
         {current === "payments" && <PaymentsPage token={token} c={c} answers={answers} companyName={enrichment.snapshot?.company_name ?? ""} charity={isCharityType(enrichment.snapshot?.company_type)} v2={v2} />}
         {current === "infosec" && <InfosecPage token={token} answers={answers} uploadCount={uploads.length} v2={v2} />}
         {current === "policies" && <PoliciesPage token={token} answers={answers} policyKinds={policyKinds} groups={c.product_groups} v2={v2} />}
-        {current === "review" && <ReviewPage token={token} c={c} answers={answers} merchant={merchant} v2={v2} />}
+        {current === "review" && <ReviewPage token={token} c={c} answers={answers} merchant={merchant} progress={progress} v2={v2} />}
       </div>
     </>
   );
@@ -249,7 +248,10 @@ function PageForm({ token, page, v2, title, intro, children }: {
         <button type="submit" name="mode" value="draft" formNoValidate className={btnSecondary}>Save &amp; finish later</button>
         {/* Save & continue anyway — advances without validation (item 6). */}
         <button type="submit" name="mode" value="skip" formNoValidate className={btnSecondary}>Save &amp; continue anyway</button>
-        <button type="submit" name="mode" value="continue" className={btnPrimary}>Continue →</button>
+        {/* formNoValidate: never let a prefilled-but-invalid off-screen field
+            (e.g. a KYC phone/email) silently block submit — the server validates
+            and returns a clear message instead (item 7). */}
+        <button type="submit" name="mode" value="continue" formNoValidate className={btnPrimary}>Continue →</button>
       </div>
     </form>
   );
@@ -373,9 +375,9 @@ function UbosPage({ token, c, enrichment, merchant, answers, emailByName, paymen
                         <>
                           <input type="hidden" name={`ubo_dob_month_${i}`} value={p.month} />
                           <input type="hidden" name={`ubo_dob_year_${i}`} value={p.year} />
-                          <div className="flex items-center gap-2">
-                            <input name={`ubo_dob_day_${i}`} inputMode="numeric" pattern="(0?[1-9]|[12]\d|3[01])" placeholder="DD" title="Enter the day of the month (1-31)" defaultValue={p.day} className={`${field} w-20`} />
-                            <span className="text-sm text-neutral-600">{monthName(p.month)} {p.year}</span>
+                          <div className="flex flex-nowrap items-center gap-2">
+                            <input name={`ubo_dob_day_${i}`} inputMode="numeric" pattern="(0?[1-9]|[12]\d|3[01])" placeholder="DD" title="Enter the day of the month (1-31)" defaultValue={p.day} className={`${field} w-16 shrink-0 text-center`} />
+                            <span className="whitespace-nowrap text-sm text-neutral-600">{monthName(p.month)} {p.year}</span>
                           </div>
                           <p className="mt-0.5 text-[11px] text-neutral-400">We have the month and year from Companies House - just add the day.</p>
                         </>
@@ -395,14 +397,7 @@ function UbosPage({ token, c, enrichment, merchant, answers, emailByName, paymen
                     defaults={{ line1: addr.line1, line2: addr.line2, city: addr.city, postcode: addr.postcode, country: addr.country }}
                   />
                 </div>
-                <div className="mt-3">
-                  <span className={lbl}>Politically exposed person (PEP)?</span>
-                  <div className="flex gap-4 text-sm">
-                    <label className="flex items-center gap-1.5"><input type="radio" name={`ubo_pep_${i}`} value="no" defaultChecked={!k?.is_pep} /> No</label>
-                    <label className="flex items-center gap-1.5"><input type="radio" name={`ubo_pep_${i}`} value="yes" defaultChecked={!!k?.is_pep} /> Yes</label>
-                  </div>
-                  <input name={`ubo_pep_detail_${i}`} defaultValue={k?.pep_detail ?? ""} placeholder="If yes, please give brief detail" className={`${field} mt-2`} />
-                </div>
+                <PepField idx={i} defaultPep={!!k?.is_pep} defaultDetail={k?.pep_detail ?? ""} />
                 <label className="mt-3 flex items-start gap-2 text-sm text-neutral-700">
                   <input type="checkbox" name={`ubo_consent_${i}`} defaultChecked={!!k?.consent_given} className="mt-0.5" />
                   <span>This person consents to Credit Canary verifying their identity for anti-money-laundering checks.</span>
@@ -451,12 +446,12 @@ function CopBadge({ result, matched }: { result: string; matched: string | null 
 }
 
 function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; v2?: string }) {
-  const addCount = 2;
+  const addCount = 1;
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-[#003566]">Bank accounts</h2>
-        <p className="mt-0.5 text-sm text-neutral-500">Add the account(s) where you&apos;d like to receive money - you can add several.</p>
+        <p className="mt-0.5 text-sm text-neutral-500">These are the account(s) you&apos;ll receive your funds into. Add one below - you can add more after saving.</p>
         <div className="mt-1.5"><LockNote>Stored encrypted and checked with Confirmation of Payee. We never display your full account number back.</LockNote></div>
       </div>
 
@@ -487,7 +482,7 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
         <input type="hidden" name="v2" value={v2 ?? ""} />
         <input type="hidden" name="add_count" value={addCount} />
         <fieldset className="rounded-lg border border-neutral-200 bg-white p-4">
-          <legend className="px-1 text-sm font-semibold text-[#003566]">Add account(s)</legend>
+          <legend className="px-1 text-sm font-semibold text-[#003566]">Add an account to receive funds</legend>
           <div className="mt-2 space-y-4">
             {Array.from({ length: addCount }).map((_, i) => (
               <div key={i} className="grid grid-cols-1 gap-3 border-t border-neutral-100 pt-3 first:border-0 first:pt-0 sm:grid-cols-2">
@@ -500,12 +495,12 @@ function AccountsPage({ token, c, merchant, v2 }: { token: string; c: TokenCase;
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xs text-neutral-400">Leave rows blank if not needed. Save to add more rows.</p>
+          <p className="mt-2 text-xs text-neutral-400">Save this account to add another, or continue if this is the only one.</p>
         </fieldset>
         <div className="flex flex-wrap items-center gap-2">
           <button type="submit" name="mode" value="draft" formNoValidate className={btnSecondary}>Save &amp; finish later</button>
           <button type="submit" name="mode" value="skip" formNoValidate className={btnSecondary}>Save &amp; continue anyway</button>
-          <button type="submit" name="mode" value="continue" className={btnPrimary}>Continue →</button>
+          <button type="submit" name="mode" value="continue" formNoValidate className={btnPrimary}>Continue →</button>
         </div>
       </form>
     </div>
@@ -788,13 +783,17 @@ function PoliciesPage({ token, answers, policyKinds, groups, v2 }: {
   );
 }
 
-function ReviewPage({ token, c, answers, merchant, v2 }: {
-  token: string; c: TokenCase; answers: AnswerMap; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; v2?: string;
+function ReviewPage({ token, c, answers, merchant, progress, v2 }: {
+  token: string; c: TokenCase; answers: AnswerMap; merchant: Awaited<ReturnType<typeof loadMerchantForm>>; progress: Set<string>; v2?: string;
 }) {
   const tuCredit = c.product_groups.includes("tu_credit");
   const fcaRequired = requiresFcaFrn(c.product_groups);
   const fields = COMPANY_FIELDS.filter((f) => !f.onlyIfTuCredit || tuCredit);
   const changeHref = (page: string) => `/m/${encodeURIComponent(token)}?page=${page}${v2 ? `&v2=${v2}` : ""}`;
+  // Every step must be marked complete (clicked Continue, not "Save & continue
+  // anyway") before the form can be submitted for approval. If a step was
+  // skipped, offer "Save & close" instead so a first pass can be saved (items 3 & 10).
+  const allComplete = visibleFormPages(c.product_groups).filter((p) => p.id !== "review").every((p) => progress.has(p.id));
   const shown = (a: AnswerMap[string] | undefined) => a?.is_unknown ? <span className="text-amber-600">Don&apos;t know (we&apos;ll follow up)</span> : (a?.value || <span className="text-neutral-400">-</span>);
 
   return (
@@ -895,12 +894,23 @@ function ReviewPage({ token, c, answers, merchant, v2 }: {
         );
       })()}
 
-      <form action={submitForApprovalAction}>
-        <input type="hidden" name="token" value={token} />
-        <input type="hidden" name="v2" value={v2 ?? ""} />
-        <PendingButton className={btnPrimary} pendingLabel="Submitting…">Submit for approval</PendingButton>
-        <p className="mt-2 text-xs text-neutral-400">Required fields must be complete (or marked &ldquo;don&apos;t know&rdquo;). Your information is sent securely and used only for your Credit Canary onboarding.</p>
-      </form>
+      {allComplete ? (
+        <form action={submitForApprovalAction}>
+          <input type="hidden" name="token" value={token} />
+          <input type="hidden" name="v2" value={v2 ?? ""} />
+          <PendingButton className={btnPrimary} pendingLabel="Submitting…">Submit for approval</PendingButton>
+          <p className="mt-2 text-xs text-neutral-400">Your information is sent securely and used only for your Credit Canary onboarding.</p>
+        </form>
+      ) : (
+        <div className="space-y-2">
+          <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Some steps aren&apos;t finished yet. Save your progress and come back to this link anytime - you can submit for approval once every step is complete.</p>
+          <form action={saveAndCloseAction}>
+            <input type="hidden" name="token" value={token} />
+            <input type="hidden" name="v2" value={v2 ?? ""} />
+            <PendingButton className={btnPrimary} pendingLabel="Saving…">Save &amp; close</PendingButton>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

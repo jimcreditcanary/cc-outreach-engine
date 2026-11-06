@@ -310,7 +310,7 @@ async function StakeholdersStep({ c, stakeholders, nav }: { c: OnboardingCase; s
     <section className="max-w-2xl space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Stakeholders &amp; roles</h2>
-        <Link href={nav.stepHref("finish")} className="rounded bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800">Go to Submit for Approval →</Link>
+        <Link href={nav.stepHref("finish")} className="rounded bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800">Next →</Link>
       </div>
       <p className="text-sm text-neutral-500">Confirm the people behind this company: directors and beneficial owners from Companies House, then tag each contact with their role(s).</p>
 
@@ -485,7 +485,7 @@ async function FinishStep({ c, stakeholders, locked, generatedDocs, nav }: {
             <input type="checkbox" name="api_sandbox_required" defaultChecked={c.api_sandbox_required} className="h-4 w-4" />
             <span className="font-medium text-neutral-800">API sandbox access required</span>
           </label>
-          <p className="text-xs text-neutral-500">Completing generates the onboarding document pack and creates the customer onboarding link (no email is sent — you share the link). If sandbox is ticked, it also files an internal sandbox request.</p>
+          <p className="text-xs text-neutral-500">Completing generates the internal documents and creates the customer onboarding link (no email is sent — you share the link). The Merchant Onboarding Form is generated once the customer submits. If sandbox is ticked, it also files an internal sandbox request.</p>
           <PendingButton className="rounded bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50" pendingLabel="Completing…" disabled={!ready}>
             ✓ Complete internal onboarding &amp; create customer link
           </PendingButton>
@@ -526,7 +526,7 @@ async function FinishStep({ c, stakeholders, locked, generatedDocs, nav }: {
       <section className="rounded-lg border border-neutral-200 bg-white p-4">
         <h3 className="mb-1 font-semibold text-neutral-800">Supporting documents</h3>
         {generatedDocs.length === 0 ? (
-          <p className="text-sm text-neutral-500">No documents generated yet — they&apos;re produced when you complete internal onboarding, and refreshed when the customer submits.</p>
+          <p className="text-sm text-neutral-500">No documents generated yet — internal documents are produced when you complete internal onboarding; the Merchant Onboarding Form is produced once the customer submits.</p>
         ) : (
           <ul className="divide-y divide-neutral-100">
             {generatedDocs.map((d) => (

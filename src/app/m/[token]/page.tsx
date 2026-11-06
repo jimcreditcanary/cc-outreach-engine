@@ -33,7 +33,7 @@ export default async function MerchantFormPage({
   params, searchParams,
 }: {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ done?: string; error?: string; page?: string; v2?: string }>;
+  searchParams: Promise<{ done?: string; saved?: string; error?: string; page?: string; v2?: string }>;
 }) {
   const { token } = await params;
   const sp = await searchParams;
@@ -55,6 +55,18 @@ export default async function MerchantFormPage({
         <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-5">
           <h1 className="text-xl font-semibold text-[#003566]">Thank you - that&apos;s submitted ✓</h1>
           <p className="mt-2 text-sm text-neutral-700">We&apos;ve received your onboarding details. Our team will review and be in touch with the next steps. You can close this page.</p>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (sp.saved === "1" && c.status !== "merchant_submitted") {
+    return (
+      <Shell>
+        <div className="rounded-lg border border-[#003566]/20 bg-[#003566]/5 p-5">
+          <h1 className="text-xl font-semibold text-[#003566]">Your progress is saved ✓</h1>
+          <p className="mt-2 text-sm text-neutral-700">You can safely close this page. Come back to this same link anytime to carry on - everything you&apos;ve entered is kept. When every step is complete you&apos;ll be able to submit for approval.</p>
+          <a href={`/m/${encodeURIComponent(token)}?page=company`} className="mt-4 inline-block rounded-md bg-[#003566] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#002a52]">Continue onboarding →</a>
         </div>
       </Shell>
     );

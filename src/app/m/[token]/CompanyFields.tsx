@@ -177,20 +177,34 @@ export function SignatoryPicker({ contacts, prefill, defaults }: {
 export interface DpoRowData { kind: "person" | "company"; company: string; first: string; last: string; title: string; email: string; phone: string }
 export interface DpoContact { id: string; first: string; last: string; title: string; email: string; phone: string }
 type Choice = "existing" | "person" | "company";
-interface Row extends DpoRowData { choice: Choice }
+interface Row extends DpoRowData { choice: Choice; selId: string }
 const BLANK: DpoRowData = { kind: "person", company: "", first: "", last: "", title: "", email: "", phone: "" };
 
 export function DpoList({ initial, prefill, contacts }: { initial: DpoRowData[]; prefill: DpoRowData | null; contacts: DpoContact[] }) {
   const hasContacts = contacts.length > 0;
-  const toRow = (d: DpoRowData): Row => ({ ...d, choice: d.kind === "company" ? "company" : "person" });
-  const seed: Row[] = initial.length > 0 ? initial.map(toRow) : [toRow(prefill ?? BLANK)];
+  const toRow = (d: DpoRowData): Row => ({ ...d, choice: d.kind === "company" ? "company" : "person", selId: "" });
+  // Default the first row to the prefilled person as an *existing contact*
+  // selection, not pre-filled "Add a person" fields (item 4). Fall back to a
+  // blank existing picker, or a blank person row when there are no contacts.
+  const prefillCt = prefill && prefill.kind !== "company" && prefill.email
+    ? contacts.find((c) => c.email && c.email.toLowerCase() === prefill.email!.toLowerCase())
+    : undefined;
+  const seed: Row[] = initial.length > 0
+    ? initial.map(toRow)
+    : [prefillCt
+        ? { kind: "person", company: "", first: prefillCt.first, last: prefillCt.last, title: prefillCt.title, email: prefillCt.email, phone: prefillCt.phone, choice: "existing", selId: prefillCt.id }
+        : { ...BLANK, choice: hasContacts ? "existing" : "person", selId: "" }];
   const [rows, setRows] = useState<Row[]>(seed);
 
   const set = (i: number, patch: Partial<Row>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const addRow = () => setRows((rs) => [...rs, { ...BLANK, choice: hasContacts ? "existing" : "person" }]);
+  // Switching choice clears the identity fields, so "Add a person / company"
+  // always starts blank and never carries a prefill (item 4).
+  const choose = (i: number, choice: Choice) => set(i, { choice, first: "", last: "", title: "", email: "", phone: "", company: "", selId: "" });
+  const addRow = () => setRows((rs) => [...rs, { ...BLANK, choice: hasContacts ? "existing" : "person", selId: "" }]);
   const pick = (i: number, id: string) => {
     const ct = contacts.find((c) => c.id === id);
-    if (ct) set(i, { first: ct.first, last: ct.last, title: ct.title, email: ct.email, phone: ct.phone, kind: "person", company: "" });
+    if (ct) set(i, { selId: id, first: ct.first, last: ct.last, title: ct.title, email: ct.email, phone: ct.phone, kind: "person", company: "" });
+    else set(i, { selId: "", first: "", last: "", title: "", email: "", phone: "" });
   };
 
   return (
@@ -211,15 +225,15 @@ export function DpoList({ initial, prefill, contacts }: { initial: DpoRowData[];
             <input type="hidden" name={`dpo_${i}_kind`} value={row.choice === "company" ? "company" : "person"} />
 
             <div className="mb-3 flex flex-wrap gap-4 text-sm">
-              {hasContacts && <label className="flex items-center gap-1.5"><input type="radio" name={`__dpo_choice_${i}`} checked={row.choice === "existing"} onChange={() => set(i, { choice: "existing" })} /> Existing contact</label>}
-              <label className="flex items-center gap-1.5"><input type="radio" name={`__dpo_choice_${i}`} checked={row.choice === "person"} onChange={() => set(i, { choice: "person" })} /> Add a person</label>
-              <label className="flex items-center gap-1.5"><input type="radio" name={`__dpo_choice_${i}`} checked={row.choice === "company"} onChange={() => set(i, { choice: "company" })} /> Add a company</label>
+              {hasContacts && <label className="flex items-center gap-1.5"><input type="radio" name={`__dpo_choice_${i}`} checked={row.choice === "existing"} onChange={() => choose(i, "existing")} /> Existing contact</label>}
+              <label className="flex items-center gap-1.5"><input type="radio" name={`__dpo_choice_${i}`} checked={row.choice === "person"} onChange={() => choose(i, "person")} /> Add a person</label>
+              <label className="flex items-center gap-1.5"><input type="radio" name={`__dpo_choice_${i}`} checked={row.choice === "company"} onChange={() => choose(i, "company")} /> Add a company</label>
             </div>
 
             {row.choice === "existing" ? (
               <div>
                 <label htmlFor={`__dpo_pick_${i}`} className={lbl}>Choose a contact</label>
-                <select id={`__dpo_pick_${i}`} defaultValue="" onChange={(e) => pick(i, e.target.value)} className={field}>
+                <select id={`__dpo_pick_${i}`} value={row.selId} onChange={(e) => pick(i, e.target.value)} className={field}>
                   <option value="" disabled>Choose…</option>
                   {contacts.map((c) => <option key={c.id} value={c.id}>{[c.first, c.last].filter(Boolean).join(" ") || c.email}{c.title ? ` - ${c.title}` : ""}</option>)}
                 </select>
@@ -269,5 +283,22 @@ export function DpoList({ initial, prefill, contacts }: { initial: DpoRowData[];
       </button>
       {hasContacts && <p className="mt-2 text-xs text-neutral-500">New people (not picked from the list) are added to HubSpot automatically.</p>}
     </fieldset>
+  );
+}
+
+// ─── PEP (per beneficial owner) ──────────────────────────────────────────────
+// Yes/No, with the "brief detail" box shown only when Yes is selected (item 6).
+
+export function PepField({ idx, defaultPep, defaultDetail }: { idx: number; defaultPep: boolean; defaultDetail: string }) {
+  const [yes, setYes] = useState(defaultPep);
+  return (
+    <div className="mt-3">
+      <span className={lbl}>Politically exposed person (PEP)?</span>
+      <div className="flex gap-4 text-sm">
+        <label className="flex items-center gap-1.5"><input type="radio" name={`ubo_pep_${idx}`} value="no" checked={!yes} onChange={() => setYes(false)} /> No</label>
+        <label className="flex items-center gap-1.5"><input type="radio" name={`ubo_pep_${idx}`} value="yes" checked={yes} onChange={() => setYes(true)} /> Yes</label>
+      </div>
+      {yes && <input name={`ubo_pep_detail_${idx}`} defaultValue={defaultDetail} placeholder="Please give brief detail" className={`${field} mt-2`} />}
+    </div>
   );
 }

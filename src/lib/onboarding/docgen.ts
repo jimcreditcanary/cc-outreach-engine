@@ -35,6 +35,21 @@ const DOCS: Record<OnboardingDocKind, DocSpec> = {
   dd_questionnaire:       { template: "dd-questionnaire.template.docx", kind: "docx", contentType: DOCX,  out: "DD Questionnaire.docx" },
 };
 
+// Docs built from customer-completed data (business details, UBO KYC, bank
+// accounts, Direct Debit). These must NOT be generated until the merchant has
+// submitted the onboarding link, else they'd be near-empty (item 2).
+const CUSTOMER_COMPLETED_DOCS = new Set<OnboardingDocKind>(["merchant_onboarding_form", "dd_questionnaire"]);
+
+/** True once the merchant has submitted their onboarding form. */
+async function merchantHasSubmitted(db: DB, caseId: string): Promise<boolean> {
+  try {
+    const { data } = await db.from("onboarding_merchant_form").select("submitted_at").eq("case_id", caseId).maybeSingle();
+    return !!(data as { submitted_at?: string | null } | null)?.submitted_at;
+  } catch {
+    return false;
+  }
+}
+
 // ─── data assembly ──────────────────────────────────────────────────────────────
 
 type Rec = Record<string, unknown>;
@@ -200,8 +215,11 @@ export async function generateDocsForCase(
   const { advanceStatus = true } = opts;
   const c = await getCase(db, caseId);
   if (!c) throw new Error("Case not found.");
-  const kinds = documentsFor(c.product_groups);
-  if (kinds.length === 0) throw new Error("No documents apply to this product selection.");
+  const allKinds = documentsFor(c.product_groups);
+  if (allKinds.length === 0) throw new Error("No documents apply to this product selection.");
+  // Hold back the customer-completed docs until the merchant submits (item 2).
+  const submitted = await merchantHasSubmitted(db, caseId);
+  const kinds = submitted ? allKinds : allKinds.filter((k) => !CUSTOMER_COMPLETED_DOCS.has(k));
 
   const data = await buildData(db, caseId);
   await db.from("onboarding_generated_docs").delete().eq("case_id", caseId);

@@ -425,6 +425,15 @@ export async function savePageAction(formData: FormData) {
   redirect(dest);
 }
 
+/** Save & close (from the review page when the form isn't fully complete yet):
+ *  everything is already persisted per page, so this just shows a "progress
+ *  saved" screen. Lets a salesperson do a first pass without submitting (items
+ *  3 & 10). No submission, no docs, no notify. */
+export async function saveAndCloseAction(formData: FormData) {
+  const token = str(formData.get("token"));
+  redirect(`/m/${encodeURIComponent(token)}?saved=1`);
+}
+
 /** Remove one saved bank account from the accounts page. */
 export async function removeBankAccountAction(formData: FormData) {
   const token = str(formData.get("token"));

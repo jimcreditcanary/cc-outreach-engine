@@ -219,10 +219,12 @@ export async function completeInternalAction(formData: FormData) {
 
   // Generate the onboarding document pack now (item 6), decoupled from the late
   // docs_generated status so it doesn't skip the customer step.
+  // Generate only the internal documents now — the Merchant Onboarding Form (and
+  // DD questionnaire) are held back until the customer submits the link (item 2).
   let docsMsg = "";
   try {
     const r = await generateDocsForCase(db, id, actorOf(me), { advanceStatus: false });
-    docsMsg = ` · ${r.generated} document${r.generated === 1 ? "" : "s"} generated`;
+    docsMsg = r.generated > 0 ? ` · ${r.generated} internal document${r.generated === 1 ? "" : "s"} generated` : "";
   } catch (e) {
     docsMsg = ` · documents not generated (${(e as Error).message})`;
   }
