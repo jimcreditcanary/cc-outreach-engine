@@ -116,7 +116,7 @@ Two things are **decisions, not bugs** — resolve them first because they gate 
 ### Phase 0 — Decisions ✅ RESOLVED (Jim, 2026-11-06)
 - [x] **Comms VAT → standard** (overrides the code's `exempt`). Fix the three comms rows in `productSeed.ts`.
 - [x] **Catalogue architecture → keep product + bands** (no `variant_id`; many products have no bands). No refactor — close the gaps on the current model; `variant_id` is **out of scope** (drop it from C3).
-- [x] **Payment % component →** the feed posts a monthly figure per client+product; VeepVeep bills the **% line as `quantity 1 × £amount`** and **does NOT apply the per-transaction cap** (can't from an aggregate — cap becomes description-only). Accepted trade-off: can slightly over-bill when per-txn caps would have bound. Flat £/txn part still bills per count as its own line. **Build:** feed posts the transaction value, VeepVeep applies the product rate → 1 unit (or, if the feed posts the final amount, bill as-is). This replaces the brief's §5.5 "pre-computed at source" wording.
+- [x] **Payment % component → source pre-computes, VeepVeep bills as-is.** The feed posts the **already-computed final amount** for the % component (source applies the % and the per-txn cap); VeepVeep bills it **`quantity 1 × value`**, applying **no % and no cap**. The flat £/txn component is posted as a **count** and billed `count × rate` as its own line. One usage line carries both, e.g. `{ item_type: "direct_debits", quantity: 1222, value: 1232343 }` → "1,222 × £0.10" + "1 × £12,323.43". `value` is **pence**. Per-txn cap is description-only. This matches the brief's §5.5 (pre-computed at source). **Monevo `pct_of_principal` is the exception — VeepVeep still applies its 0.5%** (no per-txn cap).
 
 ### Phase 1 — Security ✅ DONE (2026-11-06)
 - [x] **S1** gate `setUserRoleAction` with `isSuperAdmin()` (server-side) + gate the `/admin/users` page.
@@ -160,6 +160,6 @@ Two things are **decisions, not bugs** — resolve them first because they gate 
 ## Open questions for Jim
 1. ~~Comms VAT~~ — ✅ standard.
 2. ~~Catalogue model~~ — ✅ keep product + bands (no `variant_id`).
-3. ~~Payments feed shape~~ — ✅ bill `1 unit × amount`, no cap (see Phase 0); confirm whether the feed posts the transaction value (VeepVeep applies the rate) or the final amount.
+3. ~~Payments feed shape~~ — ✅ feed posts the **final amount** for the % component; VeepVeep bills `1 unit × value` (pence), no %/cap. Flat part billed `count × rate`. Monevo % still computed by us.
 4. Payment `cap 3` = £3.00/txn — now description-only (cap not enforced), so this only affects the invoice-line text.
 5. Onboarding→catalogue product-group mapping to confirm before go-live (§4).
