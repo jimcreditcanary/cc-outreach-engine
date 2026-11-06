@@ -5,7 +5,7 @@
 // /docs/billing-api.md.
 
 import { serviceClient } from "@/lib/db/client";
-import { clientUsageSchema, resolveClientAccountId, recordClientUsage } from "@/lib/billing/usage";
+import { clientUsageSchema, resolveClientAccountId, recordClientUsage, UsageValidationError, PeriodInvoicedError } from "@/lib/billing/usage";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +27,14 @@ export async function POST(req: Request): Promise<Response> {
     const results = await recordClientUsage(db, accountId, parsed.data.period_month, parsed.data.usage);
     return Response.json({ ok: true, account_id: accountId, period_month: parsed.data.period_month, results });
   } catch (e) {
+    if (e instanceof UsageValidationError) {
+      // A1/A2/A4 — nothing was written; the caller fixes the flagged items and resends.
+      return Response.json({ ok: false, error: "usage_validation", detail: e.detail }, { status: 400 });
+    }
+    if (e instanceof PeriodInvoicedError) {
+      // A3 — the month is already invoiced; usage is locked.
+      return Response.json({ ok: false, error: "period_invoiced", invoice: e.invoice, hint: "this period has already been invoiced; usage is locked" }, { status: 409 });
+    }
     return Response.json({ ok: false, error: (e as Error).message }, { status: 500 });
   }
 }
