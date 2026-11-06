@@ -14,6 +14,20 @@ import { isSuperAdmin } from "@/lib/auth/role";
 const str = (v: FormDataEntryValue | null): string =>
   String(v ?? "").trim();
 
+/** Guard for user-administration actions: only a super-admin may create, edit,
+ *  delete, reset, re-assign or re-role users. Redirects everyone else back to
+ *  /admin/users (which is itself super-admin gated). Returns the caller so
+ *  actions that need `me` can use it. (gap analysis S1.) */
+async function requireSuperAdmin() {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  if (!(await isSuperAdmin())) {
+    await flash("error", "Only a super-admin can manage users.");
+    redirect("/admin/users");
+  }
+  return me;
+}
+
 export async function loginAction(formData: FormData) {
   const email = str(formData.get("email"));
   const password = str(formData.get("password"));
@@ -35,9 +49,7 @@ export async function logoutAction() {
  *  Optional first/last/job_title are persisted to user_settings so every
  *  owner picker renders "First Last" instead of the raw email. */
 export async function createUserAction(formData: FormData) {
-  // Any logged-in user can invite for now — small trusted team.
-  const me = await currentUser();
-  if (!me) redirect("/login");
+  await requireSuperAdmin();
 
   const email = str(formData.get("email"));
   const password = str(formData.get("password"));
@@ -67,8 +79,7 @@ export async function createUserAction(formData: FormData) {
 /** Patch one operator's profile fields (first/last/job_title). Empty
  *  values clear the column so the picker falls back to the email. */
 export async function updateUserProfileAction(formData: FormData) {
-  const me = await currentUser();
-  if (!me) redirect("/login");
+  await requireSuperAdmin();
   const id = str(formData.get("id"));
   if (!id) return;
   const first_name = str(formData.get("first_name")) || null;
@@ -84,14 +95,7 @@ export async function updateUserProfileAction(formData: FormData) {
 }
 
 export async function setUserRoleAction(formData: FormData) {
-  const me = await currentUser();
-  if (!me) redirect("/login");
-  // Only a super-admin may grant/revoke roles — otherwise any operator could
-  // escalate themselves to super-admin (gap analysis S1).
-  if (!(await isSuperAdmin())) {
-    await flash("error", "Only a super-admin can change user roles.");
-    return redirect("/admin/users");
-  }
+  await requireSuperAdmin();
   const id = str(formData.get("id"));
   if (!id) return;
   const role = str(formData.get("role")) === "super_admin" ? "super_admin" : "operator";
@@ -106,8 +110,7 @@ export async function setUserRoleAction(formData: FormData) {
 }
 
 export async function resetPasswordAction(formData: FormData) {
-  const me = await currentUser();
-  if (!me) redirect("/login");
+  await requireSuperAdmin();
   const id = str(formData.get("id"));
   const password = str(formData.get("password"));
   if (!id || password.length < 8) return;
@@ -119,8 +122,7 @@ export async function resetPasswordAction(formData: FormData) {
 }
 
 export async function deleteUserAction(formData: FormData) {
-  const me = await currentUser();
-  if (!me) redirect("/login");
+  const me = await requireSuperAdmin();
   const id = str(formData.get("id"));
   if (!id || id === me.id) return; // no deleting yourself
   const admin = adminClient();
@@ -134,8 +136,7 @@ export async function deleteUserAction(formData: FormData) {
  *  before deleting a user (set NULL on delete would leave everything
  *  orphaned). Hits every entity with an owner_id column. */
 export async function reassignOwnershipAction(formData: FormData) {
-  const me = await currentUser();
-  if (!me) redirect("/login");
+  await requireSuperAdmin();
   const source = str(formData.get("source_id"));
   const target = str(formData.get("target_id"));
   if (!source || !target || source === target) return;
