@@ -23,6 +23,7 @@ import { extractUpload } from "@/lib/onboarding/uploads";
 import { runUboChecks } from "@/lib/onboarding/uboChecks";
 import { ensureUboDocRequest } from "@/lib/onboarding/uboDocs";
 import { generateDocsForCase } from "@/lib/onboarding/docgen";
+import { sendOnboardingWebhook } from "@/lib/onboarding/export";
 import { fileCaseToDrive } from "@/lib/onboarding/driveFiling";
 import { parseAccountsForCase } from "@/lib/onboarding/accounts";
 import { ensureBillingForCase } from "@/lib/billing/provision";
@@ -356,6 +357,8 @@ export async function approveCaseAction(formData: FormData) {
   // Kick off billing: create the billing account + mirror line items + email the
   // deal owner. Best-effort inline; the daily reconcile cron backfills any miss.
   await ensureBillingForCase(db, c).catch((e) => console.error(`[billing] provision failed for case ${id}:`, e));
+  // Push the config-only onboarding block to the dev-setup webhook, if configured.
+  await sendOnboardingWebhook(db, id).catch(() => {});
   await flash("success", "Onboarding approved — marked onboarded.");
   revalidatePath(`/onboarding/${id}/review`);
   redirect(`/onboarding/${id}/review`);

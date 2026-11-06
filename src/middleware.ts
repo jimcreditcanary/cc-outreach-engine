@@ -13,6 +13,7 @@ const PUBLIC_PREFIXES = [
   "/api/inbound", // inbound signals (abandonment) — guarded by LEAD_API_KEY
   "/api/internal", // internal service hooks — guarded by CRON_SECRET bearer
   "/api/billing", // billing APIs — guarded by per-item usage key / CRON_SECRET bearer
+  "/api/onboarding", // onboarding export API — guarded by its own ONBOARDING_API_KEY
   "/api/auth", // reserved for future OAuth callback if needed
   "/unsubscribe", // clicked from outreach emails — recipient isn't logged in
   "/book", // public booking pages — external visitors book meetings here
