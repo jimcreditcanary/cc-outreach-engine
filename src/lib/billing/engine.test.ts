@@ -86,8 +86,8 @@ describe("monthlyAmount escalation", () => {
   });
 });
 
-describe("computeInvoice — recurring + proration", () => {
-  it("full month in advance when starting on the 1st, with 20% VAT", () => {
+describe("computeInvoice — recurring + proration (arrears)", () => {
+  it("full month in arrears when the whole month is active, with 20% VAT", () => {
     const inv = computeInvoice(base([platform(10000)], { isFirstInvoice: true }));
     expect(inv.lines).toHaveLength(1);
     expect(inv.lines[0]).toMatchObject({ line_amount_pence: 10000, vat_pence: 2000, vat_rate: 0.2 });
@@ -95,18 +95,30 @@ describe("computeInvoice — recurring + proration", () => {
     expect(inv.prorated).toBe(false);
   });
 
-  it("pro-rata partial month + full month on the first invoice (start mid-month)", () => {
-    // start 2026-02-15 (28-day Feb) → first invoice period 2026-03; partial Feb = 14/28
-    const inv = computeInvoice(base([platform(10000)], { isFirstInvoice: true, contractStartDate: "2026-02-15", periodMonth: "2026-03-01" }));
+  it("pro-rates the start month to the active days (mid-month start)", () => {
+    // start 2026-02-15 (28-day Feb); the Feb invoice bills 14/28 of the month.
+    const inv = computeInvoice(base([platform(10000)], { isFirstInvoice: true, contractStartDate: "2026-02-15", periodMonth: "2026-02-01" }));
     expect(inv.prorated).toBe(true);
-    expect(inv.lines).toHaveLength(2);
+    expect(inv.lines).toHaveLength(1);
     expect(inv.lines[0]?.line_amount_pence).toBe(Math.round(10000 * (14 / 28))); // 5000
-    expect(inv.lines[1]?.line_amount_pence).toBe(10000);
   });
 
   it("start on the last day of a 31-day month prorates 1/31", () => {
-    const inv = computeInvoice(base([platform(31000)], { isFirstInvoice: true, contractStartDate: "2026-01-31", periodMonth: "2026-02-01" }));
+    const inv = computeInvoice(base([platform(31000)], { isFirstInvoice: true, contractStartDate: "2026-01-31", periodMonth: "2026-01-01" }));
     expect(inv.lines[0]?.line_amount_pence).toBe(1000); // 31000 * 1/31
+  });
+
+  it("pro-rates the final month to the cancellation date (M3)", () => {
+    // cancel effective 2026-03-10 → March active days 1–10 = 10/31.
+    const inv = computeInvoice(base([platform(31000)], { contractEndDate: "2026-03-10", periodMonth: "2026-03-01" }));
+    expect(inv.prorated).toBe(true);
+    expect(inv.lines).toHaveLength(1);
+    expect(inv.lines[0]?.line_amount_pence).toBe(Math.round(31000 * (10 / 31))); // 10000
+  });
+
+  it("due date is relative to the issue date, not the billed month", () => {
+    const inv = computeInvoice(base([platform(10000)], { periodMonth: "2026-02-01", issueDate: "2026-03-01", dueDays: 14 }));
+    expect(inv.due_date).toBe("2026-03-15");
   });
 });
 

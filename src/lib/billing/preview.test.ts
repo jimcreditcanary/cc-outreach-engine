@@ -31,14 +31,13 @@ describe("previewFirstInvoice", () => {
     expect(inv.total_pence).toBe(12000);
   });
 
-  it("pro-rata partial month + first full month in advance when starting mid-month", () => {
+  it("pro-rates the first (partial) month when starting mid-month — arrears", () => {
     const inv = previewFirstInvoice([platform(10000)], "2026-01-15");
-    expect(inv.lines).toHaveLength(2);
+    expect(inv.lines).toHaveLength(1);
     // 10000 * 17/31 = 5483.87 → 5484
     expect(inv.lines[0]?.net_pence).toBe(5484);
-    expect(inv.lines[1]?.net_pence).toBe(10000);
-    expect(inv.subtotal_pence).toBe(15484);
-    expect(inv.vat_pence).toBe(Math.round(5484 * 0.2) + Math.round(10000 * 0.2));
+    expect(inv.subtotal_pence).toBe(5484);
+    expect(inv.vat_pence).toBe(Math.round(5484 * 0.2));
   });
 
   it("setup fee is a one-off line; VAT-exempt lines carry no VAT", () => {

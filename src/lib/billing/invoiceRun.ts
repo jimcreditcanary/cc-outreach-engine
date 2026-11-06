@@ -24,8 +24,8 @@ function prevMonth(periodISO: string): string {
   return `${py}-${String(pm).padStart(2, "0")}-01`;
 }
 
-async function aggregateUsage(db: DB, itemId: string, periodM1: string): Promise<{ quantity: number; value: number | null; principal: number | null }> {
-  const { data } = await db.from("billing_usage_records").select("quantity, value, principal").eq("billing_item_id", itemId).eq("period_month", periodM1);
+async function aggregateUsage(db: DB, itemId: string, usageMonth: string): Promise<{ quantity: number; value: number | null; principal: number | null }> {
+  const { data } = await db.from("billing_usage_records").select("quantity, value, principal").eq("billing_item_id", itemId).eq("period_month", usageMonth);
   let quantity = 0, value = 0, principal = 0, hasV = false, hasP = false;
   for (const r of (data ?? []) as { quantity: number; value: number | null; principal: number | null }[]) {
     quantity += Number(r.quantity) || 0;
@@ -35,7 +35,7 @@ async function aggregateUsage(db: DB, itemId: string, periodM1: string): Promise
   return { quantity, value: hasV ? value : null, principal: hasP ? principal : null };
 }
 
-async function buildEngineItems(db: DB, accountId: string, periodM1: string, contractStartDate: string): Promise<EngineItem[]> {
+async function buildEngineItems(db: DB, accountId: string, usageMonth: string, contractStartDate: string): Promise<EngineItem[]> {
   const [items, pricing] = await Promise.all([listBillingItems(db, accountId), currentPricingByItemType(db)]);
   const out: EngineItem[] = [];
   for (const it of items) {
@@ -64,7 +64,7 @@ async function buildEngineItems(db: DB, accountId: string, periodM1: string, con
       config: cfg,
       override: (it.override as ItemConfig) ?? null,
       bands: bands.map((b) => ({ from_units: b.from_units, to_units: b.to_units, unit_price_pence: b.unit_price_pence, minimum_type: b.minimum_type, minimum_pence: b.minimum_pence, unit_cap_pence: b.unit_cap_pence })),
-      usage: await aggregateUsage(db, it.id, periodM1),
+      usage: await aggregateUsage(db, it.id, usageMonth),
     });
   }
   return out;
@@ -97,8 +97,10 @@ export interface RunSummary {
 }
 
 export async function runBilling(db: DB, period?: string): Promise<RunSummary> {
-  const periodMonth = period ?? firstOfThisMonth();
-  const periodM1 = prevMonth(periodMonth);
+  // Arrears-only: the run on the 1st bills the month that JUST ENDED. issueDate
+  // (the run's month-start) drives the due date; periodMonth is the billed month.
+  const issueDate = firstOfThisMonth();
+  const periodMonth = period ?? prevMonth(issueDate);
   const runDate = new Date().toISOString().slice(0, 10);
   const approve = !!process.env.XERO_AUTO_APPROVE_FROM && runDate >= process.env.XERO_AUTO_APPROVE_FROM;
   const xero = getXero();
@@ -118,7 +120,10 @@ export async function runBilling(db: DB, period?: string): Promise<RunSummary> {
   for (const acc of (accounts ?? []) as { id: string; status: string; contract_start_date: string | null; contract_end_date: string | null; hubspot_company_id: string | null; finance_contact_id: string | null; xero_contact_id: string | null }[]) {
     try {
       if (acc.status === "disputed") { summary.flagged.push({ account_id: acc.id, reason: "disputed" }); continue; }
-      if (!acc.contract_start_date || acc.contract_start_date > periodMonth) { summary.skipped += 1; continue; }
+      // Bill once the contract has started by the end of the billed month (a
+      // mid-month start is pro-rated by the engine), i.e. skip only accounts that
+      // start in a LATER month than the one being billed.
+      if (!acc.contract_start_date || acc.contract_start_date.slice(0, 7) > periodMonth.slice(0, 7)) { summary.skipped += 1; continue; }
 
       // Idempotent: skip if this account already has an invoice for the period.
       const { data: existing } = await db.from("billing_invoices").select("id").eq("account_id", acc.id).eq("period_month", periodMonth).maybeSingle();
@@ -126,8 +131,8 @@ export async function runBilling(db: DB, period?: string): Promise<RunSummary> {
       const { count: priorCount } = await db.from("billing_invoices").select("id", { count: "exact", head: true }).eq("account_id", acc.id);
       const isFirstInvoice = (priorCount ?? 0) === 0;
 
-      const items = await buildEngineItems(db, acc.id, periodM1, acc.contract_start_date);
-      const input: EngineInput = { periodMonth, isFirstInvoice, contractStartDate: acc.contract_start_date, contractEndDate: acc.contract_end_date, items, groupMinimums };
+      const items = await buildEngineItems(db, acc.id, periodMonth, acc.contract_start_date);
+      const input: EngineInput = { periodMonth, isFirstInvoice, contractStartDate: acc.contract_start_date, contractEndDate: acc.contract_end_date, items, groupMinimums, issueDate };
       const result = computeInvoice(input);
       if (result.lines.length === 0) { summary.skipped += 1; continue; }
 

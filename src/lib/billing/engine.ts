@@ -3,14 +3,14 @@
 // prior month, it produces the invoice lines for a billing period with a full
 // `calc` audit so every figure is reproducible from stored data.
 //
-// All money is integer PENCE. The billing model (brief Assumption 1): an invoice
-// dated the 1st of month M covers (a) recurring fees for M in advance, (b) usage
-// for M-1 in arrears, and (c) on the FIRST invoice only, a pro-rata charge for
-// the partial first month.
+// All money is integer PENCE. The billing model is ARREARS-ONLY (Jim 2026-11-06):
+// the invoice issued on the 1st covers the month that JUST ENDED — recurring
+// fees for that month (pro-rated to the active days when the contract started or
+// was cancelled part-way through it) plus that month's usage. No line ever
+// references a period after the run date, and nothing is billed in advance.
 
 import type { Metric, VatTreatment } from "./catalogue";
 import type { ItemConfig } from "./itemConfig";
-import { firstMonthProration } from "./preview";
 import { vatPence } from "./money";
 
 export interface EngineBand {
@@ -51,12 +51,13 @@ export interface GroupMinimumInput {
 }
 
 export interface EngineInput {
-  periodMonth: string;         // "YYYY-MM-01" — month M being invoiced
-  isFirstInvoice: boolean;
+  periodMonth: string;         // "YYYY-MM-01" — the month being invoiced (the just-ended month)
+  isFirstInvoice: boolean;     // first invoice for the account (gates the setup fee)
   contractStartDate: string;   // "YYYY-MM-DD"
-  contractEndDate: string | null;
+  contractEndDate: string | null; // cancellation effective date (last active day, inclusive)
   items: EngineItem[];
   groupMinimums?: GroupMinimumInput[]; // category floors (e.g. all TU ≥ £X/mo)
+  issueDate?: string;          // when the invoice is raised (drives the due date); default = periodMonth
   dueDays?: number;            // net terms; default 14
 }
 
@@ -96,6 +97,36 @@ function addMonths(dateISO: string, months: number): string {
   const d = new Date(`${dateISO.slice(0, 10)}T00:00:00Z`);
   d.setUTCMonth(d.getUTCMonth() + months);
   return d.toISOString().slice(0, 10);
+}
+
+function daysInMonthISO(periodISO: string): number {
+  const [y, m] = periodISO.split("-").map(Number) as [number, number];
+  return new Date(Date.UTC(y, m, 0)).getUTCDate(); // day 0 of next month = last day of this one
+}
+
+/** How much of the billed month the contract was active for, as the overlap of
+ *  [start, end] with the month. Pro-rates the first (mid-month start) and final
+ *  (mid-month cancellation) months; `isFull` for a whole month; `activeDays` 0
+ *  when the month falls entirely before the start or after the end. The end date
+ *  is the inclusive last active day. */
+export function monthActiveFactor(periodMonthISO: string, startISO: string, endISO: string | null): {
+  activeDays: number; monthDays: number; factor: number; isFull: boolean;
+} {
+  const periodYm = ym(periodMonthISO);
+  const monthDays = daysInMonthISO(periodMonthISO);
+  const none = { activeDays: 0, monthDays, factor: 0, isFull: false };
+  // From-day within the month (1 if the contract started in an earlier month).
+  let fromDay = 1;
+  if (ym(startISO) === periodYm) fromDay = Number(startISO.slice(8, 10));
+  else if (ym(startISO) > periodYm) return none; // starts after this month
+  // To-day within the month (full month if it ends later / never).
+  let toDay = monthDays;
+  if (endISO) {
+    if (ym(endISO) < periodYm) return none;      // ended before this month
+    if (ym(endISO) === periodYm) toDay = Number(endISO.slice(8, 10));
+  }
+  const activeDays = Math.max(0, toDay - fromDay + 1);
+  return { activeDays, monthDays, factor: activeDays / monthDays, isFull: activeDays === monthDays };
 }
 
 /** Resolve a product's RELATIVE escalation schedule (start_month offsets, e.g.
@@ -231,13 +262,15 @@ function usageCharge(item: EngineItem, cfg: ItemConfig, usage: EngineUsage, bill
 
 export function computeInvoice(input: EngineInput): InvoiceResult {
   const period = input.periodMonth.slice(0, 10);
-  const dueDate = addDays(period, input.dueDays ?? 14);
+  // Due date is relative to when the invoice is ISSUED (the run date), not the
+  // billed month — in arrears the billed month has already ended.
+  const dueDate = addDays((input.issueDate ?? period).slice(0, 10), input.dueDays ?? 14);
   const lines: InvoiceLine[] = [];
   let prorated = false;
 
   const periodYm = ym(period);
   const endYm = input.contractEndDate ? ym(input.contractEndDate) : null;
-  const recurringStopped = endYm != null && periodYm > endYm; // cancelled before this month
+  const afterEnd = endYm != null && periodYm > endYm; // the whole billed month is after cancellation
 
   // Net billed per product_group (for category minimums). A group appears here
   // only if it has at least one configured item, so an un-sold category is never
@@ -257,22 +290,21 @@ export function computeInvoice(input: EngineInput): InvoiceResult {
     }
 
     // Recurring monthly fees (platform / support / any flat_monthly product) —
-    // in advance, pro-rata on first invoice. (setup_fee is handled above.)
+    // billed in ARREARS for the just-ended month, pro-rated to the active days
+    // when the contract started or was cancelled part-way through it.
     if (item.metric === "flat_monthly") {
       if (cfg.included) { lines.push(line(item, `${item.label} — included`, 1, 0, 0, { included: true })); continue; }
-      if (recurringStopped) continue; // no recurring after cancellation
+      const af = monthActiveFactor(period, input.contractStartDate, input.contractEndDate);
+      if (af.activeDays <= 0) continue; // not active in this month (before start / after cancellation)
       const amount = monthlyAmount(cfg, period);
       if (amount <= 0) continue;
-      // Pro-rata the partial first month (the contract-start month) on the first invoice.
-      if (input.isFirstInvoice && ym(input.contractStartDate) < periodYm) {
-        const pr = firstMonthProration(input.contractStartDate);
-        if (!pr.isFirstOfMonth) {
-          const partial = Math.round(amount * pr.factor);
-          prorated = true;
-          lines.push(line(item, `${item.label} — ${input.contractStartDate.slice(0, 7)} pro-rata (${pr.partialDays}/${pr.monthDays} days)`, 1, 0, partial, { prorata: true, factor: pr.factor, partial_days: pr.partialDays, month_days: pr.monthDays, monthly_pence: amount }));
-        }
+      if (af.isFull) {
+        lines.push(line(item, `${item.label} — ${periodYm}`, 1, amount, amount, { month: periodYm, monthly_pence: amount }));
+      } else {
+        const partial = Math.round(amount * af.factor);
+        prorated = true;
+        lines.push(line(item, `${item.label} — ${periodYm} pro-rata (${af.activeDays}/${af.monthDays} days)`, 1, 0, partial, { prorata: true, factor: af.factor, active_days: af.activeDays, month_days: af.monthDays, monthly_pence: amount }));
       }
-      lines.push(line(item, `${item.label} — ${periodYm} (in advance)`, 1, amount, amount, { advance: true, monthly_pence: amount }));
       continue;
     }
 
@@ -280,8 +312,8 @@ export function computeInvoice(input: EngineInput): InvoiceResult {
     // at zero usage WHILE in contract; after cancellation only real trailing
     // usage bills (no phantom floor).
     const usage = item.usage ?? { quantity: 0 };
-    if (recurringStopped && (usage.quantity ?? 0) === 0 && (usage.value ?? 0) === 0 && !cfg.included) { noteGroup(item.product_group, 0); continue; }
-    const uls = usageCharge(item, cfg, usage, !recurringStopped);
+    if (afterEnd && (usage.quantity ?? 0) === 0 && (usage.value ?? 0) === 0 && !cfg.included) { noteGroup(item.product_group, 0); continue; }
+    const uls = usageCharge(item, cfg, usage, !afterEnd);
     let groupSum = 0;
     for (const ul of uls) {
       if (ul.line_amount_pence !== 0 || cfg.included) lines.push(ul);
@@ -292,7 +324,7 @@ export function computeInvoice(input: EngineInput): InvoiceResult {
 
   // Category minimums: top up any product_group whose billed net falls short of
   // its monthly floor (e.g. all TU items must total ≥ £X/month).
-  if (!recurringStopped) {
+  if (!afterEnd) {
     for (const gm of input.groupMinimums ?? []) {
       if (!groupNet.has(gm.product_group)) continue; // category not sold to this account
       const net = groupNet.get(gm.product_group)!;

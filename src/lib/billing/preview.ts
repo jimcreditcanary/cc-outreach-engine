@@ -1,8 +1,9 @@
 // First-invoice preview with proration. Pure + unit-tested. This is a focused
 // subset of the full Phase-4 invoice engine: it shows what the FIRST invoice
-// looks like at setup time (setup fee + pro-rata partial first month + first
-// full month of recurring fees in advance). Usage/transaction items have no
-// usage yet, so they show £0 with a note. All money is integer PENCE.
+// looks like at setup time. Billing is arrears-only, so the first invoice is
+// the setup fee + the first (partial) month of recurring fees, pro-rated to the
+// days active when the contract starts mid-month. Usage/transaction items have
+// no usage yet, so they show £0 with a note. All money is integer PENCE.
 
 import type { Metric, VatTreatment } from "./catalogue";
 import type { ItemConfig } from "./itemConfig";
@@ -46,12 +47,6 @@ export function firstMonthProration(startISO: string): { partialDays: number; mo
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function nextMonthLabel(startISO: string): string {
-  const [y, m] = startISO.split("-").map(Number) as [number, number];
-  const nm = m === 12 ? 0 : m; // 0-based next month
-  const ny = m === 12 ? y + 1 : y;
-  return `${MONTHS[nm]} ${ny}`;
-}
 function startMonthLabel(startISO: string): string {
   const [y, m] = startISO.split("-").map(Number) as [number, number];
   return `${MONTHS[m - 1]} ${y}`;
@@ -75,17 +70,17 @@ export function previewFirstInvoice(items: PreviewItem[], contractStartISO: stri
       lines.push(line(it.label, "One-off setup fee", cfg.amount_pence!, it.vat_treatment));
       continue;
     }
-    // Recurring monthly fees (platform / support) — pro-rata partial month + first full month in advance.
+    // Recurring monthly fees (platform / support) — arrears: the first invoice
+    // bills the first month, pro-rated to the active days on a mid-month start.
     if (it.metric === "flat_monthly" && it.item_type !== "setup_fee") {
       if (cfg.included) { lines.push(line(it.label, "Included", 0, it.vat_treatment)); continue; }
       const monthly = cfg.amount_pence ?? 0;
       if (monthly <= 0) continue;
       if (pro.isFirstOfMonth) {
-        lines.push(line(it.label, `${startMonthLabel(contractStartISO)} (in advance)`, monthly, it.vat_treatment));
+        lines.push(line(it.label, startMonthLabel(contractStartISO), monthly, it.vat_treatment));
       } else {
         const prorated = Math.round(monthly * pro.factor);
         lines.push(line(it.label, `${startMonthLabel(contractStartISO)} pro-rata (${pro.partialDays}/${pro.monthDays} days)`, prorated, it.vat_treatment));
-        lines.push(line(it.label, `${nextMonthLabel(contractStartISO)} (in advance)`, monthly, it.vat_treatment));
       }
       continue;
     }
