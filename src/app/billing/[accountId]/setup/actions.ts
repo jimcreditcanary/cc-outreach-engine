@@ -70,6 +70,9 @@ export async function saveBillingSetupAction(formData: FormData) {
       finance_contact_id: str(formData.get("finance_contact_id")) || null,
       po_number: str(formData.get("po_number")) || null,
     });
+    // Invoice mode (X1) — separate best-effort write so it no-ops before migration 073.
+    const billing_type = str(formData.get("billing_type")) === "draft" ? "draft" : "auto";
+    await db.from("billing_accounts").update({ billing_type }).eq("id", id);
     await logBillingAudit(db, { account_id: id, actor_user_id: me.id, actor_email: me.email ?? null, action: "items_configured", payload: { count: items.length } });
     await flash("success", `Saved ${items.length} item${items.length === 1 ? "" : "s"}. Review the first-invoice preview below, then activate.`);
   } catch (e) {

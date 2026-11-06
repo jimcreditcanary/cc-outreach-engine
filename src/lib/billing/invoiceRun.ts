@@ -100,7 +100,9 @@ export async function runBilling(db: DB, period?: string, opts: { dryRun?: boole
   const issueDate = londonFirstOfThisMonth();
   const periodMonth = period ?? prevMonth(issueDate);
   const runDate = londonToday();
-  const approve = !!process.env.XERO_AUTO_APPROVE_FROM && runDate >= process.env.XERO_AUTO_APPROVE_FROM;
+  // Safety gate: even an 'auto' account only authorises once the global cutover
+  // date has passed, so nothing auto-sends before go-live (X1).
+  const globalCutover = !!process.env.XERO_AUTO_APPROVE_FROM && runDate >= process.env.XERO_AUTO_APPROVE_FROM;
   const xero = getXero();
   const crm = getCrm();
   const groupMinimums: GroupMinimumInput[] = (await currentGroupMinimums(db)).map((g) => ({ product_group: g.product_group, minimum_pence: g.minimum_pence }));
@@ -115,11 +117,16 @@ export async function runBilling(db: DB, period?: string, opts: { dryRun?: boole
   const summary: RunSummary = { period_month: periodMonth, invoiced: 0, skipped: 0, flagged: [], errors: [], total_pence: 0 };
 
   // Active + notice_given bill normally; cancelled may still have trailing usage; disputed are flagged.
-  const { data: accounts } = await db.from("billing_accounts")
-    .select("id, status, contract_start_date, contract_end_date, hubspot_company_id, finance_contact_id, xero_contact_id")
-    .in("status", ["active", "notice_given", "cancelled", "disputed"]);
+  // billing_type is selected resiliently (added in migration 073) — before it
+  // exists every account falls back to 'auto'.
+  type AccRow = { id: string; status: string; contract_start_date: string | null; contract_end_date: string | null; hubspot_company_id: string | null; finance_contact_id: string | null; xero_contact_id: string | null; billing_type?: string };
+  const baseCols = "id, status, contract_start_date, contract_end_date, hubspot_company_id, finance_contact_id, xero_contact_id";
+  const statuses = ["active", "notice_given", "cancelled", "disputed"];
+  const q = (cols: string) => db.from("billing_accounts").select(cols).in("status", statuses) as unknown as Promise<{ data: AccRow[] | null; error: { message: string } | null }>;
+  let accRes = await q(`${baseCols}, billing_type`);
+  if (accRes.error && /billing_type/i.test(accRes.error.message)) accRes = await q(baseCols);
 
-  for (const acc of (accounts ?? []) as { id: string; status: string; contract_start_date: string | null; contract_end_date: string | null; hubspot_company_id: string | null; finance_contact_id: string | null; xero_contact_id: string | null }[]) {
+  for (const acc of (accRes.data ?? []) as AccRow[]) {
     try {
       if (acc.status === "disputed") { summary.flagged.push({ account_id: acc.id, reason: "disputed" }); continue; }
       // Bill once the contract has started by the end of the billed month (a
@@ -154,6 +161,9 @@ export async function runBilling(db: DB, period?: string, opts: { dryRun?: boole
         await updateBillingAccount(db, acc.id, { xero_contact_id: contactId });
       }
 
+      // 'draft' accounts always raise a Xero DRAFT; 'auto' accounts authorise
+      // only once the global cutover has passed (X1).
+      const approve = globalCutover && (acc.billing_type ?? "auto") !== "draft";
       const xi = await xero.createInvoice({
         contactId, reference: `${acc.id.slice(0, 8)}-${periodMonth.slice(0, 7)}`, periodMonth, dueDate: result.due_date,
         lines: result.lines.map((l) => ({ description: l.description, quantity: 1, unitAmountPence: l.line_amount_pence, vatRate: l.vat_rate })),

@@ -70,6 +70,7 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
   if (!account) notFound();
   // Only super-admins may set unit prices; deal owners select items + terms (S2).
   const canEditPrices = await isSuperAdmin();
+  const billingType = (account as { billing_type?: string }).billing_type ?? "auto"; // X1 (migration 073)
 
   // Case → product groups (which items are offered) + finance stakeholder prefill.
   let productGroups: string[] = [];
@@ -124,6 +125,10 @@ export default async function BillingSetupPage({ params }: { params: Promise<{ a
             <label className={lbl}>Notice period (days)<input name="notice_period_days" type="number" defaultValue={account.notice_period_days ?? ""} placeholder="e.g. 90" className={`${field} mt-0.5 w-28`} /></label>
             <label className={lbl}>Finance contact (HubSpot id)<input name="finance_contact_id" defaultValue={financePrefill} placeholder="prefilled from onboarding" className={`${field} mt-0.5 w-56`} /></label>
             <label className={lbl}>PO number (optional)<input name="po_number" defaultValue={account.po_number ?? ""} className={`${field} mt-0.5 w-40`} /></label>
+            <label className={lbl}>Invoice mode<select name="billing_type" defaultValue={billingType} className={`${field} mt-0.5`}>
+              <option value="auto">Auto — authorise &amp; send</option>
+              <option value="draft">Draft — manual review in Xero</option>
+            </select></label>
           </div>
         </section>
 

@@ -27,18 +27,33 @@ export interface OutstandingRow {
   deal_owner_user_id: string | null; contacted_customer: boolean | null; note: string | null;
 }
 
-/** Pull paid status from Xero for still-open invoices and stamp paid_at. */
-export async function syncPaidStatus(db: DB): Promise<number> {
+/** Pull status + amount-due from Xero for still-open invoices and persist them
+ *  (X3). Runs daily (reconcile cron) and at the start of dunning. Resilient to
+ *  migration 073 not being applied — then it degrades to a paid-only stamp.
+ *  Best-effort per invoice. */
+export async function syncInvoiceStatus(db: DB, opts: { dryRun?: boolean } = {}): Promise<{ checked: number; paid: number; updated: number }> {
   const xero = getXero();
   const { data } = await db.from("billing_invoices").select("id, xero_invoice_id").is("paid_at", null).not("xero_invoice_id", "is", null);
-  let synced = 0;
+  let checked = 0, paid = 0, updated = 0;
   for (const inv of (data ?? []) as { id: string; xero_invoice_id: string }[]) {
     try {
       const s = await xero.getInvoiceStatus(inv.xero_invoice_id);
-      if (s.paid) { await db.from("billing_invoices").update({ paid_at: new Date().toISOString(), xero_status: "PAID" }).eq("id", inv.id); synced += 1; }
+      checked += 1;
+      if (s.paid) paid += 1;
+      if (opts.dryRun) continue;
+      const now = new Date().toISOString();
+      const full: Record<string, unknown> = { xero_status: s.status, amount_due_pence: s.amountDuePence ?? null, status_synced_at: now };
+      if (s.paid) full.paid_at = now;
+      let upd = await db.from("billing_invoices").update(full).eq("id", inv.id);
+      if (upd.error && /(amount_due_pence|status_synced_at|column|schema cache)/i.test(upd.error.message)) {
+        const basic: Record<string, unknown> = { xero_status: s.status };
+        if (s.paid) basic.paid_at = now;
+        upd = await db.from("billing_invoices").update(basic).eq("id", inv.id);
+      }
+      if (!upd.error) updated += 1;
     } catch { /* best-effort */ }
   }
-  return synced;
+  return { checked, paid, updated };
 }
 
 /** Overdue (unpaid, past due) invoices with company + latest contacted status. */
@@ -78,7 +93,7 @@ export interface DunningSummary { synced: number; outstanding: number; owners_em
  *  skipped on a re-run. dryRun computes + reports without sending or logging (X5). */
 export async function runDunning(db: DB, today = londonToday(), opts: { dryRun?: boolean } = {}): Promise<DunningSummary> {
   const { dryRun = false } = opts;
-  const synced = dryRun ? 0 : await syncPaidStatus(db);
+  const synced = dryRun ? 0 : (await syncInvoiceStatus(db)).paid;
   const rows = await loadOutstanding(db, today);
   const summary: DunningSummary = { synced, outstanding: rows.length, owners_emailed: 0, owners_skipped: 0, dry_run: dryRun, errors: [] };
   if (!rows.length) return summary;
