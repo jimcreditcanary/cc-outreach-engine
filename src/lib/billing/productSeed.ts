@@ -68,7 +68,7 @@ const OPEN_BANKING: SeedProduct[] = [
       { from: 12501,  to: 25000,  unit_pence: gbp(0.16), min_monthly_pence: gbp(2000) },
       { from: 25001,  to: 50000,  unit_pence: gbp(0.10), min_monthly_pence: gbp(2500) },
       { from: 50001,  to: 100000, unit_pence: gbp(0.08), min_monthly_pence: gbp(4000) },
-      { from: 100001, to: null,   unit_pence: gbp(0.04), min_monthly_pence: gbp(4000) },
+      { from: 100001, to: null,   unit_pence: gbp(0.04), min_monthly_pence: gbp(5000) }, // band 7 minimum £5,000 (Jim 2026-11-06)
     ],
     notes: "Can be sold INCLUDED (fixed, zero-rated): set the account item's config.included=true and any OB usage reported via the API is ignored (not double-billed)." },
 ];
@@ -130,11 +130,12 @@ const PAYMENTS: SeedProduct[] = [
 ];
 
 // ─── Communications ───────────────────────────────────────────────────────────
-// Comms are VAT-exempt (Jim 2026-11-01).
+// Comms are chargeable for VAT → standard (Jim 2026-11-06, supersedes the
+// earlier 2026-11-01 "exempt" call).
 const COMMS: SeedProduct[] = [
-  { key: "comms_email", label: "Communications — Email", group: "comms", metric: "per_message", type: "variable", vat: "exempt", unit_pence: gbp(0) },
-  { key: "comms_sms", label: "Communications — SMS", group: "comms", metric: "per_message", type: "variable", vat: "exempt", unit_pence: gbp(0.06), notes: "Could be banded like other volume products in future." },
-  { key: "comms_whatsapp", label: "Communications — WhatsApp", group: "comms", metric: "per_message", type: "variable", vat: "exempt", unit_pence: gbp(0.01) },
+  { key: "comms_email", label: "Communications — Email", group: "comms", metric: "per_message", type: "variable", vat: "standard", unit_pence: gbp(0) },
+  { key: "comms_sms", label: "Communications — SMS", group: "comms", metric: "per_message", type: "variable", vat: "standard", unit_pence: gbp(0.06), notes: "Could be banded like other volume products in future." },
+  { key: "comms_whatsapp", label: "Communications — WhatsApp", group: "comms", metric: "per_message", type: "variable", vat: "standard", unit_pence: gbp(0.01) },
 ];
 
 export const PRODUCTS: SeedProduct[] = [
