@@ -8,6 +8,7 @@ import { sendTransactional } from "@/lib/send/postmark";
 import { appendSignatureHtml, appendSignatureText } from "@/lib/send/signature";
 import { getXero } from "@/lib/integrations/xero";
 import { formatPence } from "./money";
+import { londonToday, londonFirstOfThisMonth } from "./clock";
 
 type DB = SupabaseClient;
 
@@ -41,7 +42,7 @@ export async function syncPaidStatus(db: DB): Promise<number> {
 }
 
 /** Overdue (unpaid, past due) invoices with company + latest contacted status. */
-export async function loadOutstanding(db: DB, today = new Date().toISOString().slice(0, 10)): Promise<OutstandingRow[]> {
+export async function loadOutstanding(db: DB, today = londonToday()): Promise<OutstandingRow[]> {
   const { data: invs } = await db.from("billing_invoices")
     .select("id, account_id, period_month, total_pence, due_date, paid_at, xero_invoice_id, xero_status")
     .is("paid_at", null).lt("due_date", today).order("due_date", { ascending: true });
@@ -70,31 +71,43 @@ export async function loadOutstanding(db: DB, today = new Date().toISOString().s
   });
 }
 
-export interface DunningSummary { synced: number; outstanding: number; owners_emailed: number; errors: { owner: string; error: string }[] }
+export interface DunningSummary { synced: number; outstanding: number; owners_emailed: number; owners_skipped?: number; dry_run?: boolean; errors: { owner: string; error: string }[] }
 
-/** The 15th-of-month cron: sync paid, log overdue, email each deal owner. */
-export async function runDunning(db: DB, today = new Date().toISOString().slice(0, 10)): Promise<DunningSummary> {
-  const synced = await syncPaidStatus(db);
+/** The 15th-of-month cron: sync paid, log overdue, email each deal owner. One
+ *  email per owner per month (X6): an owner already chased earlier this month is
+ *  skipped on a re-run. dryRun computes + reports without sending or logging (X5). */
+export async function runDunning(db: DB, today = londonToday(), opts: { dryRun?: boolean } = {}): Promise<DunningSummary> {
+  const { dryRun = false } = opts;
+  const synced = dryRun ? 0 : await syncPaidStatus(db);
   const rows = await loadOutstanding(db, today);
-  const summary: DunningSummary = { synced, outstanding: rows.length, owners_emailed: 0, errors: [] };
+  const summary: DunningSummary = { synced, outstanding: rows.length, owners_emailed: 0, owners_skipped: 0, dry_run: dryRun, errors: [] };
   if (!rows.length) return summary;
 
+  // X6 — owners already chased EARLIER this month (don't re-email on a re-run).
+  const monthStart = londonFirstOfThisMonth();
+  const { data: priorLog } = await db.from("billing_dunning_log").select("deal_owner_user_id, reported_on").gte("reported_on", monthStart).lt("reported_on", today);
+  const alreadyEmailed = new Set(((priorLog ?? []) as { deal_owner_user_id: string | null }[]).map((r) => r.deal_owner_user_id).filter(Boolean) as string[]);
+
   // Log each overdue invoice for today (idempotent per invoice+date).
-  await db.from("billing_dunning_log").upsert(
-    rows.map((r) => ({ invoice_id: r.invoice_id, account_id: r.account_id, deal_owner_user_id: r.deal_owner_user_id, reported_on: today })),
-    { onConflict: "invoice_id,reported_on", ignoreDuplicates: true },
-  );
+  if (!dryRun) {
+    await db.from("billing_dunning_log").upsert(
+      rows.map((r) => ({ invoice_id: r.invoice_id, account_id: r.account_id, deal_owner_user_id: r.deal_owner_user_id, reported_on: today })),
+      { onConflict: "invoice_id,reported_on", ignoreDuplicates: true },
+    );
+  }
 
   // Group by deal owner and email.
   const byOwner = new Map<string, OutstandingRow[]>();
   for (const r of rows) { if (!r.deal_owner_user_id) continue; const arr = byOwner.get(r.deal_owner_user_id) ?? []; arr.push(r); byOwner.set(r.deal_owner_user_id, arr); }
 
   for (const [ownerId, list] of byOwner) {
+    if (alreadyEmailed.has(ownerId)) { summary.owners_skipped = (summary.owners_skipped ?? 0) + 1; continue; }
     try {
       const { data } = await adminClient().auth.admin.getUserById(ownerId);
       const to = data?.user?.email;
       if (!to) { summary.errors.push({ owner: ownerId, error: "no email" }); continue; }
       const link = `${appUrl()}/billing/outstanding`;
+      if (dryRun) { summary.owners_emailed += 1; continue; }
       const lines = list.map((r) => `• ${r.company ?? r.account_id.slice(0, 8)} — ${formatPence(r.total_pence)} — ${r.days_overdue} days overdue (${r.period_month})`);
       await sendTransactional({
         to, subject: `Billing: ${list.length} unpaid invoice${list.length === 1 ? "" : "s"} to chase`,
@@ -110,7 +123,7 @@ export async function runDunning(db: DB, today = new Date().toISOString().slice(
 
 /** Record whether the deal owner has chased the customer (per-row toggle). */
 export async function recordContacted(db: DB, invoiceId: string, contacted: boolean, note: string, userId: string | null): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = londonToday();
   const { data: acc } = await db.from("billing_invoices").select("account_id").eq("id", invoiceId).maybeSingle();
   await db.from("billing_dunning_log").upsert(
     { invoice_id: invoiceId, account_id: (acc as { account_id: string } | null)?.account_id ?? null, deal_owner_user_id: userId, reported_on: today, contacted_customer: contacted, contacted_at: contacted ? new Date().toISOString() : null, note: note || null },

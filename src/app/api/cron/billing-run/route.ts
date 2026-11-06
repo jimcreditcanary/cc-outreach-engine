@@ -13,7 +13,9 @@ export async function GET(req: Request): Promise<Response> {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get("authorization");
   if (!secret || auth !== `Bearer ${secret}`) return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  const period = new URL(req.url).searchParams.get("period") ?? undefined;
-  const summary = await runBilling(serviceClient(), period ?? undefined);
+  const url = new URL(req.url);
+  const period = url.searchParams.get("period") ?? undefined;
+  const dryRun = url.searchParams.get("dry") === "1";
+  const summary = await runBilling(serviceClient(), period ?? undefined, { dryRun });
   return Response.json({ ok: true, ...summary });
 }

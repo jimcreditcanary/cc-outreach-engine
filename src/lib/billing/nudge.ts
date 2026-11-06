@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { adminClient } from "@/lib/auth/admin";
 import { sendTransactional } from "@/lib/send/postmark";
 import { appendSignatureHtml, appendSignatureText } from "@/lib/send/signature";
+import { londonToday } from "./clock";
 
 type DB = SupabaseClient;
 
@@ -30,7 +31,8 @@ function nextAnniversary(startISO: string, fromISO: string): string {
 
 export interface NudgeSummary { nudged: number; errors: { account_id: string; error: string }[] }
 
-export async function runNoticeNudge(db: DB, today = new Date().toISOString().slice(0, 10)): Promise<NudgeSummary> {
+export async function runNoticeNudge(db: DB, today = londonToday(), opts: { dryRun?: boolean } = {}): Promise<NudgeSummary> {
+  const { dryRun = false } = opts;
   const summary: NudgeSummary = { nudged: 0, errors: [] };
   const { data: accounts } = await db.from("billing_accounts")
     .select("id, status, contract_start_date, contract_end_date, notice_period_days, deal_owner_user_id, hubspot_company_id")
@@ -55,6 +57,7 @@ export async function runNoticeNudge(db: DB, today = new Date().toISOString().sl
       const { data } = await adminClient().auth.admin.getUserById(a.deal_owner_user_id);
       const to = data?.user?.email;
       if (!to) { summary.errors.push({ account_id: a.id, error: "no owner email" }); continue; }
+      if (dryRun) { summary.nudged += 1; continue; }
       const link = `${appUrl()}/billing/${a.id}`;
       const body = [`Heads-up on ${a.hubspot_company_id ?? "a billing account"}:`, "", ...reasons.map((r) => `• ${r}`), "", `Account: ${link}`].join("\n");
       await sendTransactional({

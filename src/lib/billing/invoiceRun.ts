@@ -10,13 +10,10 @@ import { listBillingItems, listBands, currentPricingByItemType, currentGroupMini
 import { computeInvoice, resolveEscalation, type EngineItem, type EngineInput, type GroupMinimumInput, type InvoiceResult } from "./engine";
 import type { Metric, VatTreatment } from "./catalogue";
 import type { ItemConfig } from "./itemConfig";
+import { londonToday, londonFirstOfThisMonth } from "./clock";
 
 type DB = SupabaseClient;
 
-function firstOfThisMonth(): string {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
-}
 function prevMonth(periodISO: string): string {
   const [y, m] = periodISO.split("-").map(Number) as [number, number];
   const py = m === 1 ? y - 1 : y;
@@ -96,19 +93,24 @@ export interface RunSummary {
   total_pence: number;
 }
 
-export async function runBilling(db: DB, period?: string): Promise<RunSummary> {
+export async function runBilling(db: DB, period?: string, opts: { dryRun?: boolean } = {}): Promise<RunSummary> {
   // Arrears-only: the run on the 1st bills the month that JUST ENDED. issueDate
   // (the run's month-start) drives the due date; periodMonth is the billed month.
-  const issueDate = firstOfThisMonth();
+  const { dryRun = false } = opts;
+  const issueDate = londonFirstOfThisMonth();
   const periodMonth = period ?? prevMonth(issueDate);
-  const runDate = new Date().toISOString().slice(0, 10);
+  const runDate = londonToday();
   const approve = !!process.env.XERO_AUTO_APPROVE_FROM && runDate >= process.env.XERO_AUTO_APPROVE_FROM;
   const xero = getXero();
   const crm = getCrm();
   const groupMinimums: GroupMinimumInput[] = (await currentGroupMinimums(db)).map((g) => ({ product_group: g.product_group, minimum_pence: g.minimum_pence }));
 
-  const { data: run } = await db.from("billing_invoice_runs").insert({ period_month: periodMonth, run_date: runDate, status: "running" }).select("id").single();
-  const runId = run!.id as string;
+  // Dry run (X5): compute everything but write nothing to the DB or Xero.
+  let runId = "dry-run";
+  if (!dryRun) {
+    const { data: run } = await db.from("billing_invoice_runs").insert({ period_month: periodMonth, run_date: runDate, status: "running" }).select("id").single();
+    runId = run!.id as string;
+  }
 
   const summary: RunSummary = { period_month: periodMonth, invoiced: 0, skipped: 0, flagged: [], errors: [], total_pence: 0 };
 
@@ -135,6 +137,8 @@ export async function runBilling(db: DB, period?: string): Promise<RunSummary> {
       const input: EngineInput = { periodMonth, isFirstInvoice, contractStartDate: acc.contract_start_date, contractEndDate: acc.contract_end_date, items, groupMinimums, issueDate };
       const result = computeInvoice(input);
       if (result.lines.length === 0) { summary.skipped += 1; continue; }
+
+      if (dryRun) { summary.invoiced += 1; summary.total_pence += result.total_pence; continue; }
 
       // Ensure a Xero contact (create lazily on first invoice).
       let contactId = acc.xero_contact_id;
@@ -164,6 +168,8 @@ export async function runBilling(db: DB, period?: string): Promise<RunSummary> {
     }
   }
 
-  await db.from("billing_invoice_runs").update({ status: summary.errors.length ? "error" : "complete", finished_at: new Date().toISOString(), summary, errors: summary.errors }).eq("id", runId);
+  if (!dryRun) {
+    await db.from("billing_invoice_runs").update({ status: summary.errors.length ? "error" : "complete", finished_at: new Date().toISOString(), summary, errors: summary.errors }).eq("id", runId);
+  }
   return summary;
 }
