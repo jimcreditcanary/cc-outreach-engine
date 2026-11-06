@@ -158,6 +158,27 @@ export async function saveSignatureAction(formData: FormData) {
   revalidatePath("/settings");
 }
 
+/** Save the app-wide onboarding export webhook (migration 072). The URL is
+ *  stored as given; the secret is left unchanged when blank (so the URL can be
+ *  updated without re-entering it), or cleared via the checkbox. These override
+ *  the ONBOARDING_WEBHOOK_URL / _SECRET env vars. */
+export async function saveOnboardingWebhookAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const url = str(formData.get("onboarding_webhook_url"));
+  const secret = str(formData.get("onboarding_webhook_secret"));
+  const clearSecret = String(formData.get("clear_webhook_secret") ?? "") === "on";
+  const row: Record<string, unknown> = { id: true, onboarding_webhook_url: url, updated_at: new Date().toISOString() };
+  if (secret) row.onboarding_webhook_secret = secret;
+  else if (clearSecret) row.onboarding_webhook_secret = null;
+  const { error } = await serviceClient().from("app_settings").upsert(row, { onConflict: "id" });
+  await flash(
+    error ? "error" : "success",
+    error ? `Couldn't save: ${error.message} — has migration 072 run?` : url ? "Onboarding webhook saved." : "Onboarding webhook URL cleared.",
+  );
+  revalidatePath("/settings");
+}
+
 /** Refresh the signature state from Postmark (the operator clicked the
  *  confirmation email; we want the verified flag to flip true here too). */
 export async function refreshSignatureStatusAction() {

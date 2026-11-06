@@ -130,15 +130,31 @@ export function onboardingApiKeyOk(req: Request): boolean {
   return req.headers.get("authorization") === `Bearer ${key}` || req.headers.get("x-api-key") === key;
 }
 
-/** POST the config-only block to ONBOARDING_WEBHOOK_URL (if set) when a case is
+/** Resolve the webhook URL + secret. A value set in Settings (app_settings)
+ *  wins; the env vars (ONBOARDING_WEBHOOK_URL / _SECRET) are the fallback.
+ *  Degrades to env-only before migration 072 is applied. */
+export async function onboardingWebhookConfig(db: DB): Promise<{ url: string | null; secret: string | null }> {
+  let url = process.env.ONBOARDING_WEBHOOK_URL?.trim() || null;
+  let secret = process.env.ONBOARDING_WEBHOOK_SECRET?.trim() || null;
+  try {
+    const { data, error } = await db.from("app_settings").select("onboarding_webhook_url, onboarding_webhook_secret").eq("id", true).maybeSingle();
+    if (!error && data) {
+      const row = data as { onboarding_webhook_url: string | null; onboarding_webhook_secret: string | null };
+      if (row.onboarding_webhook_url?.trim()) url = row.onboarding_webhook_url.trim();
+      if (row.onboarding_webhook_secret?.trim()) secret = row.onboarding_webhook_secret.trim();
+    }
+  } catch { /* table not there yet → env only */ }
+  return { url, secret };
+}
+
+/** POST the config-only block to the configured webhook (if any) when a case is
  *  approved. Best-effort — never throws into the approval flow. */
 export async function sendOnboardingWebhook(db: DB, caseId: string): Promise<boolean> {
-  const url = process.env.ONBOARDING_WEBHOOK_URL;
+  const { url, secret } = await onboardingWebhookConfig(db);
   if (!url) return false;
   try {
     const block = await buildOnboardingExport(db, caseId);
     if (!block) return false;
-    const secret = process.env.ONBOARDING_WEBHOOK_SECRET;
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", ...(secret ? { "x-webhook-secret": secret } : {}) },

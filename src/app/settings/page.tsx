@@ -13,6 +13,7 @@ import {
   saveHubspotOwnerAction,
   bulkSyncOwnersAction,
   saveSignatureAction,
+  saveOnboardingWebhookAction,
 } from "./actions";
 import { loadDraftConfig } from "@/lib/mailer/config";
 import {
@@ -78,6 +79,24 @@ export default async function SettingsPage() {
   const leadKeySet = !!process.env.LEAD_API_KEY;
   const leadOrigins = ["creditcanary.co.uk", "www.creditcanary.co.uk", ...(process.env.LEAD_ALLOWED_ORIGINS?.split(/\s+/).filter(Boolean) ?? [])];
   const leadEndpoint = `${appUrl}/api/leads`;
+
+  // Onboarding export — the API key stays in Vercel (status only), but the
+  // approval webhook URL + secret are editable here (app_settings, migration
+  // 072). The secret value is never rendered — only whether one is set.
+  let webhookUrl = "";
+  let webhookSecretSet = !!process.env.ONBOARDING_WEBHOOK_SECRET;
+  let webhookTablePending = false;
+  try {
+    const { data: ws, error: wsErr } = await db.from("app_settings").select("onboarding_webhook_url, onboarding_webhook_secret").eq("id", true).maybeSingle();
+    if (wsErr) webhookTablePending = true;
+    else if (ws) {
+      webhookUrl = (ws.onboarding_webhook_url as string | null) ?? "";
+      if ((ws.onboarding_webhook_secret as string | null)?.trim()) webhookSecretSet = true;
+    }
+  } catch { webhookTablePending = true; }
+  if (!webhookUrl && process.env.ONBOARDING_WEBHOOK_URL) webhookUrl = process.env.ONBOARDING_WEBHOOK_URL;
+  const onbKeySet = !!process.env.ONBOARDING_API_KEY;
+  const onbEndpoint = `${appUrl}/api/onboarding`;
 
   return (
     <main className="px-4 py-6 md:px-8">
@@ -530,6 +549,53 @@ export default async function SettingsPage() {
             </div>
           </details>
         </div>
+      </section>
+
+      <section className="mb-4 rounded-lg border border-neutral-200 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Onboarding export API</h2>
+        <p className="mb-3 text-xs text-neutral-500">
+          Lets dev / provisioning tooling pull a customer&apos;s onboarding config (config only — no bank numbers or UBO personal data).
+          On approval, the same block is POSTed to the webhook below, if set.
+        </p>
+
+        <div className="mb-3 space-y-2 text-sm">
+          <div>
+            <span className={lbl}>Endpoints</span>
+            <code className="block break-all rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-xs text-neutral-800">GET {onbEndpoint}  ·  GET {onbEndpoint}/&#123;caseId&#125;  ·  GET {onbEndpoint}?deal_id=&#123;id&#125;</code>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">API key:</span>
+            {onbKeySet ? (
+              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800">✓ configured</span>
+            ) : (
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">not set — API returns 503</span>
+            )}
+            <span className="text-xs text-neutral-400">Managed in Vercel as <code>ONBOARDING_API_KEY</code>. Sent as <code>Authorization: Bearer …</code>. Not shown here.</span>
+          </div>
+        </div>
+
+        {webhookTablePending && (
+          <p className="mb-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">Run migration <code>072_app_settings</code> to save the webhook here. Until then the <code>ONBOARDING_WEBHOOK_URL</code> / <code>_SECRET</code> env vars are used.</p>
+        )}
+
+        <form action={saveOnboardingWebhookAction} className="space-y-3">
+          <div>
+            <label className={lbl}>Webhook URL <span className="normal-case text-neutral-400">(POSTed the config block on approval — blank disables)</span></label>
+            <input name="onboarding_webhook_url" type="url" defaultValue={webhookUrl} placeholder="https://your-dev-tooling.example.com/hooks/onboarding" className={field} />
+          </div>
+          <div>
+            <label className={lbl}>Webhook secret <span className="normal-case text-neutral-400">(sent as <code>x-webhook-secret</code>)</span></label>
+            <input name="onboarding_webhook_secret" type="password" autoComplete="off" placeholder={webhookSecretSet ? "•••••••• (leave blank to keep current)" : "optional shared secret"} className={field} />
+            {webhookSecretSet && (
+              <label className="mt-1 flex items-center gap-1.5 text-xs text-neutral-500">
+                <input type="checkbox" name="clear_webhook_secret" /> Clear the saved secret
+              </label>
+            )}
+          </div>
+          <PendingButton className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" pendingLabel="Saving…">
+            Save webhook
+          </PendingButton>
+        </form>
       </section>
 
       <section className="mt-8">
