@@ -10,19 +10,16 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/server";
-import { serviceClient } from "@/lib/db/client";
 import { hubspotEnabled } from "@/lib/hubspot/client";
 import { hubspotRepo, getDeal, dealContactIds, dealRecentNotes, dealCompanyId, getDealLineItems, dealMeetings, dealPipelines, companyDeals } from "@/lib/hubspot/repo";
 import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
+import { getCrm } from "@/lib/crm";
 import { companyOpsStatus } from "@/lib/crm/companyStatus";
 import { assessDealForWork, type DealContext } from "@/lib/mailer/dealWork";
-import { liveCaseForDeal } from "@/lib/onboarding/cases";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
 import { draftFromAnswersAction } from "../actions";
 import { changeDealStageAction, changeDealOwnerAction } from "../dealActions";
-import { startOnboardingAction } from "@/app/onboarding/actions";
-import { setUpBillingAction } from "@/app/billing/actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -57,9 +54,7 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
   const deal = await getDeal(id);
   if (!deal) notFound();
 
-  const db = serviceClient();
-  const [existingCase, contactIds, companyId, lineItems, notes, pipelines, owners, meetings] = await Promise.all([
-    liveCaseForDeal(db, id),
+  const [contactIds, companyId, lineItems, notes, pipelines, owners, meetings] = await Promise.all([
     dealContactIds(id),
     dealCompanyId(id),
     getDealLineItems(id),
@@ -83,9 +78,41 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
   const pipe = pipelines.find((p) => p.stages.some((s) => s.id === deal.stage_id)) ?? null;
   const stageOptions = pipe?.stages ?? [];
 
+  // Prev/next navigation through the deal's pipeline (item 1). Same open-stage
+  // set and ordering as the Deals board, so ← / → walk the board's deals in a
+  // predictable order. Disabled when the deal isn't in the open set (e.g. closed).
+  let prevId: string | null = null;
+  let nextId: string | null = null;
+  const openStageIds = stageOptions.filter((s) => !s.isClosed).map((s) => s.id);
+  if (openStageIds.length > 0) {
+    try {
+      const { records } = await getCrm().listDeals({ stages: openStageIds, sort: { col: "last_contacted", dir: "asc" }, limit: 100 });
+      const idx = records.findIndex((d) => d.id === deal.id);
+      if (idx >= 0) {
+        prevId = idx > 0 ? records[idx - 1]!.id : null;
+        nextId = idx < records.length - 1 ? records[idx + 1]!.id : null;
+      }
+    } catch { /* nav is best-effort — never block the page */ }
+  }
+
   return (
     <main className="px-4 py-6 md:px-8">
-      <Link href="/deals" className="text-sm text-blue-700 hover:underline">← Deals</Link>
+      <div className="flex items-center justify-between gap-2">
+        <Link href="/deals" className="text-sm text-blue-700 hover:underline">← Deals</Link>
+        {/* Step through the pipeline's deals (item 1) */}
+        <div className="flex items-center gap-2">
+          {prevId ? (
+            <Link href={`/hot/${prevId}`} className="rounded border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100">← Prev</Link>
+          ) : (
+            <span className="cursor-not-allowed rounded border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-300">← Prev</span>
+          )}
+          {nextId ? (
+            <Link href={`/hot/${nextId}`} className="rounded border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100">Next →</Link>
+          ) : (
+            <span className="cursor-not-allowed rounded border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-300">Next →</span>
+          )}
+        </div>
+      </div>
 
       <header className="mb-4 mt-2 border-b border-neutral-200 pb-3">
         <div className="flex flex-wrap items-baseline gap-x-2">
@@ -123,30 +150,6 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
             </select>
             <PendingButton className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100" pendingLabel="…">Set</PendingButton>
           </form>
-        </div>
-
-        {/* Onboarding + billing affordances */}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {existingCase ? (
-            <Link href={`/onboarding/${existingCase.id}`} className="inline-flex rounded border border-amber-300 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50">
-              Continue onboarding →
-            </Link>
-          ) : (
-            <form action={startOnboardingAction}>
-              <input type="hidden" name="deal_id" value={deal.id} />
-              <PendingButton className="rounded border border-amber-300 px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50" pendingLabel="Starting…">
-                Start onboarding →
-              </PendingButton>
-            </form>
-          )}
-          {company && ops?.billingAccountId ? (
-            <Link href={`/billing/${ops.billingAccountId}`} className="inline-flex rounded border border-indigo-300 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50">Billing: {ops.billing} →</Link>
-          ) : company ? (
-            <form action={setUpBillingAction}>
-              <input type="hidden" name="company_id" value={company.id} />
-              <PendingButton className="rounded border border-indigo-300 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50" pendingLabel="…">Set up billing →</PendingButton>
-            </form>
-          ) : null}
         </div>
       </header>
 
