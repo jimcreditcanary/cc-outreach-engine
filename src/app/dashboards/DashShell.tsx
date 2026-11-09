@@ -118,8 +118,8 @@ function PipeBtn({ on, onClick, children }: { on: boolean; onClick: () => void; 
       type="button"
       onClick={onClick}
       aria-pressed={on}
-      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-        on ? "border-amber-600 bg-amber-50 text-amber-800" : "border-neutral-300 text-neutral-600 hover:bg-neutral-100"
+      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+        on ? "bg-neutral-900 text-white" : "border border-neutral-300 text-neutral-600 hover:bg-neutral-100"
       }`}
     >
       {children}
