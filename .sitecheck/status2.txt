@@ -1,0 +1,65 @@
+accountable-wales.co.uk|DNS|no DNS record
+aceaccontax.co.uk|DNS|no DNS record
+abacusaccountingservices.biz|DNS|no DNS record
+avantitrains.co.uk|DNS|no DNS record
+attiaco.uk|DNS|no DNS record
+allstarstennisacademy.com|DNS|no DNS record
+bpbsolutions.co.uk|DNS|no DNS record
+castle-garage.com|DNS|no DNS record
+casuresh.com|DNS|no DNS record
+ca-e.eu|DNS|no DNS record
+charleslambeth.com|DNS|no DNS record
+brookselectricalservicesltd.co.uk|DNS|no DNS record
+champmanworth.co.uk|DNS|no DNS record
+chatur.co.uk|DNS|no DNS record
+cheeky-cheesecakes.co.uk|DNS|no DNS record
+cleafin.co.uk|DNS|no DNS record
+countrygardenonline.com|DNS|no DNS record
+datagenbasepro.com|DNS|no DNS record
+contaxgroup.com.br|DNS|no DNS record
+emaillistinfo.com|DNS|no DNS record
+geckofinance.co.uk|DNS|no DNS record
+gilbertali.co.uk|DNS|no DNS record
+holbecks.co.uk|DNS|no DNS record
+helpmyfarm.co.uk|DNS|no DNS record
+gate.express|DNS|no DNS record
+hopkinsconsulting.co.uk|DNS|no DNS record
+jackieemmons.ca|DNS|no DNS record
+hpr-uk.com|DNS|no DNS record
+hrainsbury.co.uk|DNS|no DNS record
+jamjargrill.com|DNS|no DNS record
+laneheywooddavis.co.uk|DNS|no DNS record
+lancastersca.co.uk|DNS|no DNS record
+lfors.co.uk|DNS|no DNS record
+ledger-solutions.com|DNS|no DNS record
+catchfabulousfishcakes.co.uk|ERR|curl: (7) Failed to connect to www.catchfabulousfishcakes.co.uk port 80 after 28 ms: Connection refused 000|http://www.c
+littlejohnfrazer.com|DNS|no DNS record
+lynettewhiteaccountingservicesltd.co.uk|DNS|no DNS record
+lyleaccountingsolutions.co.uk|DNS|no DNS record
+missionpracticeltd.co.uk|DNS|no DNS record
+mnscorp.net|DNS|no DNS record
+mooret.co.uk|DNS|no DNS record
+morley-scott.co.uk|DNS|no DNS record
+pauleddinsaccountants.co.uk|DNS|no DNS record
+bilobacsltd.onmicrosoft.com|DNS|no DNS record
+p-b-s.org|DNS|no DNS record
+ouradviceaddsup.com|DNS|no DNS record
+postfinancial.co.uk|DNS|no DNS record
+peterhunt.co.uk|DNS|no DNS record
+professionalknowhow.com|DNS|no DNS record
+roysokhal.co.uk|DNS|no DNS record
+rosenthalhass.com|DNS|no DNS record
+scandaudit.com|DNS|no DNS record
+technodatagiant.com|DNS|no DNS record
+talbotbusinessservices.co.uk|DNS|no DNS record
+tolleyfletcher.co.uk|DNS|no DNS record
+warnerbearman.com|DNS|no DNS record
+viewpointadvs.com|DNS|no DNS record
+accountantsdevon.com|DNS|no DNS record
+btex.co.uk|ERR|curl: (28) Connection timed out after 25004 milliseconds 000|http://www.btex.co.uk/ 
+felgate-it.co.uk|ERR|curl: (28) Connection timed out after 25003 milliseconds 000|http://www.felgate-it.co.uk/ 
+kslca.co.uk|ERR|curl: (28) Connection timed out after 25003 milliseconds 000|http://www.kslca.co.uk/ 
+lineone.net|ERR|curl: (28) Connection timed out after 25003 milliseconds 000|http://www.lineone.net/ 
+ercacc.co.uk|ERR|curl: (28) Connection timed out after 25007 milliseconds 000|http://www.ercacc.co.uk/ 
+shelleystockhutter.co.uk|DNS|no DNS record
+onetel.net.uk|ERR|curl: (28) Connection timed out after 25001 milliseconds 000|http://www.onetel.net.uk/ 

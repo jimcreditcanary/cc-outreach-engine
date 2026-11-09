@@ -1,0 +1,67 @@
+allstarstennisacademy.com|DNS|no A record
+abacusaccountingservices.biz|DNS|no A record
+accountable-wales.co.uk|DNS|no A record
+bpbsolutions.co.uk|DNS|no A record
+aceaccontax.co.uk|DNS|no A record
+attiaco.uk|DNS|no A record
+avantitrains.co.uk|DNS|no A record
+brookselectricalservicesltd.co.uk|DNS|no A record
+ca-e.eu|DNS|no A record
+casuresh.com|DNS|no A record
+castle-garage.com|DNS|no A record
+champmanworth.co.uk|DNS|no A record
+chatur.co.uk|DNS|no A record
+charleslambeth.com|DNS|no A record
+cleafin.co.uk|DNS|no A record
+countrygardenonline.com|DNS|no A record
+cheeky-cheesecakes.co.uk|DNS|no A record
+contaxgroup.com.br|DNS|no A record
+datagenbasepro.com|DNS|no A record
+emaillistinfo.com|DNS|no A record
+helpmyfarm.co.uk|DNS|no A record
+geckofinance.co.uk|DNS|no A record
+gilbertali.co.uk|DNS|no A record
+holbecks.co.uk|DNS|no A record
+hopkinsconsulting.co.uk|DNS|no A record
+hpr-uk.com|DNS|no A record
+hrainsbury.co.uk|DNS|no A record
+jamjargrill.com|DNS|no A record
+jackieemmons.ca|DNS|no A record
+laneheywooddavis.co.uk|DNS|no A record
+lancastersca.co.uk|DNS|no A record
+lfors.co.uk|DNS|no A record
+littlejohnfrazer.com|DNS|no A record
+missionpracticeltd.co.uk|DNS|no A record
+lyleaccountingsolutions.co.uk|DNS|no A record
+mnscorp.net|DNS|no A record
+ledger-solutions.com|DNS|no A record
+lynettewhiteaccountingservicesltd.co.uk|DNS|no A record
+mooret.co.uk|DNS|no A record
+morley-scott.co.uk|DNS|no A record
+catchfabulousfishcakes.co.uk|ERR|curl: (7) Failed to connect to www.catchfabulousfishcakes.co.uk port 80 after 31 ms: Connection refu
+bilobacsltd.onmicrosoft.com|DNS|no A record
+ouradviceaddsup.com|DNS|no A record
+pauleddinsaccountants.co.uk|DNS|no A record
+p-b-s.org|DNS|no A record
+peterhunt.co.uk|DNS|no A record
+postfinancial.co.uk|DNS|no A record
+professionalknowhow.com|DNS|no A record
+gate.express|ERR|curl: (7) Failed to connect to www.gate.express port 80 after 26 ms: Connection refused 000|http://w
+roysokhal.co.uk|DNS|no A record
+rosenthalhass.com|DNS|no A record
+talbotbusinessservices.co.uk|DNS|no A record
+scandaudit.com|DNS|no A record
+tolleyfletcher.co.uk|DNS|no A record
+technodatagiant.com|DNS|no A record
+warnerbearman.com|DNS|no A record
+viewpointadvs.com|DNS|no A record
+accountantsdevon.com|DNS|no A record
+onetel.net.uk|ERR|curl: (28) Connection timed out after 15007 milliseconds 000|http://www.onetel.net.uk/ 
+ercacc.co.uk|ERR|curl: (28) Connection timed out after 15006 milliseconds 000|http://www.ercacc.co.uk/ 
+lineone.net|ERR|curl: (28) Connection timed out after 15003 milliseconds 000|http://www.lineone.net/ 
+kslca.co.uk|ERR|curl: (28) Connection timed out after 15005 milliseconds 000|http://www.kslca.co.uk/ 
+felgate-it.co.uk|ERR|curl: (28) Connection timed out after 15004 milliseconds 000|http://www.felgate-it.co.uk/ 
+pwctrk.co.uk|ERR|curl: (28) Connection timed out after 15005 milliseconds 000|http://www.pwctrk.co.uk/ 
+shelleystockhutter.co.uk|ERR|curl: (28) Connection timed out after 15005 milliseconds 000|http://www.shelleystockhutter.co.uk/ 
+btex.co.uk|ERR|curl: (28) Connection timed out after 15003 milliseconds 000|http://www.btex.co.uk/ 
+DONE

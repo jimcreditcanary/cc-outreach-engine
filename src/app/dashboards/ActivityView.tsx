@@ -1,15 +1,14 @@
 // Dashboard — Deal Activity. Only the tiles our current-state data supports:
-// stuck deals (no recent change), stale deals (missing commercials), and the
-// closed-lost breakdowns. Time-in-stage / push-rate need stage-change history,
-// which stays in HubSpot (linked out below).
+// stale deals (missing commercials) and the closed-lost breakdowns.
+// Time-in-stage / push-rate need stage-change history, which stays in HubSpot
+// (linked out below).
 
 import Link from "next/link";
 import { type DashDeal } from "@/lib/dashboards/deals";
 import { fmtDate } from "@/lib/format/datetime";
-import { KpiCard, Panel, Donut, PALETTE, gbp } from "./chartkit";
+import { KpiCard, Panel, Donut, PALETTE } from "./chartkit";
 
 const HUBSPOT_REPORTS = "https://app.hubspot.com/reports-dashboard/9175484";
-const STUCK_DAYS = 30;
 
 function daysSince(d: Date | null): number | null {
   if (!d) return null;
@@ -56,12 +55,6 @@ export function ActivityView({ deals }: { deals: DashDeal[] }) {
   const open = deals.filter((d) => d.isOpen);
   const lost = deals.filter((d) => d.isLost);
 
-  // Stuck: open, not modified in 30+ days, oldest (most idle) first.
-  const stuck = open
-    .map((d) => ({ d, age: daysSince(d.lastModified) }))
-    .filter((x): x is { d: DashDeal; age: number } => x.age != null && x.age >= STUCK_DAYS)
-    .sort((a, b) => b.age - a.age);
-
   // Stale: open, no commercial value set — oldest last-activity first.
   const stale = open
     .filter((d) => d.value <= 0)
@@ -79,27 +72,11 @@ export function ActivityView({ deals }: { deals: DashDeal[] }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-3 gap-3">
         <KpiCard label="Open deals" value={open.length.toLocaleString()} />
-        <KpiCard label={`Stuck (${STUCK_DAYS}d+ idle)`} value={stuck.length.toLocaleString()} accent />
         <KpiCard label="Missing commercials" value={stale.length.toLocaleString()} sub="open, no value" />
         <KpiCard label="Closed Lost" value={lost.length.toLocaleString()} />
       </div>
-
-      <Panel title={`Stuck deals — no change in ${STUCK_DAYS}+ days`} hint="Open deals, most idle first. Click a deal to work it.">
-        <Table
-          headers={["Deal", "Owner", "Stage", "Value", "Last activity"]}
-          align={["left", "left", "left", "right", "right"]}
-          rows={stuck.slice(0, 15).map(({ d }) => [
-            dealLink(d),
-            d.ownerName,
-            d.stageLabel ?? "—",
-            d.value > 0 ? gbp(d.value) : "—",
-            lastActivity(d),
-          ])}
-        />
-        {stuck.length > 15 && <p className="mt-2 text-xs text-neutral-400">Showing 15 of {stuck.length}.</p>}
-      </Panel>
 
       <Panel title="Stale deals — missing commercials" hint="Open deals with no TCV / amount set — line items likely need adding in HubSpot.">
         <Table
