@@ -108,7 +108,10 @@ export function RevenueDashboard({ rev }: { rev: DealRevenue }) {
             Minimums + Forecast, by year ({mode === "arr" ? "annual" : "monthly"})
           </span>
         </div>
-        <Chart rev={rev} mode={mode} />
+        {/* ~50% size — the SVG scales to its container width (half the card). */}
+        <div className="max-w-md">
+          <Chart rev={rev} mode={mode} />
+        </div>
       </div>
     </section>
   );

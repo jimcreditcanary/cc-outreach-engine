@@ -21,6 +21,7 @@ import { PendingButton } from "@/components/PendingButton";
 import { draftFromAnswersAction } from "../actions";
 import { changeDealStageAction, changeDealOwnerAction } from "../dealActions";
 import { RevenueDashboard } from "./RevenueDashboard";
+import { DealTabs } from "./DealTabs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -155,95 +156,140 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
         </div>
       </header>
 
-      {/* Revenue model off the HubSpot deal (ARR/CARR/TCV + 5-year MRR curves) */}
-      {revenue?.hasAny && <RevenueDashboard rev={revenue} />}
+      {/* Everything below the header is tabbed to keep the page uncluttered:
+          Details (associations + activity) · Qualification (MEDDICC + Q&A) ·
+          Commercials (revenue call-outs + chart + line items). The Qualification
+          panel still streams its ~10s MEDDICC appraisal behind a skeleton; tab
+          switches just show/hide panels, so nothing re-streams. */}
+      <DealTabs
+        tabs={[
+          {
+            id: "details",
+            label: "Details",
+            content: (
+              <>
+                {/* Associated records: company (w/ status), contacts, other deals, meetings */}
+                <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Company &amp; contacts</h2>
+                    <div className="rounded-lg border border-neutral-200 bg-white p-3 text-sm">
+                      {company ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link href={`/companies/${company.id}`} className="font-medium text-blue-700 hover:underline">{company.name || "—"}</Link>
+                          {company.current_client && <span className="rounded bg-teal-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Customer</span>}
+                          {ops?.onboarding && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">onb: {ops.onboarding}</span>}
+                          {ops?.billing && <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[11px] text-indigo-700">bill: {ops.billing}</span>}
+                        </div>
+                      ) : <p className="text-neutral-400">No company linked.</p>}
+                      {contacts.length > 0 && (
+                        <ul className="mt-2 space-y-1 border-t border-neutral-100 pt-2">
+                          {contacts.map((c) => (
+                            <li key={c.id} className="flex flex-wrap items-center gap-2">
+                              <Link href={`/contacts/${c.id}`} className="text-blue-700 hover:underline">{c.full_name || c.email || "—"}</Link>
+                              {c.job_title && <span className="text-neutral-500">{c.job_title}</span>}
+                              {c.contact_type.map((t) => <span key={t} className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-indigo-700">{t}</span>)}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Other deals &amp; meetings</h2>
+                    <div className="rounded-lg border border-neutral-200 bg-white p-3 text-sm">
+                      {otherDeals.length === 0 && meetings.length === 0 && <p className="text-neutral-400">No other deals or meetings.</p>}
+                      {otherDeals.length > 0 && (
+                        <ul className="space-y-1">
+                          {otherDeals.map((d) => (
+                            <li key={d.id} className="flex flex-wrap items-center gap-2">
+                              <Link href={`/hot/${d.id}`} className="text-blue-700 hover:underline">{d.name || "(untitled)"}</Link>
+                              {d.stage && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-600">{d.stage}</span>}
+                              {d.amount != null && <span className="text-neutral-500">{money(d.amount, d.currency)}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {meetings.length > 0 && (
+                        <ul className={`space-y-1 ${otherDeals.length > 0 ? "mt-2 border-t border-neutral-100 pt-2" : ""}`}>
+                          {meetings.map((m) => (
+                            <li key={m.id} className="flex flex-wrap items-center gap-2 text-neutral-600">
+                              <span>📅 {m.title || "Meeting"}</span>
+                              {m.start && <span className="text-neutral-400">{fmtDate(m.start)}</span>}
+                              {m.outcome && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px]">{m.outcome}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </section>
 
-      {/* Line items off the HubSpot deal */}
-      {lineItems.length > 0 && (
-        <section className="mb-5">
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Line items</h2>
-          <div className="overflow-x-auto rounded-lg border border-neutral-200">
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-neutral-400">
-                <tr><th className="px-3 py-1.5">Item</th><th className="px-3 py-1.5">Qty</th><th className="px-3 py-1.5">Price</th><th className="px-3 py-1.5">Term</th><th className="px-3 py-1.5 text-right">Amount</th></tr>
-              </thead>
-              <tbody>
-                {lineItems.map((li) => (
-                  <tr key={li.id} className="border-t border-neutral-100">
-                    <td className="px-3 py-1.5">{li.name || li.sku || "—"}</td>
-                    <td className="px-3 py-1.5 text-neutral-600">{li.quantity ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-neutral-600">{li.price != null ? money(li.price, deal.currency) : "—"}</td>
-                    <td className="px-3 py-1.5 text-neutral-600">{li.term ?? "—"}</td>
-                    <td className="px-3 py-1.5 text-right text-neutral-700">{li.amount != null ? money(li.amount, deal.currency) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {/* Associated records: company (w/ status), contacts, other deals, meetings */}
-      <section className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div>
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Company &amp; contacts</h2>
-          <div className="rounded-lg border border-neutral-200 bg-white p-3 text-sm">
-            {company ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <Link href={`/companies/${company.id}`} className="font-medium text-blue-700 hover:underline">{company.name || "—"}</Link>
-                {company.current_client && <span className="rounded bg-teal-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Customer</span>}
-                {ops?.onboarding && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800">onb: {ops.onboarding}</span>}
-                {ops?.billing && <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[11px] text-indigo-700">bill: {ops.billing}</span>}
-              </div>
-            ) : <p className="text-neutral-400">No company linked.</p>}
-            {contacts.length > 0 && (
-              <ul className="mt-2 space-y-1 border-t border-neutral-100 pt-2">
-                {contacts.map((c) => (
-                  <li key={c.id} className="flex flex-wrap items-center gap-2">
-                    <Link href={`/contacts/${c.id}`} className="text-blue-700 hover:underline">{c.full_name || c.email || "—"}</Link>
-                    {c.job_title && <span className="text-neutral-500">{c.job_title}</span>}
-                    {c.contact_type.map((t) => <span key={t} className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-indigo-700">{t}</span>)}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-        <div>
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Other deals &amp; meetings</h2>
-          <div className="rounded-lg border border-neutral-200 bg-white p-3 text-sm">
-            {otherDeals.length === 0 && meetings.length === 0 && <p className="text-neutral-400">No other deals or meetings.</p>}
-            {otherDeals.length > 0 && (
-              <ul className="space-y-1">
-                {otherDeals.map((d) => (
-                  <li key={d.id} className="flex flex-wrap items-center gap-2">
-                    <Link href={`/hot/${d.id}`} className="text-blue-700 hover:underline">{d.name || "(untitled)"}</Link>
-                    {d.stage && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-600">{d.stage}</span>}
-                    {d.amount != null && <span className="text-neutral-500">{money(d.amount, d.currency)}</span>}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {meetings.length > 0 && (
-              <ul className={`space-y-1 ${otherDeals.length > 0 ? "mt-2 border-t border-neutral-100 pt-2" : ""}`}>
-                {meetings.map((m) => (
-                  <li key={m.id} className="flex flex-wrap items-center gap-2 text-neutral-600">
-                    <span>📅 {m.title || "Meeting"}</span>
-                    {m.start && <span className="text-neutral-400">{fmtDate(m.start)}</span>}
-                    {m.outcome && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[11px]">{m.outcome}</span>}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* The MEDDICC appraisal is a ~10s Claude call — stream it so everything
-          above paints instantly and the body fills in behind a skeleton. */}
-      <Suspense fallback={<BodySkeleton />}>
-        <DealBody ctx={ctx} noContact={noContact} />
-      </Suspense>
+                {/* Recent activity — moved here from the MEDDICC body */}
+                <section className="mt-5">
+                  <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Recent activity</h2>
+                  {notes.length === 0 ? (
+                    <p className="text-sm text-neutral-400">No notes logged on the deal in HubSpot.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {notes.map((n, i) => (
+                        <li key={i} className="rounded border border-neutral-200 bg-white p-2 text-sm text-neutral-700">
+                          {n.ts && <div className="text-xs text-neutral-400">{fmtDateTime(n.ts)}</div>}
+                          <p className="mt-0.5 whitespace-pre-wrap">{n.body.length > 500 ? `${n.body.slice(0, 500)}…` : n.body}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </>
+            ),
+          },
+          {
+            id: "qualification",
+            label: "Qualification",
+            // The MEDDICC appraisal is a ~10s Claude call — stream it behind a skeleton.
+            content: (
+              <Suspense fallback={<BodySkeleton />}>
+                <DealBody ctx={ctx} noContact={noContact} />
+              </Suspense>
+            ),
+          },
+          {
+            id: "commercials",
+            label: "Commercials",
+            content: (
+              <>
+                {revenue?.hasAny && <RevenueDashboard rev={revenue} />}
+                {lineItems.length > 0 && (
+                  <section className={revenue?.hasAny ? "mt-5" : ""}>
+                    <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Line items</h2>
+                    <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                      <table className="w-full text-sm">
+                        <thead className="text-left text-xs uppercase text-neutral-400">
+                          <tr><th className="px-3 py-1.5">Item</th><th className="px-3 py-1.5">Qty</th><th className="px-3 py-1.5">Price</th><th className="px-3 py-1.5">Term</th><th className="px-3 py-1.5 text-right">Amount</th></tr>
+                        </thead>
+                        <tbody>
+                          {lineItems.map((li) => (
+                            <tr key={li.id} className="border-t border-neutral-100">
+                              <td className="px-3 py-1.5">{li.name || li.sku || "—"}</td>
+                              <td className="px-3 py-1.5 text-neutral-600">{li.quantity ?? "—"}</td>
+                              <td className="px-3 py-1.5 text-neutral-600">{li.price != null ? money(li.price, deal.currency) : "—"}</td>
+                              <td className="px-3 py-1.5 text-neutral-600">{li.term ?? "—"}</td>
+                              <td className="px-3 py-1.5 text-right text-neutral-700">{li.amount != null ? money(li.amount, deal.currency) : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+                {!revenue?.hasAny && lineItems.length === 0 && (
+                  <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">No revenue model or line items on this deal yet.</p>
+                )}
+              </>
+            ),
+          },
+        ]}
+      />
     </main>
   );
 }
@@ -283,10 +329,10 @@ function BodySkeleton() {
 
 async function DealBody({ ctx, noContact }: { ctx: DealContext; noContact: boolean }) {
   const assessment = await assessDealForWork(ctx);
-  const { deal, contact, notes } = ctx;
+  const { deal, contact } = ctx;
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">
-      {/* LEFT: the update — where it stands + recent activity */}
+      {/* LEFT: the update — where it stands */}
       <section className="space-y-4">
         <div>
           <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Where it stands</h2>
@@ -301,21 +347,6 @@ async function DealBody({ ctx, noContact }: { ctx: DealContext; noContact: boole
             <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Next best action</div>
             <p className="mt-1 text-emerald-900">{assessment.next_best_action}</p>
           </div>
-        </div>
-        <div>
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">Recent activity</h2>
-          {notes.length === 0 ? (
-            <p className="text-sm text-neutral-400">No notes logged on the deal in HubSpot.</p>
-          ) : (
-            <ul className="space-y-2">
-              {notes.map((n, i) => (
-                <li key={i} className="rounded border border-neutral-200 bg-white p-2 text-sm text-neutral-700">
-                  {n.ts && <div className="text-xs text-neutral-400">{fmtDateTime(n.ts)}</div>}
-                  <p className="mt-0.5 whitespace-pre-wrap">{n.body.length > 500 ? `${n.body.slice(0, 500)}…` : n.body}</p>
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       </section>
 
