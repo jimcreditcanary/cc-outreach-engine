@@ -36,6 +36,9 @@ export const DEAL_READ_PROPS = [
   "notes_last_contacted", "notes_last_updated",
   "hs_next_meeting_start_time", "hs_next_meeting_name", "hs_next_step",
   "hs_is_closed", "dealtype", "hubspot_owner_id",
+  // Standard value fields — fallbacks for the dashboards when the custom
+  // revenue model (tcv/arr) isn't filled on a deal.
+  "hs_tcv", "hs_arr", "hs_acv",
   "createdate", "hs_lastmodifieddate",
 ] as const;
 

@@ -25,6 +25,7 @@ export interface DashDeal {
   name: string | null;
   stageId: string | null;
   stageLabel: string | null;
+  pipelineId: string | null;
   pipelineLabel: string | null;
   ownerId: string | null;
   ownerName: string;
@@ -90,7 +91,9 @@ function mapDeal(row: { id: string; dealname: string | null; amount: number | nu
   const stage = stageId ? stages.get(stageId) ?? null : null;
   const amount = row.amount ?? num(p.amount);
   const tcv = num(p.tcv);
-  const value = tcv ?? amount ?? 0;
+  // Best available deal value: the custom TCV, else HubSpot's standard TCV
+  // (rolled up from line items), else the deal amount.
+  const value = tcv ?? num(p.hs_tcv) ?? amount ?? 0;
   const probability = stage?.probability ?? 0;
   const ownerId = p.hubspot_owner_id ?? null;
   // Fall back to the raw hs_is_closed flag when the stage isn't in the pipeline map.
@@ -104,6 +107,7 @@ function mapDeal(row: { id: string; dealname: string | null; amount: number | nu
     name: row.dealname ?? p.dealname ?? null,
     stageId,
     stageLabel: stage?.label ?? null,
+    pipelineId: stage?.pipelineId ?? null,
     pipelineLabel: stage?.pipelineLabel ?? null,
     ownerId,
     ownerName: ownerName(owners, ownerId) ?? "Unassigned",
@@ -111,7 +115,7 @@ function mapDeal(row: { id: string; dealname: string | null; amount: number | nu
     tcv,
     recurringTcv: num(p.recurring_tcv),
     oneoffFees: num(p.oneoff_fees),
-    avgArr: num(p.average_arr_combined),
+    avgArr: num(p.average_arr_combined) ?? num(p.hs_arr),
     carr: num(p.carr_combined),
     closeDate: toDate(p.closedate),
     createdAt: toDate(p.createdate),
@@ -130,9 +134,11 @@ function mapDeal(row: { id: string; dealname: string | null; amount: number | nu
   };
 }
 
-/** All mirrored deals mapped into the dashboard shape, plus the owner list for
- *  the filter. Best-effort: empty on failure so dashboards degrade gracefully. */
-export async function loadDeals(): Promise<{ deals: DashDeal[]; owners: Owner[] }> {
+export interface Pipeline { id: string; label: string }
+
+/** All mirrored deals mapped into the dashboard shape, plus the owner + pipeline
+ *  lists for the filters. Best-effort: empty on failure so dashboards degrade. */
+export async function loadDeals(): Promise<{ deals: DashDeal[]; owners: Owner[]; pipelines: Pipeline[] }> {
   try {
     const db = serviceClient();
     const [res, stages, ownersMap] = await Promise.all([
@@ -148,9 +154,18 @@ export async function loadDeals(): Promise<{ deals: DashDeal[]; owners: Owner[] 
       if (d.ownerId && !seen.has(d.ownerId)) seen.set(d.ownerId, { id: d.ownerId, name: d.ownerName, email: null });
     }
     const owners = [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
-    return { deals, owners };
+    // Pipelines present among the deals, by open-deal count (busiest first).
+    const pipeCount = new Map<string, { label: string; n: number }>();
+    for (const d of deals) {
+      if (!d.pipelineId || !d.pipelineLabel) continue;
+      const cur = pipeCount.get(d.pipelineId) ?? { label: d.pipelineLabel, n: 0 };
+      cur.n += 1;
+      pipeCount.set(d.pipelineId, cur);
+    }
+    const pipelines = [...pipeCount.entries()].sort((a, b) => b[1].n - a[1].n).map(([id, v]) => ({ id, label: v.label }));
+    return { deals, owners, pipelines };
   } catch {
-    return { deals: [], owners: [] };
+    return { deals: [], owners: [], pipelines: [] };
   }
 }
 

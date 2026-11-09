@@ -29,12 +29,12 @@ function byStage(deals: DashDeal[], value: (ds: DashDeal[]) => number, topN = 10
 
 export function PipelineView({ deals }: { deals: DashDeal[] }) {
   const open = deals.filter((d) => d.isOpen);
-  const openTcv = sum(open.map((d) => d.tcv ?? d.amount));
+  const openTcv = sum(open.map((d) => d.value));
   const weighted = sum(open.map((d) => d.weighted));
   const avgSize = open.length ? openTcv / open.length : 0;
 
   const countByStage = byStage(open, (ds) => ds.length);
-  const tcvByStage = byStage(open, (ds) => sum(ds.map((d) => d.tcv ?? d.amount)));
+  const tcvByStage = byStage(open, (ds) => sum(ds.map((d) => d.value)));
   const arrByStage = byStage(open, (ds) => {
     const a = ds.filter((d) => d.avgArr != null);
     return a.length ? sum(a.map((d) => d.avgArr)) / a.length : 0;
@@ -49,7 +49,7 @@ export function PipelineView({ deals }: { deals: DashDeal[] }) {
   // Forecast: this month + next quarter (4 months), unweighted TCV
   const fc = upcomingMonths(4);
   const fcLabels = fc.map(monthLabel);
-  const tcvByCloseMonth = fc.map((k) => sum(inCloseMonth(k).map((d) => d.tcv ?? d.amount)));
+  const tcvByCloseMonth = fc.map((k) => sum(inCloseMonth(k).map((d) => d.value)));
 
   return (
     <div className="space-y-5">

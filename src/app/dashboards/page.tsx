@@ -1,31 +1,29 @@
-// Dashboards tab — three in-app dashboards built from the HubSpot deal mirror
-// and the billing ledger: Revenue (Closed Won/Lost + billing), Deal Pipeline,
-// and Deal Activity (the tiles our current-state data supports).
+// Dashboards tab — in-app dashboards built from the HubSpot deal mirror and the
+// billing ledger. Deal Pipeline + Deal Activity (the Revenue tab is hidden for
+// now). Filterable by deal owner and pipeline; Refresh re-reads the data.
 
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/server";
 import { loadDeals } from "@/lib/dashboards/deals";
-import { loadBillingRevenue } from "@/lib/dashboards/billing";
 import { DashShell } from "./DashShell";
-import { RevenueView } from "./RevenueView";
 import { PipelineView } from "./PipelineView";
 import { ActivityView } from "./ActivityView";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export default async function DashboardsPage({ searchParams }: { searchParams: Promise<{ owner?: string }> }) {
+export default async function DashboardsPage({ searchParams }: { searchParams: Promise<{ owner?: string; pipeline?: string }> }) {
   const me = await currentUser();
   if (!me) redirect("/login");
-  const { owner } = await searchParams;
+  const { owner, pipeline } = await searchParams;
 
-  const [{ deals, owners }, billing] = await Promise.all([loadDeals(), loadBillingRevenue()]);
-  const scoped = owner ? deals.filter((d) => d.ownerId === owner) : deals;
+  const { deals, owners, pipelines } = await loadDeals();
+  const scoped = deals.filter((d) => (owner ? d.ownerId === owner : true) && (pipeline ? d.pipelineId === pipeline : true));
 
   return (
     <main className="px-4 py-6 md:px-8">
       <h1 className="mb-1 text-xl font-semibold">Dashboards</h1>
-      <p className="mb-4 text-sm text-neutral-500">Revenue, pipeline and deal activity — from the live HubSpot mirror and the billing ledger. Billing figures are portfolio-wide (not owner-filtered).</p>
+      <p className="mb-4 text-sm text-neutral-500">Pipeline and deal activity — from the live HubSpot mirror. Filter by owner or pipeline; Refresh re-reads the latest data.</p>
 
       {deals.length === 0 ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -35,8 +33,9 @@ export default async function DashboardsPage({ searchParams }: { searchParams: P
         <DashShell
           owners={owners}
           activeOwner={owner ?? null}
+          pipelines={pipelines}
+          activePipeline={pipeline ?? null}
           tabs={[
-            { id: "revenue", label: "Revenue", content: <RevenueView deals={scoped} billing={billing} /> },
             { id: "pipeline", label: "Deal Pipeline", content: <PipelineView deals={scoped} /> },
             { id: "activity", label: "Deal Activity", content: <ActivityView deals={scoped} /> },
           ]}

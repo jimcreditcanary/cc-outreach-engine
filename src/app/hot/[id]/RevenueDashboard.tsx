@@ -63,18 +63,7 @@ export function RevenueDashboard({ rev, sideContent }: { rev: DealRevenue; sideC
   const [mode, setMode] = useState<Mode>("arr");
   const cur = rev.currency;
 
-  const stats: { label: string; value: number | null; accent?: boolean }[] = [
-    { label: "Average ARR (Minimums)", value: rev.avgArr.minimums },
-    { label: "Average ARR (Forecast)", value: rev.avgArr.forecast },
-    { label: "Average ARR (Combined)", value: rev.avgArr.combined, accent: true },
-    { label: "CARR (Minimums)", value: rev.carr.minimums },
-    { label: "CARR (Forecast)", value: rev.carr.forecast },
-    { label: "CARR (Combined)", value: rev.carr.combined, accent: true },
-    { label: "TCV", value: rev.tcv },
-    { label: "Recurring TCV", value: rev.recurringTcv },
-    { label: "One-off fees", value: rev.oneoffFees },
-    { label: "Year 1 revenue", value: rev.y1Revenue, accent: true },
-  ];
+  const num = (v: number | null) => fmtFull(v, cur);
 
   // The chart card renders at ~half width. When the caller passes `sideContent`
   // (the deal's line items), it sits in the other column so the row isn't half
@@ -103,17 +92,52 @@ export function RevenueDashboard({ rev, sideContent }: { rev: DealRevenue; sideC
     <section className="mb-5">
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Revenue</h2>
 
-      {/* Call-out stats — 2×5 */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {stats.map((s) => (
-          <div
-            key={s.label}
-            className={`rounded-lg border bg-white p-3 ${s.accent ? "border-amber-200 ring-1 ring-amber-100" : "border-neutral-200"}`}
-          >
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">{s.label}</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums text-neutral-900">{fmtFull(s.value, cur)}</div>
-          </div>
-        ))}
+      {/* Revenue breakdown — one table with a contract-value subtotal */}
+      <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs uppercase text-neutral-400">
+            <tr>
+              <th className="px-4 py-2">Metric</th>
+              <th className="px-4 py-2 text-right">Minimums</th>
+              <th className="px-4 py-2 text-right">Forecast</th>
+              <th className="px-4 py-2 text-right">Combined</th>
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            <tr className="border-t border-neutral-100">
+              <td className="px-4 py-2 font-medium text-neutral-700">Average ARR</td>
+              <td className="px-4 py-2 text-right">{num(rev.avgArr.minimums)}</td>
+              <td className="px-4 py-2 text-right">{num(rev.avgArr.forecast)}</td>
+              <td className="px-4 py-2 text-right font-semibold text-neutral-900">{num(rev.avgArr.combined)}</td>
+            </tr>
+            <tr className="border-t border-neutral-100">
+              <td className="px-4 py-2 font-medium text-neutral-700">CARR</td>
+              <td className="px-4 py-2 text-right">{num(rev.carr.minimums)}</td>
+              <td className="px-4 py-2 text-right">{num(rev.carr.forecast)}</td>
+              <td className="px-4 py-2 text-right font-semibold text-neutral-900">{num(rev.carr.combined)}</td>
+            </tr>
+            <tr className="border-t border-neutral-100">
+              <td className="px-4 py-2 font-medium text-neutral-700">Recurring TCV</td>
+              <td className="px-4 py-2" /><td className="px-4 py-2" />
+              <td className="px-4 py-2 text-right">{num(rev.recurringTcv)}</td>
+            </tr>
+            <tr className="border-t border-neutral-100">
+              <td className="px-4 py-2 font-medium text-neutral-700">One-off fees</td>
+              <td className="px-4 py-2" /><td className="px-4 py-2" />
+              <td className="px-4 py-2 text-right">{num(rev.oneoffFees)}</td>
+            </tr>
+            <tr className="border-t-2 border-neutral-300 bg-neutral-50/60">
+              <td className="px-4 py-2 font-semibold text-neutral-900">Total contract value (TCV)</td>
+              <td className="px-4 py-2" /><td className="px-4 py-2" />
+              <td className="px-4 py-2 text-right font-semibold text-neutral-900">{num(rev.tcv)}</td>
+            </tr>
+            <tr className="border-t border-neutral-100">
+              <td className="px-4 py-2 font-medium text-amber-800">Year 1 revenue</td>
+              <td className="px-4 py-2" /><td className="px-4 py-2" />
+              <td className="px-4 py-2 text-right font-semibold text-amber-800">{num(rev.y1Revenue)}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       {/* Chart + optional side content (line items) side by side */}
