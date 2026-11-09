@@ -150,7 +150,7 @@ export async function HubspotDealsBoard({ pipelineId, q, ownerId }: { pipelineId
                       <div className="mt-2 space-y-1 text-xs">
                         <Signal label="Next Meeting" tone={d.next_meeting_at ? "good" : "idle"} value={d.next_meeting_at ? fmtDate(d.next_meeting_at) : "None booked"} title={d.next_meeting_name ?? undefined} />
                         <Signal label="Last Contacted" tone={contactTone} value={d.last_contacted ? `${days}d ago` : "Never"} />
-                        <Signal label="Priced" tone={hasItems ? "good" : "warn"} value={hasItems ? String(d.line_item_count) : "None"} />
+                        <Signal label="Priced" tone={hasItems ? "good" : "warn"} value={hasItems ? "Yes" : "No"} title={hasItems ? `${d.line_item_count} line item${d.line_item_count === 1 ? "" : "s"}` : undefined} />
                         <Signal label="Next Step" tone={d.next_step ? "good" : "idle"} value={d.next_step ? "Set" : "None"} title={d.next_step ?? undefined} />
                         <Signal label="Close Date" tone={d.close_date ? "good" : "idle"} value={d.close_date ? fmtDate(d.close_date) : "Not set"} />
                       </div>
