@@ -55,12 +55,12 @@ function niceMax(v: number): number {
   return nice * pow;
 }
 
-type Mode = "combined" | "minimums" | "forecast";
+type Mode = "arr" | "mrr"; // unit toggle — the chart always stacks Minimums + Forecast
 
 const YEARS = ["Y1", "Y2", "Y3", "Y4", "Y5"];
 
 export function RevenueDashboard({ rev }: { rev: DealRevenue }) {
-  const [mode, setMode] = useState<Mode>("combined");
+  const [mode, setMode] = useState<Mode>("arr");
   const cur = rev.currency;
 
   const stats: { label: string; value: number | null; accent?: boolean }[] = [
@@ -99,14 +99,13 @@ export function RevenueDashboard({ rev }: { rev: DealRevenue }) {
             value={mode}
             onChange={(e) => setMode(e.target.value as Mode)}
             className="rounded border border-neutral-300 px-2 py-1 text-sm font-medium text-neutral-800"
-            aria-label="Revenue series"
+            aria-label="Revenue unit"
           >
-            <option value="combined">ARR (Combined)</option>
-            <option value="minimums">MRR (Minimums)</option>
-            <option value="forecast">MRR (Forecast)</option>
+            <option value="arr">ARR · £/yr</option>
+            <option value="mrr">MRR · £/mo</option>
           </select>
           <span className="text-xs text-neutral-400">
-            {mode === "combined" ? "Annual recurring revenue · £/yr" : "Monthly recurring revenue · £/mo"}
+            Minimums + Forecast, by year ({mode === "arr" ? "annual" : "monthly"})
           </span>
         </div>
         <Chart rev={rev} mode={mode} />
@@ -117,23 +116,21 @@ export function RevenueDashboard({ rev }: { rev: DealRevenue }) {
 
 function Chart({ rev, mode }: { rev: DealRevenue; mode: Mode }) {
   const cur = rev.currency;
-  // Per-year segments. Combined stacks min×12 + forecast×12 (annual). The single
-  // modes are the native monthly curves.
+  const per = mode === "arr" ? "/yr" : "/mo";
+  // Always a stacked Minimums + Forecast column (= Combined). The unit toggle
+  // just scales the monthly curves to annual (×12) for the ARR view.
+  const mult = mode === "arr" ? 12 : 1;
   const cols = YEARS.map((_, i) => {
-    if (mode === "combined") {
-      const min = (rev.mrrMinimums[i] ?? 0) * 12;
-      const fc = (rev.mrrForecast[i] ?? 0) * 12;
-      return { min, fc, total: min + fc };
-    }
-    const v = (mode === "minimums" ? rev.mrrMinimums[i] : rev.mrrForecast[i]) ?? 0;
-    return { min: mode === "minimums" ? v : 0, fc: mode === "forecast" ? v : 0, total: v };
+    const min = (rev.mrrMinimums[i] ?? 0) * mult;
+    const fc = (rev.mrrForecast[i] ?? 0) * mult;
+    return { min, fc, total: min + fc };
   });
 
   const maxVal = Math.max(...cols.map((c) => c.total), 0);
   if (maxVal <= 0) {
     return (
       <div className="flex h-40 items-center justify-center text-sm text-neutral-400">
-        No {mode === "combined" ? "combined ARR" : mode === "minimums" ? "minimums MRR" : "forecast MRR"} modelled on this deal.
+        No minimums or forecast {mode === "arr" ? "ARR" : "MRR"} modelled on this deal.
       </div>
     );
   }
@@ -147,8 +144,6 @@ function Chart({ rev, mode }: { rev: DealRevenue; mode: Mode }) {
   const barW = Math.min(56, slot * 0.56);
   const y = (v: number) => PAD.t + plotH * (1 - v / top);
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * top);
-
-  const stacked = mode === "combined";
 
   return (
     <>
@@ -167,20 +162,19 @@ function Chart({ rev, mode }: { rev: DealRevenue; mode: Mode }) {
 
         {cols.map((c, i) => {
           const cx = PAD.l + slot * i + (slot - barW) / 2;
-          const minH = plotH * ((c.min) / top);
           const fcH = plotH * ((c.fc) / top);
           const minY = y(c.min);
           const fcY = y(c.min + c.fc);
           return (
             <g key={i}>
               {c.min > 0 && (
-                <rect x={cx} y={minY} width={barW} height={Math.max(0, y(0) - minY)} fill={MINIMUMS} rx={stacked ? 0 : 3}>
-                  <title>{YEARS[i]} Minimums: {fmtFull(stacked ? c.min : c.min, cur)}{stacked ? "/yr" : "/mo"}</title>
+                <rect x={cx} y={minY} width={barW} height={Math.max(0, y(0) - minY)} fill={MINIMUMS}>
+                  <title>{YEARS[i]} Minimums: {fmtFull(c.min, cur)}{per}</title>
                 </rect>
               )}
               {c.fc > 0 && (
-                <rect x={cx} y={fcY} width={barW} height={Math.max(0, fcH)} fill={FORECAST} rx={stacked ? 0 : 3}>
-                  <title>{YEARS[i]} Forecast: {fmtFull(c.fc, cur)}{stacked ? "/yr" : "/mo"}</title>
+                <rect x={cx} y={fcY} width={barW} height={Math.max(0, fcH)} fill={FORECAST}>
+                  <title>{YEARS[i]} Forecast: {fmtFull(c.fc, cur)}{per}</title>
                 </rect>
               )}
               {/* total label */}
@@ -198,17 +192,15 @@ function Chart({ rev, mode }: { rev: DealRevenue; mode: Mode }) {
         })}
       </svg>
 
-      {/* legend (only meaningful when stacked) */}
-      {stacked && (
-        <div className="mt-1 flex items-center justify-center gap-4 text-xs text-neutral-500">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: MINIMUMS }} /> Minimums
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: FORECAST }} /> Forecast
-          </span>
-        </div>
-      )}
+      {/* legend */}
+      <div className="mt-1 flex items-center justify-center gap-4 text-xs text-neutral-500">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: MINIMUMS }} /> Minimums
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: FORECAST }} /> Forecast
+        </span>
+      </div>
     </>
   );
 }
