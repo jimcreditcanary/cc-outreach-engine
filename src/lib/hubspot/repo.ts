@@ -546,6 +546,76 @@ export async function getDealLineItems(dealId: string): Promise<DealLineItem[]> 
   }
 }
 
+// ── Deal revenue model ──────────────────────────────────────────────────────
+// Credit Canary models each deal's revenue as custom HubSpot deal properties.
+// Note the quirks preserved from the portal's internal names:
+//   - Y1 minimums MRR is `y1_mrr` (not `y1_mrr_minimums`); Y2–Y5 are `_minimums`.
+//   - every forecast field is spelled `forescast` (typo in the portal).
+//   - the `y{n}_mrr_combined` fields are ANNUAL (labelled "Y{n} ARR (Combined)"),
+//     while the minimums/forecast MRR fields are MONTHLY. Combined = minimums +
+//     forecast (confirmed), i.e. combined ARR = (min MRR + forecast MRR) × 12.
+const DEAL_REVENUE_PROPS = [
+  "average_arr_minimums", "average_arr_forecast", "average_arr_combined",
+  "carr_minimums", "carr_forecast", "carr_combined",
+  "tcv", "recurring_tcv", "oneoff_fees", "weighted_tcv",
+  "y1_mrr", "y2_mrr_minimums", "y3_mrr_minimums", "y4_mrr_minimums", "y5_mrr_minimums",
+  "y1_mrr_forescast", "y2_mrr_forescast", "y3_mrr_forescast", "y4_mrr_forescast", "y5_mrr_forescast",
+  "y1_mrr_combined", "y2_mrr_combined", "y3_mrr_combined", "y4_mrr_combined", "y5_mrr_combined",
+  "deal_currency_code",
+] as const;
+
+export interface DealRevenue {
+  currency: string | null;
+  avgArr: { minimums: number | null; forecast: number | null; combined: number | null };
+  carr: { minimums: number | null; forecast: number | null; combined: number | null };
+  tcv: number | null;
+  recurringTcv: number | null;
+  oneoffFees: number | null;
+  weightedTcv: number | null;
+  mrrMinimums: (number | null)[]; // Y1–Y5, monthly £
+  mrrForecast: (number | null)[]; // Y1–Y5, monthly £
+  arrCombined: (number | null)[]; // Y1–Y5, annual £ (pre-computed combined)
+  hasAny: boolean;
+}
+
+/** Read a deal's revenue-model properties (ARR/CARR/TCV + 5-year MRR curves).
+ *  Best-effort: `null` if the deal can't be read. `hasAny` is false when none of
+ *  the revenue fields are populated, so the caller can skip the dashboard. */
+export async function getDealRevenue(dealId: string): Promise<DealRevenue | null> {
+  try {
+    const props = await safeProps("deals", DEAL_REVENUE_PROPS);
+    const obj = await hsFetch<HsObj>(
+      `/crm/v3/objects/deals/${dealId}?properties=${props.join(",")}`, { cacheTtl: READ_TTL },
+    );
+    const p = (obj.properties ?? {}) as Record<string, string | null | undefined>;
+    const num = (v: string | null | undefined): number | null =>
+      v != null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
+
+    const rev: DealRevenue = {
+      currency: (p.deal_currency_code && p.deal_currency_code.trim()) || "GBP",
+      avgArr: { minimums: num(p.average_arr_minimums), forecast: num(p.average_arr_forecast), combined: num(p.average_arr_combined) },
+      carr: { minimums: num(p.carr_minimums), forecast: num(p.carr_forecast), combined: num(p.carr_combined) },
+      tcv: num(p.tcv),
+      recurringTcv: num(p.recurring_tcv),
+      oneoffFees: num(p.oneoff_fees),
+      weightedTcv: num(p.weighted_tcv),
+      mrrMinimums: [num(p.y1_mrr), num(p.y2_mrr_minimums), num(p.y3_mrr_minimums), num(p.y4_mrr_minimums), num(p.y5_mrr_minimums)],
+      mrrForecast: [num(p.y1_mrr_forescast), num(p.y2_mrr_forescast), num(p.y3_mrr_forescast), num(p.y4_mrr_forescast), num(p.y5_mrr_forescast)],
+      arrCombined: [num(p.y1_mrr_combined), num(p.y2_mrr_combined), num(p.y3_mrr_combined), num(p.y4_mrr_combined), num(p.y5_mrr_combined)],
+      hasAny: false,
+    };
+    rev.hasAny = [
+      rev.avgArr.minimums, rev.avgArr.forecast, rev.avgArr.combined,
+      rev.carr.minimums, rev.carr.forecast, rev.carr.combined,
+      rev.tcv, rev.recurringTcv, rev.oneoffFees,
+      ...rev.mrrMinimums, ...rev.mrrForecast, ...rev.arrCombined,
+    ].some((v) => v != null);
+    return rev;
+  } catch {
+    return null;
+  }
+}
+
 const stripNoteHtml = (s: string): string =>
   s.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 

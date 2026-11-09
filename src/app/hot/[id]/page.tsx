@@ -11,7 +11,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/server";
 import { hubspotEnabled } from "@/lib/hubspot/client";
-import { hubspotRepo, getDeal, dealContactIds, dealRecentNotes, dealCompanyId, getDealLineItems, dealMeetings, dealPipelines, companyDeals } from "@/lib/hubspot/repo";
+import { hubspotRepo, getDeal, dealContactIds, dealRecentNotes, dealCompanyId, getDealLineItems, getDealRevenue, dealMeetings, dealPipelines, companyDeals } from "@/lib/hubspot/repo";
 import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
 import { getCrm } from "@/lib/crm";
 import { companyOpsStatus } from "@/lib/crm/companyStatus";
@@ -20,6 +20,7 @@ import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
 import { draftFromAnswersAction } from "../actions";
 import { changeDealStageAction, changeDealOwnerAction } from "../dealActions";
+import { RevenueDashboard } from "./RevenueDashboard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -54,10 +55,11 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
   const deal = await getDeal(id);
   if (!deal) notFound();
 
-  const [contactIds, companyId, lineItems, notes, pipelines, owners, meetings] = await Promise.all([
+  const [contactIds, companyId, lineItems, revenue, notes, pipelines, owners, meetings] = await Promise.all([
     dealContactIds(id),
     dealCompanyId(id),
     getDealLineItems(id),
+    getDealRevenue(id),
     dealRecentNotes(id),
     dealPipelines(),
     listOwners(),
@@ -152,6 +154,9 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
           </form>
         </div>
       </header>
+
+      {/* Revenue model off the HubSpot deal (ARR/CARR/TCV + 5-year MRR curves) */}
+      {revenue?.hasAny && <RevenueDashboard rev={revenue} />}
 
       {/* Line items off the HubSpot deal */}
       {lineItems.length > 0 && (

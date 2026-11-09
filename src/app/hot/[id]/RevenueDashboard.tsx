@@ -1,0 +1,214 @@
+"use client";
+
+// Revenue dashboard for a deal — reads the deal's revenue-model fields off
+// HubSpot (passed in as a plain `DealRevenue`) and shows:
+//   • a 3×3 grid of call-out stats (Avg ARR, CARR, contract value), and
+//   • a stacked-column chart with a dropdown over three series families:
+//       - ARR (Combined)  → stacked Minimums + Forecast, annual £  (Combined = min + forecast)
+//       - MRR (Minimums)  → monthly £ minimums curve
+//       - MRR (Forecast)  → monthly £ forecast curve
+//
+// The chart is hand-rolled inline SVG (the app ships no charting library). The
+// combined view stacks min×12 + forecast×12 so the bar total is the Combined ARR.
+
+import { useState } from "react";
+import type { DealRevenue } from "@/lib/hubspot/repo";
+
+const MINIMUMS = "#6366f1"; // indigo-500
+const FORECAST = "#f59e0b"; // amber-500
+
+function sym(currency: string | null): string {
+  switch ((currency ?? "GBP").toUpperCase()) {
+    case "GBP": return "£";
+    case "USD": return "$";
+    case "EUR": return "€";
+    default: return `${currency} `;
+  }
+}
+
+function fmtFull(n: number | null, currency: string | null): string {
+  if (n == null) return "—";
+  try {
+    return new Intl.NumberFormat("en-GB", { style: "currency", currency: currency || "GBP", maximumFractionDigits: 0 }).format(n);
+  } catch {
+    return `${sym(currency)}${Math.round(n).toLocaleString()}`;
+  }
+}
+
+function fmtCompact(n: number, currency: string | null): string {
+  const s = sym(currency);
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${s}${trim(n / 1_000_000)}m`;
+  if (abs >= 1_000) return `${s}${trim(n / 1_000)}k`;
+  return `${s}${Math.round(n)}`;
+}
+function trim(n: number): string {
+  // 36 → "36", 2.5 → "2.5", 1.25 → "1.3"
+  return (Math.round(n * 10) / 10).toString();
+}
+
+function niceMax(v: number): number {
+  if (v <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const frac = v / pow;
+  const nice = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 2.5 ? 2.5 : frac <= 5 ? 5 : 10;
+  return nice * pow;
+}
+
+type Mode = "combined" | "minimums" | "forecast";
+
+const YEARS = ["Y1", "Y2", "Y3", "Y4", "Y5"];
+
+export function RevenueDashboard({ rev }: { rev: DealRevenue }) {
+  const [mode, setMode] = useState<Mode>("combined");
+  const cur = rev.currency;
+
+  const stats: { label: string; value: number | null; accent?: boolean }[] = [
+    { label: "Average ARR (Minimums)", value: rev.avgArr.minimums },
+    { label: "Average ARR (Forecast)", value: rev.avgArr.forecast },
+    { label: "Average ARR (Combined)", value: rev.avgArr.combined, accent: true },
+    { label: "CARR (Minimums)", value: rev.carr.minimums },
+    { label: "CARR (Forecast)", value: rev.carr.forecast },
+    { label: "CARR (Combined)", value: rev.carr.combined, accent: true },
+    { label: "TCV", value: rev.tcv },
+    { label: "Recurring TCV", value: rev.recurringTcv },
+    { label: "One-off fees", value: rev.oneoffFees },
+  ];
+
+  return (
+    <section className="mb-5">
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Revenue</h2>
+
+      {/* Call-out stats — 3×3 */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            className={`rounded-lg border bg-white p-3 ${s.accent ? "border-amber-200 ring-1 ring-amber-100" : "border-neutral-200"}`}
+          >
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">{s.label}</div>
+            <div className="mt-1 text-xl font-semibold tabular-nums text-neutral-900">{fmtFull(s.value, cur)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Chart */}
+      <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value as Mode)}
+            className="rounded border border-neutral-300 px-2 py-1 text-sm font-medium text-neutral-800"
+            aria-label="Revenue series"
+          >
+            <option value="combined">ARR (Combined)</option>
+            <option value="minimums">MRR (Minimums)</option>
+            <option value="forecast">MRR (Forecast)</option>
+          </select>
+          <span className="text-xs text-neutral-400">
+            {mode === "combined" ? "Annual recurring revenue · £/yr" : "Monthly recurring revenue · £/mo"}
+          </span>
+        </div>
+        <Chart rev={rev} mode={mode} />
+      </div>
+    </section>
+  );
+}
+
+function Chart({ rev, mode }: { rev: DealRevenue; mode: Mode }) {
+  const cur = rev.currency;
+  // Per-year segments. Combined stacks min×12 + forecast×12 (annual). The single
+  // modes are the native monthly curves.
+  const cols = YEARS.map((_, i) => {
+    if (mode === "combined") {
+      const min = (rev.mrrMinimums[i] ?? 0) * 12;
+      const fc = (rev.mrrForecast[i] ?? 0) * 12;
+      return { min, fc, total: min + fc };
+    }
+    const v = (mode === "minimums" ? rev.mrrMinimums[i] : rev.mrrForecast[i]) ?? 0;
+    return { min: mode === "minimums" ? v : 0, fc: mode === "forecast" ? v : 0, total: v };
+  });
+
+  const maxVal = Math.max(...cols.map((c) => c.total), 0);
+  if (maxVal <= 0) {
+    return (
+      <div className="flex h-40 items-center justify-center text-sm text-neutral-400">
+        No {mode === "combined" ? "combined ARR" : mode === "minimums" ? "minimums MRR" : "forecast MRR"} modelled on this deal.
+      </div>
+    );
+  }
+
+  const W = 640, H = 320;
+  const PAD = { l: 56, r: 16, t: 24, b: 40 };
+  const plotW = W - PAD.l - PAD.r;
+  const plotH = H - PAD.t - PAD.b;
+  const top = niceMax(maxVal);
+  const slot = plotW / YEARS.length;
+  const barW = Math.min(56, slot * 0.56);
+  const y = (v: number) => PAD.t + plotH * (1 - v / top);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * top);
+
+  const stacked = mode === "combined";
+
+  return (
+    <>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet" role="img" className="max-w-full">
+        {/* gridlines + y labels */}
+        {ticks.map((t, i) => (
+          <g key={i}>
+            <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="#f1f5f9" strokeWidth={1} />
+            <text x={PAD.l - 8} y={y(t) + 4} textAnchor="end" className="fill-neutral-400" fontSize={11}>
+              {fmtCompact(t, cur)}
+            </text>
+          </g>
+        ))}
+        {/* baseline */}
+        <line x1={PAD.l} x2={W - PAD.r} y1={y(0)} y2={y(0)} stroke="#e2e8f0" strokeWidth={1} />
+
+        {cols.map((c, i) => {
+          const cx = PAD.l + slot * i + (slot - barW) / 2;
+          const minH = plotH * ((c.min) / top);
+          const fcH = plotH * ((c.fc) / top);
+          const minY = y(c.min);
+          const fcY = y(c.min + c.fc);
+          return (
+            <g key={i}>
+              {c.min > 0 && (
+                <rect x={cx} y={minY} width={barW} height={Math.max(0, y(0) - minY)} fill={MINIMUMS} rx={stacked ? 0 : 3}>
+                  <title>{YEARS[i]} Minimums: {fmtFull(stacked ? c.min : c.min, cur)}{stacked ? "/yr" : "/mo"}</title>
+                </rect>
+              )}
+              {c.fc > 0 && (
+                <rect x={cx} y={fcY} width={barW} height={Math.max(0, fcH)} fill={FORECAST} rx={stacked ? 0 : 3}>
+                  <title>{YEARS[i]} Forecast: {fmtFull(c.fc, cur)}{stacked ? "/yr" : "/mo"}</title>
+                </rect>
+              )}
+              {/* total label */}
+              {c.total > 0 && (
+                <text x={cx + barW / 2} y={y(c.total) - 6} textAnchor="middle" className="fill-neutral-700 font-medium" fontSize={11}>
+                  {fmtCompact(c.total, cur)}
+                </text>
+              )}
+              {/* x label */}
+              <text x={cx + barW / 2} y={H - PAD.b + 18} textAnchor="middle" className="fill-neutral-500" fontSize={12}>
+                {YEARS[i]}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* legend (only meaningful when stacked) */}
+      {stacked && (
+        <div className="mt-1 flex items-center justify-center gap-4 text-xs text-neutral-500">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: MINIMUMS }} /> Minimums
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: FORECAST }} /> Forecast
+          </span>
+        </div>
+      )}
+    </>
+  );
+}
