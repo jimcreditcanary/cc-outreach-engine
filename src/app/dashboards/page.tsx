@@ -18,7 +18,11 @@ export default async function DashboardsPage({ searchParams }: { searchParams: P
   const { owner, pipeline } = await searchParams;
 
   const { deals, owners, pipelines } = await loadDeals();
-  const scoped = deals.filter((d) => (owner ? d.ownerId === owner : true) && (pipeline ? d.pipelineId === pipeline : true));
+  // No "All" pipeline — default to Enterprise Sales (or the busiest pipeline if
+  // that name isn't present). A ?pipeline param still overrides.
+  const defaultPipeline = pipelines.find((p) => /enterprise/i.test(p.label))?.id ?? pipelines[0]?.id ?? null;
+  const activePipeline = pipeline ?? defaultPipeline;
+  const scoped = deals.filter((d) => (owner ? d.ownerId === owner : true) && (activePipeline ? d.pipelineId === activePipeline : true));
 
   return (
     <main className="px-4 py-6 md:px-8">

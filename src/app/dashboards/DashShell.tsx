@@ -95,7 +95,6 @@ export function DashShell({
       {pipelines.length > 0 && (
         <div className="mb-5 flex flex-wrap items-center gap-2">
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Pipeline</span>
-          <PipeBtn on={!activePipeline} onClick={() => setParam("pipeline", "")}>All</PipeBtn>
           {pipelines.map((p) => (
             <PipeBtn key={p.id} on={activePipeline === p.id} onClick={() => setParam("pipeline", p.id)}>
               {shortPipeline(p.label)}
