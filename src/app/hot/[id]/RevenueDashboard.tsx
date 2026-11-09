@@ -59,7 +59,7 @@ type Mode = "arr" | "mrr"; // unit toggle — the chart always stacks Minimums +
 
 const YEARS = ["Y1", "Y2", "Y3", "Y4", "Y5"];
 
-export function RevenueDashboard({ rev }: { rev: DealRevenue }) {
+export function RevenueDashboard({ rev, sideContent }: { rev: DealRevenue; sideContent?: React.ReactNode }) {
   const [mode, setMode] = useState<Mode>("arr");
   const cur = rev.currency;
 
@@ -75,6 +75,29 @@ export function RevenueDashboard({ rev }: { rev: DealRevenue }) {
     { label: "One-off fees", value: rev.oneoffFees },
     { label: "Year 1 revenue", value: rev.y1Revenue, accent: true },
   ];
+
+  // The chart card renders at ~half width. When the caller passes `sideContent`
+  // (the deal's line items), it sits in the other column so the row isn't half
+  // empty; otherwise the chart is capped so it doesn't stretch full-width.
+  const chartCard = (
+    <div className="rounded-lg border border-neutral-200 bg-white p-4">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as Mode)}
+          className="cc-select rounded border border-neutral-300 py-1 pl-2 pr-8 text-sm font-medium text-neutral-800"
+          aria-label="Revenue unit"
+        >
+          <option value="arr">ARR · £/yr</option>
+          <option value="mrr">MRR · £/mo</option>
+        </select>
+        <span className="text-xs text-neutral-400">
+          Minimums + Forecast, by year ({mode === "arr" ? "annual" : "monthly"})
+        </span>
+      </div>
+      <Chart rev={rev} mode={mode} />
+    </div>
+  );
 
   return (
     <section className="mb-5">
@@ -93,27 +116,15 @@ export function RevenueDashboard({ rev }: { rev: DealRevenue }) {
         ))}
       </div>
 
-      {/* Chart */}
-      <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
-        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-          <select
-            value={mode}
-            onChange={(e) => setMode(e.target.value as Mode)}
-            className="rounded border border-neutral-300 px-2 py-1 text-sm font-medium text-neutral-800"
-            aria-label="Revenue unit"
-          >
-            <option value="arr">ARR · £/yr</option>
-            <option value="mrr">MRR · £/mo</option>
-          </select>
-          <span className="text-xs text-neutral-400">
-            Minimums + Forecast, by year ({mode === "arr" ? "annual" : "monthly"})
-          </span>
+      {/* Chart + optional side content (line items) side by side */}
+      {sideContent ? (
+        <div className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+          {chartCard}
+          {sideContent}
         </div>
-        {/* ~50% size — the SVG scales to its container width (half the card). */}
-        <div className="max-w-md">
-          <Chart rev={rev} mode={mode} />
-        </div>
-      </div>
+      ) : (
+        <div className="mt-4 max-w-xl">{chartCard}</div>
+      )}
     </section>
   );
 }

@@ -54,7 +54,7 @@ export function DashShell({ tabs, owners, activeOwner }: { tabs: DashTab[]; owne
           <select
             value={activeOwner ?? ""}
             onChange={(e) => setOwner(e.target.value)}
-            className="rounded border border-neutral-300 px-2 py-1 text-sm text-neutral-800"
+            className="cc-select rounded border border-neutral-300 py-1 pl-2 pr-8 text-sm text-neutral-800"
           >
             <option value="">All owners</option>
             {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
