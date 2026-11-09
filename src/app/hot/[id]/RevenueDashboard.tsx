@@ -85,7 +85,7 @@ export function RevenueDashboard({ rev, sideContent }: { rev: DealRevenue; sideC
         <select
           value={mode}
           onChange={(e) => setMode(e.target.value as Mode)}
-          className="cc-select rounded border border-neutral-300 py-1 pl-2 pr-8 text-sm font-medium text-neutral-800"
+          className="rounded border border-neutral-300 px-2 py-1 text-sm font-medium text-neutral-800"
           aria-label="Revenue unit"
         >
           <option value="arr">ARR · £/yr</option>
@@ -150,8 +150,8 @@ function Chart({ rev, mode }: { rev: DealRevenue; mode: Mode }) {
     );
   }
 
-  const W = 640, H = 320;
-  const PAD = { l: 56, r: 16, t: 24, b: 40 };
+  const W = 640, H = 330;
+  const PAD = { l: 66, r: 18, t: 30, b: 48 };
   const plotW = W - PAD.l - PAD.r;
   const plotH = H - PAD.t - PAD.b;
   const top = niceMax(maxVal);
@@ -167,7 +167,7 @@ function Chart({ rev, mode }: { rev: DealRevenue; mode: Mode }) {
         {ticks.map((t, i) => (
           <g key={i}>
             <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="#f1f5f9" strokeWidth={1} />
-            <text x={PAD.l - 8} y={y(t) + 4} textAnchor="end" className="fill-neutral-400" fontSize={11}>
+            <text x={PAD.l - 8} y={y(t) + 5} textAnchor="end" className="fill-neutral-400" fontSize={15}>
               {fmtCompact(t, cur)}
             </text>
           </g>
@@ -194,12 +194,12 @@ function Chart({ rev, mode }: { rev: DealRevenue; mode: Mode }) {
               )}
               {/* total label */}
               {c.total > 0 && (
-                <text x={cx + barW / 2} y={y(c.total) - 6} textAnchor="middle" className="fill-neutral-700 font-medium" fontSize={11}>
+                <text x={cx + barW / 2} y={y(c.total) - 8} textAnchor="middle" className="fill-neutral-700 font-semibold" fontSize={16}>
                   {fmtCompact(c.total, cur)}
                 </text>
               )}
               {/* x label */}
-              <text x={cx + barW / 2} y={H - PAD.b + 18} textAnchor="middle" className="fill-neutral-500" fontSize={12}>
+              <text x={cx + barW / 2} y={H - PAD.b + 26} textAnchor="middle" className="fill-neutral-500" fontSize={16}>
                 {YEARS[i]}
               </text>
             </g>
@@ -208,7 +208,7 @@ function Chart({ rev, mode }: { rev: DealRevenue; mode: Mode }) {
       </svg>
 
       {/* legend */}
-      <div className="mt-1 flex items-center justify-center gap-4 text-xs text-neutral-500">
+      <div className="mt-2 flex items-center justify-center gap-4 text-sm text-neutral-500">
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: MINIMUMS }} /> Minimums
         </span>

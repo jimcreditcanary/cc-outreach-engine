@@ -138,7 +138,7 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
             <input type="hidden" name="deal_id" value={deal.id} />
             <span className="text-xs uppercase tracking-wide text-neutral-400">Stage</span>
             {stageOptions.length > 0 ? (
-              <select name="stage_id" defaultValue={deal.stage_id ?? ""} className="cc-select rounded border border-neutral-300 py-1 pl-2 pr-8 text-xs">
+              <select name="stage_id" defaultValue={deal.stage_id ?? ""} className="rounded border border-neutral-300 px-2 py-1 text-xs">
                 {stageOptions.map((s) => <option key={s.id} value={s.id}>{s.label}{s.isClosed ? " (closed)" : ""}</option>)}
               </select>
             ) : <span className="text-sm text-neutral-600">{deal.stage ?? "—"}</span>}
@@ -147,7 +147,7 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
           <form action={changeDealOwnerAction} className="flex items-center gap-1">
             <input type="hidden" name="deal_id" value={deal.id} />
             <span className="text-xs uppercase tracking-wide text-neutral-400">Owner</span>
-            <select name="owner_id" defaultValue={deal.owner_id ?? ""} className="cc-select rounded border border-neutral-300 py-1 pl-2 pr-8 text-xs">
+            <select name="owner_id" defaultValue={deal.owner_id ?? ""} className="rounded border border-neutral-300 px-2 py-1 text-xs">
               <option value="">— unassigned —</option>
               {ownerList.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
@@ -257,33 +257,44 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
             id: "commercials",
             label: "Commercials",
             content: (() => {
-              const lineItemsCard = lineItems.length > 0 ? (
+              // The line-items container is always rendered (so the chart has a
+              // partner column and never sits in a half-empty row). When nothing
+              // syncs from HubSpot, it prompts to add them there.
+              const lineItemsCard = (
                 <section className="rounded-lg border border-neutral-200 bg-white p-4">
                   <h3 className="mb-2 text-sm font-semibold text-neutral-700">Line items</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="text-left text-xs uppercase text-neutral-400">
-                        <tr><th className="px-3 py-1.5">Item</th><th className="px-3 py-1.5">Qty</th><th className="px-3 py-1.5">Price</th><th className="px-3 py-1.5">Term</th><th className="px-3 py-1.5 text-right">Amount</th></tr>
-                      </thead>
-                      <tbody>
-                        {lineItems.map((li) => (
-                          <tr key={li.id} className="border-t border-neutral-100">
-                            <td className="px-3 py-1.5">{li.name || li.sku || "—"}</td>
-                            <td className="px-3 py-1.5 text-neutral-600">{li.quantity ?? "—"}</td>
-                            <td className="px-3 py-1.5 text-neutral-600">{li.price != null ? money(li.price, deal.currency) : "—"}</td>
-                            <td className="px-3 py-1.5 text-neutral-600">{li.term ?? "—"}</td>
-                            <td className="px-3 py-1.5 text-right text-neutral-700">{li.amount != null ? money(li.amount, deal.currency) : "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  {lineItems.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="text-left text-xs uppercase text-neutral-400">
+                          <tr><th className="px-3 py-1.5">Item</th><th className="px-3 py-1.5">Qty</th><th className="px-3 py-1.5">Price</th><th className="px-3 py-1.5">Term</th><th className="px-3 py-1.5 text-right">Amount</th></tr>
+                        </thead>
+                        <tbody>
+                          {lineItems.map((li) => (
+                            <tr key={li.id} className="border-t border-neutral-100">
+                              <td className="px-3 py-1.5">{li.name || li.sku || "—"}</td>
+                              <td className="px-3 py-1.5 text-neutral-600">{li.quantity ?? "—"}</td>
+                              <td className="px-3 py-1.5 text-neutral-600">{li.price != null ? money(li.price, deal.currency) : "—"}</td>
+                              <td className="px-3 py-1.5 text-neutral-600">{li.term ?? "—"}</td>
+                              <td className="px-3 py-1.5 text-right text-neutral-700">{li.amount != null ? money(li.amount, deal.currency) : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-start gap-3 py-8 text-sm text-neutral-500">
+                      <p>No line items are syncing from HubSpot for this deal.</p>
+                      <a href={deal.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-neutral-50">
+                        Add line items in HubSpot ↗
+                      </a>
+                    </div>
+                  )}
                 </section>
-              ) : null;
+              );
 
               if (revenue?.hasAny) return <RevenueDashboard rev={revenue} sideContent={lineItemsCard} />;
-              if (lineItemsCard) return lineItemsCard;
-              return <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-500">No revenue model or line items on this deal yet.</p>;
+              return lineItemsCard;
             })(),
           },
         ]}

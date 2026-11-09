@@ -22,18 +22,21 @@ body {
  * per-row hover utility (hover:bg-neutral-100) still wins by specificity —
  * the standing principle is "future tables are banded by default with no
  * per-row className needed". */
-@layer components {
-  /* Native-select chevron with breathing room to its right. Pair with
-   * `pl-2 pr-8` (not `px-2`) so the text clears the chevron and there's a gap
-   * between the chevron and the border. */
-  .cc-select {
-    -webkit-appearance: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.6rem center;
-    background-size: 0.9rem 0.9rem;
-  }
+/* Every native single-select across the app gets a consistent custom chevron
+ * with a gap to its right. Deliberately UNLAYERED: Tailwind's utilities live in
+ * a cascade layer, and in the layered cascade an unlayered rule beats every
+ * layered one regardless of specificity — so this `padding-right` (room for the
+ * chevron) always wins over a select's `px-*` utility without editing each one.
+ * em-based so it scales with the select's own font size. Multi-selects and
+ * list-boxes opt out. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.55em center;
+  background-size: 1em 1em;
+  padding-right: 2em;
 }
 
 @layer base {
