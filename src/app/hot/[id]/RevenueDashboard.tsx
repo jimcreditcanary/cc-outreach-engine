@@ -73,14 +73,15 @@ export function RevenueDashboard({ rev }: { rev: DealRevenue }) {
     { label: "TCV", value: rev.tcv },
     { label: "Recurring TCV", value: rev.recurringTcv },
     { label: "One-off fees", value: rev.oneoffFees },
+    { label: "Year 1 revenue", value: rev.y1Revenue, accent: true },
   ];
 
   return (
     <section className="mb-5">
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Revenue</h2>
 
-      {/* Call-out stats — 3×3 */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {/* Call-out stats — 2×5 */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {stats.map((s) => (
           <div
             key={s.label}

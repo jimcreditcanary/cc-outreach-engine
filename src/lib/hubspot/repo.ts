@@ -557,7 +557,7 @@ export async function getDealLineItems(dealId: string): Promise<DealLineItem[]> 
 const DEAL_REVENUE_PROPS = [
   "average_arr_minimums", "average_arr_forecast", "average_arr_combined",
   "carr_minimums", "carr_forecast", "carr_combined",
-  "tcv", "recurring_tcv", "oneoff_fees", "weighted_tcv",
+  "tcv", "recurring_tcv", "oneoff_fees", "weighted_tcv", "y1_revenue",
   "y1_mrr", "y2_mrr_minimums", "y3_mrr_minimums", "y4_mrr_minimums", "y5_mrr_minimums",
   "y1_mrr_forescast", "y2_mrr_forescast", "y3_mrr_forescast", "y4_mrr_forescast", "y5_mrr_forescast",
   "y1_mrr_combined", "y2_mrr_combined", "y3_mrr_combined", "y4_mrr_combined", "y5_mrr_combined",
@@ -572,6 +572,7 @@ export interface DealRevenue {
   recurringTcv: number | null;
   oneoffFees: number | null;
   weightedTcv: number | null;
+  y1Revenue: number | null; // first-year total billing (Y1 combined ARR + one-off)
   mrrMinimums: (number | null)[]; // Y1–Y5, monthly £
   mrrForecast: (number | null)[]; // Y1–Y5, monthly £
   arrCombined: (number | null)[]; // Y1–Y5, annual £ (pre-computed combined)
@@ -599,6 +600,7 @@ export async function getDealRevenue(dealId: string): Promise<DealRevenue | null
       recurringTcv: num(p.recurring_tcv),
       oneoffFees: num(p.oneoff_fees),
       weightedTcv: num(p.weighted_tcv),
+      y1Revenue: num(p.y1_revenue),
       mrrMinimums: [num(p.y1_mrr), num(p.y2_mrr_minimums), num(p.y3_mrr_minimums), num(p.y4_mrr_minimums), num(p.y5_mrr_minimums)],
       mrrForecast: [num(p.y1_mrr_forescast), num(p.y2_mrr_forescast), num(p.y3_mrr_forescast), num(p.y4_mrr_forescast), num(p.y5_mrr_forescast)],
       arrCombined: [num(p.y1_mrr_combined), num(p.y2_mrr_combined), num(p.y3_mrr_combined), num(p.y4_mrr_combined), num(p.y5_mrr_combined)],
@@ -607,7 +609,7 @@ export async function getDealRevenue(dealId: string): Promise<DealRevenue | null
     rev.hasAny = [
       rev.avgArr.minimums, rev.avgArr.forecast, rev.avgArr.combined,
       rev.carr.minimums, rev.carr.forecast, rev.carr.combined,
-      rev.tcv, rev.recurringTcv, rev.oneoffFees,
+      rev.tcv, rev.recurringTcv, rev.oneoffFees, rev.y1Revenue,
       ...rev.mrrMinimums, ...rev.mrrForecast, ...rev.arrCombined,
     ].some((v) => v != null);
     return rev;
