@@ -104,6 +104,8 @@ export interface DealRecord {
   next_meeting_at: string | null;
   next_meeting_name: string | null;
   next_step: string | null;
+  /** HubSpot rollup: number of line items associated with the deal. */
+  line_item_count: number | null;
   /** HubSpot owner (hubspot_owner_id) + resolved display name. */
   owner_id: string | null;
   owner_name: string | null;

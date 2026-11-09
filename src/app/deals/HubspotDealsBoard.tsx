@@ -28,6 +28,26 @@ function daysSince(iso: string | null): number | null {
   return Number.isNaN(t) ? null : Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
 }
 
+// One lead-health signal line on a card: a coloured dot + label + value.
+type Tone = "good" | "warn" | "bad" | "idle";
+const DOT: Record<Tone, string> = {
+  good: "bg-emerald-500",
+  warn: "bg-amber-500",
+  bad: "bg-red-500",
+  idle: "bg-neutral-300",
+};
+function Signal({ label, value, tone, title }: { label: string; value: string; tone: Tone; title?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2" title={title}>
+      <span className="text-neutral-400">{label}</span>
+      <span className="inline-flex items-center gap-1.5 text-neutral-700">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[tone]}`} />
+        <span className="max-w-[9rem] truncate text-right">{value}</span>
+      </span>
+    </div>
+  );
+}
+
 export async function HubspotDealsBoard({ pipelineId, q, ownerId }: { pipelineId?: string; q?: string; ownerId?: string }) {
   const pipelines = await dealPipelines();
   if (!pipelines.length) {
@@ -106,23 +126,39 @@ export async function HubspotDealsBoard({ pipelineId, q, ownerId }: { pipelineId
                 {cards.length === 0 && <p className="px-1 py-2 text-xs text-neutral-300">—</p>}
                 {cards.map((d) => {
                   const days = daysSince(d.last_contacted);
-                  const due = days != null && days >= DUE_DAYS && !d.next_meeting_at;
+                  const hasItems = (d.line_item_count ?? 0) > 0;
+                  const contactTone: Tone = days == null ? "bad" : days <= DUE_DAYS ? "good" : days <= 30 ? "warn" : "bad";
+                  // Status (replaces the old 🔥): forward momentum = a booked
+                  // meeting or contact within the touch window; else due, else cold.
+                  const onTrack = !!d.next_meeting_at || (days != null && days < DUE_DAYS);
+                  const status = onTrack
+                    ? { label: "On track", chip: "bg-emerald-50 text-emerald-700", edge: "border-l-emerald-500" }
+                    : days != null && days <= 30
+                      ? { label: "Due a touch", chip: "bg-amber-50 text-amber-700", edge: "border-l-amber-500" }
+                      : { label: "Cold", chip: "bg-red-50 text-red-700", edge: "border-l-red-400" };
                   return (
                     <Link
                       key={d.id}
                       href={`/hot/${d.id}`}
-                      className={`block rounded-md border bg-white p-2.5 text-sm shadow-sm hover:shadow ${due ? "border-l-4 border-l-amber-500 border-y-neutral-200 border-r-neutral-200" : "border-neutral-200"}`}
+                      className={`block rounded-md border border-neutral-200 border-l-4 ${status.edge} bg-white p-2.5 shadow-sm hover:shadow`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className="font-medium text-neutral-800">{d.name || "(untitled)"}</span>
-                        {due && <span title={`No contact in ${days} days`} className="shrink-0 text-amber-600">🔥</span>}
+                        <span className="text-sm font-medium leading-snug text-neutral-800">{d.name || "(untitled)"}</span>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums text-neutral-900">{money(d.amount, d.currency)}</span>
                       </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-neutral-500">
-                        <span>{money(d.amount, d.currency)}</span>
-                        {d.last_contacted ? <span className={days != null && days > 30 ? "text-red-600" : ""}>· {days}d</span> : <span>· never</span>}
-                        {d.next_meeting_at && <span title={d.next_meeting_name ?? undefined}>· 📅 {fmtDate(d.next_meeting_at)}</span>}
+
+                      <div className="mt-2 space-y-1 text-xs">
+                        <Signal label="Meeting" tone={d.next_meeting_at ? "good" : "idle"} value={d.next_meeting_at ? fmtDate(d.next_meeting_at) : "None booked"} title={d.next_meeting_name ?? undefined} />
+                        <Signal label="Contacted" tone={contactTone} value={d.last_contacted ? `${days}d ago` : "Never"} />
+                        <Signal label="Line items" tone={hasItems ? "good" : "warn"} value={hasItems ? String(d.line_item_count) : "None"} />
+                        <Signal label="Next step" tone={d.next_step ? "good" : "idle"} value={d.next_step ? "Set" : "None"} title={d.next_step ?? undefined} />
+                        <Signal label="Close date" tone={d.close_date ? "good" : "idle"} value={d.close_date ? fmtDate(d.close_date) : "Not set"} />
                       </div>
-                      {d.owner_name && <div className="mt-0.5 text-[11px] text-neutral-400">👤 {d.owner_name}</div>}
+
+                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-neutral-100 pt-1.5">
+                        <span className="truncate text-[11px] text-neutral-400">{d.owner_name ?? "Unassigned"}</span>
+                        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${status.chip}`}>{status.label}</span>
+                      </div>
                     </Link>
                   );
                 })}
@@ -133,7 +169,7 @@ export async function HubspotDealsBoard({ pipelineId, q, ownerId }: { pipelineId
       </div>
 
       <p className="mt-2 text-xs text-neutral-400">
-        Open stages only · click a card to work the deal (appraise + draft, start onboarding/billing). 🔥 = no contact in ≥{DUE_DAYS} days.
+        Open stages only · click a card to work the deal (appraise + draft, start onboarding/billing). Each card shows lead-health signals; the left edge and chip flag momentum — On track / Due a touch (no contact in {DUE_DAYS}+ days) / Cold (30+ days).
         {page.after ? " Showing the first 100 open deals in this pipeline — use search to narrow." : ""}
       </p>
     </main>

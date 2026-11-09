@@ -35,6 +35,7 @@ export const DEAL_READ_PROPS = [
   "dealname", "pipeline", "dealstage", "amount", "deal_currency_code", "closedate",
   "notes_last_contacted", "notes_last_updated",
   "hs_next_meeting_start_time", "hs_next_meeting_name", "hs_next_step",
+  "hs_num_of_associated_line_items",
   "hs_is_closed", "dealtype", "hubspot_owner_id",
   // Standard value fields — fallbacks for the dashboards when the custom
   // revenue model (tcv/arr) isn't filled on a deal.
@@ -152,6 +153,10 @@ export function fromHubspotDeal(
     next_meeting_at: str(p.hs_next_meeting_start_time),
     next_meeting_name: str(p.hs_next_meeting_name),
     next_step: str(p.hs_next_step),
+    line_item_count: (() => {
+      const n = Number(str(p.hs_num_of_associated_line_items));
+      return Number.isFinite(n) && str(p.hs_num_of_associated_line_items) ? n : null;
+    })(),
     owner_id: str(p.hubspot_owner_id),
     owner_name: null, // resolved by the repo off the owners map
     created_at: str(p.createdate),
