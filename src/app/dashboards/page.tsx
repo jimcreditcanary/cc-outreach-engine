@@ -10,7 +10,7 @@ import { PipelineView } from "./PipelineView";
 import { ActivityView } from "./ActivityView";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120; // headroom for the Refresh deals re-sync
 
 export default async function DashboardsPage({ searchParams }: { searchParams: Promise<{ owner?: string; pipeline?: string }> }) {
   const me = await currentUser();

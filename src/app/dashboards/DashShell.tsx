@@ -9,6 +9,7 @@
 import { useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { RefreshCw } from "lucide-react";
+import { resyncDealsAction } from "./actions";
 
 export interface DashTab {
   id: string;
@@ -68,13 +69,13 @@ export function DashShell({
         <div className="flex items-center gap-3 pb-2">
           <button
             type="button"
-            onClick={() => startRefresh(() => router.refresh())}
+            onClick={() => startRefresh(async () => { await resyncDealsAction(); router.refresh(); })}
             disabled={refreshing}
             className="inline-flex items-center gap-1.5 rounded border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-60"
-            title="Re-read the latest mirrored data"
+            title="Pull deals fresh from HubSpot, then reload"
           >
             <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
-            {refreshing ? "Refreshing…" : "Refresh"}
+            {refreshing ? "Syncing…" : "Refresh"}
           </button>
           <label className="flex items-center gap-2 text-xs text-neutral-500">
             Deal owner
