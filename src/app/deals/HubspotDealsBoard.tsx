@@ -148,11 +148,11 @@ export async function HubspotDealsBoard({ pipelineId, q, ownerId }: { pipelineId
                       </div>
 
                       <div className="mt-2 space-y-1 text-xs">
-                        <Signal label="Meeting" tone={d.next_meeting_at ? "good" : "idle"} value={d.next_meeting_at ? fmtDate(d.next_meeting_at) : "None booked"} title={d.next_meeting_name ?? undefined} />
-                        <Signal label="Contacted" tone={contactTone} value={d.last_contacted ? `${days}d ago` : "Never"} />
-                        <Signal label="Line items" tone={hasItems ? "good" : "warn"} value={hasItems ? String(d.line_item_count) : "None"} />
-                        <Signal label="Next step" tone={d.next_step ? "good" : "idle"} value={d.next_step ? "Set" : "None"} title={d.next_step ?? undefined} />
-                        <Signal label="Close date" tone={d.close_date ? "good" : "idle"} value={d.close_date ? fmtDate(d.close_date) : "Not set"} />
+                        <Signal label="Next Meeting" tone={d.next_meeting_at ? "good" : "idle"} value={d.next_meeting_at ? fmtDate(d.next_meeting_at) : "None booked"} title={d.next_meeting_name ?? undefined} />
+                        <Signal label="Last Contacted" tone={contactTone} value={d.last_contacted ? `${days}d ago` : "Never"} />
+                        <Signal label="Priced" tone={hasItems ? "good" : "warn"} value={hasItems ? String(d.line_item_count) : "None"} />
+                        <Signal label="Next Step" tone={d.next_step ? "good" : "idle"} value={d.next_step ? "Set" : "None"} title={d.next_step ?? undefined} />
+                        <Signal label="Close Date" tone={d.close_date ? "good" : "idle"} value={d.close_date ? fmtDate(d.close_date) : "Not set"} />
                       </div>
 
                       <div className="mt-2 flex items-center justify-between gap-2 border-t border-neutral-100 pt-1.5">
