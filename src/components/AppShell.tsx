@@ -19,6 +19,7 @@ import {
   UserCheck,
   Telescope,
   Megaphone,
+  BarChart3,
   BookOpen,
   Settings as SettingsIcon,
   ChevronsLeft,
@@ -54,6 +55,7 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/companies",  label: "CRM",        Icon: Building2 },
       { href: "/deals",      label: "Deals",      Icon: Briefcase },
+      { href: "/dashboards", label: "Dashboards", Icon: BarChart3 },
       { href: "/meetings",   label: "Meetings",   Icon: CalendarClock },
       { href: "/customers",  label: "Customers",  Icon: UserCheck },
     ],
