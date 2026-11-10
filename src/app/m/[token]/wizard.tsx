@@ -35,7 +35,8 @@ import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAcc
 // States  emerald = done · amber = needs-follow-up ("don't know") · red = required/error
 // Radius  controls rounded-md · containers rounded-lg · badges rounded · progress rounded-full
 // Inputs  px-3 py-2.5 (≈44px tap target)
-const field = "w-full rounded-md border border-neutral-300 px-3 py-2.5 text-sm focus:border-[#003566] focus:outline-none focus:ring-1 focus:ring-[#003566]";
+const fieldBase = "rounded-md border border-neutral-300 px-3 py-2.5 text-sm focus:border-[#003566] focus:outline-none focus:ring-1 focus:ring-[#003566]";
+const field = `w-full ${fieldBase}`;
 const lbl = "block text-sm font-medium text-neutral-800 mb-1";
 const btnPrimary = "rounded-md bg-[#003566] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#002a52]";
 const btnSecondary = "rounded-md border border-neutral-300 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-100";
@@ -376,7 +377,7 @@ function UbosPage({ token, c, enrichment, merchant, answers, emailByName, paymen
                           <input type="hidden" name={`ubo_dob_month_${i}`} value={p.month} />
                           <input type="hidden" name={`ubo_dob_year_${i}`} value={p.year} />
                           <div className="flex flex-nowrap items-center gap-2">
-                            <input name={`ubo_dob_day_${i}`} inputMode="numeric" pattern="(0?[1-9]|[12]\d|3[01])" placeholder="DD" title="Enter the day of the month (1-31)" defaultValue={p.day} className={`${field} w-16 shrink-0 text-center`} />
+                            <input name={`ubo_dob_day_${i}`} inputMode="numeric" pattern="(0?[1-9]|[12]\d|3[01])" placeholder="DD" title="Enter the day of the month (1-31)" defaultValue={p.day} className={`${fieldBase} w-16 shrink-0 text-center`} />
                             <span className="whitespace-nowrap text-sm text-neutral-600">{monthName(p.month)} {p.year}</span>
                           </div>
                           <p className="mt-0.5 text-[11px] text-neutral-400">We have the month and year from Companies House - just add the day.</p>
@@ -514,8 +515,8 @@ function TextA({ name, label, answers, type = "text", placeholder, required, ful
   name: string; label: string; answers: AnswerMap; type?: string; placeholder?: string; required?: boolean; full?: boolean; noUnknown?: boolean;
 }) {
   return (
-    <div className={full ? "sm:col-span-2" : undefined}>
-      <label htmlFor={name} className={lbl}>{label}{required && <span className="text-red-600"> *</span>}</label>
+    <div className={`flex h-full flex-col ${full ? "sm:col-span-2" : ""}`}>
+      <label htmlFor={name} className={`${lbl} flex-1`}>{label}{required && <span className="text-red-600"> *</span>}</label>
       <input id={name} name={name} type={type} placeholder={placeholder} defaultValue={answers[name]?.value ?? ""} className={field} />
       <FieldMeta name={name} answers={answers} noUnknown={noUnknown} />
     </div>
@@ -539,8 +540,8 @@ function SelectA({ name, label, answers, options, required, noUnknown }: {
   name: string; label: string; answers: AnswerMap; options: { value: string; label: string }[]; required?: boolean; noUnknown?: boolean;
 }) {
   return (
-    <div>
-      <label htmlFor={name} className={lbl}>{label}{required && <span className="text-red-600"> *</span>}</label>
+    <div className="flex h-full flex-col">
+      <label htmlFor={name} className={`${lbl} flex-1`}>{label}{required && <span className="text-red-600"> *</span>}</label>
       <select id={name} name={name} defaultValue={answers[name]?.value ?? ""} className={field}>
         <option value="">-</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
