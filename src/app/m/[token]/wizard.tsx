@@ -38,6 +38,10 @@ import { setEditorAction, savePageAction, submitForApprovalAction, removeBankAcc
 const fieldBase = "rounded-md border border-neutral-300 px-3 py-2.5 text-sm focus:border-[#003566] focus:outline-none focus:ring-1 focus:ring-[#003566]";
 const field = `w-full ${fieldBase}`;
 const lbl = "block text-sm font-medium text-neutral-800 mb-1";
+// Field label that reserves two lines at ≥sm (the 2-col breakpoint), so inputs
+// in a grid row top-align even when one label wraps and its neighbour doesn't.
+// Used by top-aligned cells; mobile (single column) keeps the natural height.
+const lblTall = `${lbl} sm:min-h-[2.5rem]`;
 const btnPrimary = "rounded-md bg-[#003566] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#002a52]";
 const btnSecondary = "rounded-md border border-neutral-300 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-100";
 
@@ -263,7 +267,7 @@ function AnswerField({ def, answers, fcaRequired, defaultValue }: { def: AnswerF
   const required = def.required || (def.requiredIfFca && fcaRequired);
   return (
     <div>
-      <label htmlFor={def.key} className={lbl}>{def.label}{required && <span className="text-red-600"> *</span>}</label>
+      <label htmlFor={def.key} className={lblTall}>{def.label}{required && <span className="text-red-600"> *</span>}</label>
       {/* No HTML `required` on fields that offer "don't know" — otherwise the
           browser blocks submit even when the box is ticked (item 4). Server-side
           validation still enforces them unless don't-know is set. */}
@@ -410,14 +414,14 @@ function UbosPage({ token, c, enrichment, merchant, answers, emailByName, paymen
                       <LockNote>Payments onboarding requires identity verification for each owner.</LockNote>
                       <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
-                          <label className={lbl}>Photo ID - passport or driving licence{!st.identity && <span className="text-red-600"> *</span>}</label>
-                          {st.identity && <p className="mb-1 text-xs text-emerald-700">✓ On file - upload again only to replace</p>}
+                          <label className={lblTall}>Photo ID - passport or driving licence{!st.identity && <span className="text-red-600"> *</span>}</label>
                           <input type="file" name={`ubo_id_file_${i}`} accept=".pdf,.png,.jpg,.jpeg" className={fileInput} />
+                          {st.identity && <p className="mt-1 text-xs text-emerald-700">✓ On file - upload again only to replace</p>}
                         </div>
                         <div>
-                          <label className={lbl}>Proof of address - utility bill / bank statement{!st.proof && <span className="text-red-600"> *</span>}</label>
-                          {st.proof && <p className="mb-1 text-xs text-emerald-700">✓ On file - upload again only to replace</p>}
+                          <label className={lblTall}>Proof of address - utility bill / bank statement{!st.proof && <span className="text-red-600"> *</span>}</label>
                           <input type="file" name={`ubo_proof_file_${i}`} accept=".pdf,.png,.jpg,.jpeg" className={fileInput} />
+                          {st.proof && <p className="mt-1 text-xs text-emerald-700">✓ On file - upload again only to replace</p>}
                         </div>
                       </div>
                     </div>
@@ -515,8 +519,8 @@ function TextA({ name, label, answers, type = "text", placeholder, required, ful
   name: string; label: string; answers: AnswerMap; type?: string; placeholder?: string; required?: boolean; full?: boolean; noUnknown?: boolean;
 }) {
   return (
-    <div className={`flex h-full flex-col ${full ? "sm:col-span-2" : ""}`}>
-      <label htmlFor={name} className={`${lbl} flex-1`}>{label}{required && <span className="text-red-600"> *</span>}</label>
+    <div className={full ? "sm:col-span-2" : undefined}>
+      <label htmlFor={name} className={lblTall}>{label}{required && <span className="text-red-600"> *</span>}</label>
       <input id={name} name={name} type={type} placeholder={placeholder} defaultValue={answers[name]?.value ?? ""} className={field} />
       <FieldMeta name={name} answers={answers} noUnknown={noUnknown} />
     </div>
@@ -540,8 +544,8 @@ function SelectA({ name, label, answers, options, required, noUnknown }: {
   name: string; label: string; answers: AnswerMap; options: { value: string; label: string }[]; required?: boolean; noUnknown?: boolean;
 }) {
   return (
-    <div className="flex h-full flex-col">
-      <label htmlFor={name} className={`${lbl} flex-1`}>{label}{required && <span className="text-red-600"> *</span>}</label>
+    <div>
+      <label htmlFor={name} className={lblTall}>{label}{required && <span className="text-red-600"> *</span>}</label>
       <select id={name} name={name} defaultValue={answers[name]?.value ?? ""} className={field}>
         <option value="">-</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
