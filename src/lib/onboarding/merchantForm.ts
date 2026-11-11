@@ -102,7 +102,13 @@ export interface StoredMerchantForm {
   status: string;
   submitted_at: string | null;
 }
-export interface StoredUboKyc extends UboKycInput { id: string }
+export interface StoredUboKyc extends UboKycInput {
+  id: string;
+  /** Manual KYC-document sign-off (migration 077) — null until a reviewer marks
+   *  the owner's uploaded ID + proof of address as checked & validated. */
+  documents_checked_at?: string | null;
+  documents_checked_by?: string | null;
+}
 
 /** Resolve the case behind a merchant-form token (the public form's credential). */
 export async function getCaseByToken(db: DB, token: string): Promise<TokenCase | null> {

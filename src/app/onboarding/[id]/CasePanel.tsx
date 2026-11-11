@@ -30,7 +30,7 @@ import {
   completeInternalAction, cancelCaseAction, addContactToCompanyAction, pullOfficersUbosAction,
   assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction, requestUboDocsAction,
   generateDocsAction, approveCaseAction, fileToDriveAction,
-  createShareAction, revokeShareAction,
+  createShareAction, revokeShareAction, setUboValidationAction,
 } from "../actions";
 import { merchantFormUrl, loadMerchantForm } from "@/lib/onboarding/merchantForm";
 import { loadGeneratedDocs, type GeneratedDoc } from "@/lib/onboarding/docgen";
@@ -104,6 +104,7 @@ const EVENT_LABELS: Record<string, string> = {
   ubo_checks_run: "UBO checks run", approved: "Approved & onboarded", cancelled: "Cancelled",
   share_created: "Share link created", share_revoked: "Share link revoked",
   share_link_requested: "Share link requested", share_viewed: "Shared view opened",
+  ubo_docs_validated: "UBO documents validated", ubo_docs_unvalidated: "UBO validation cleared",
 };
 const humanEvent = (e: string): string => EVENT_LABELS[e] ?? e.replace(/_/g, " ");
 
@@ -885,6 +886,7 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
                         {k.exact_ownership_percent && <span className="text-neutral-500">{k.exact_ownership_percent}</span>}
                         {k.is_pep && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">PEP</span>}
                         <span className={`rounded px-1.5 py-0.5 text-xs ${k.consent_given ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"}`}>consent {k.consent_given ? "✓" : "✗"}</span>
+                        {k.documents_checked_at && <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-medium text-emerald-800" title={`Checked & validated${k.documents_checked_by ? ` by ${k.documents_checked_by}` : ""} on ${fmtDate(k.documents_checked_at)}`}>✓ Checked &amp; validated</span>}
                       </div>
                       {addr && <div className="mt-0.5 text-xs text-neutral-500">{addr}</div>}
                       {k.is_pep && k.pep_detail && <div className="mt-0.5 text-xs text-amber-700">{k.pep_detail}</div>}
@@ -910,6 +912,29 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
                           </div>
                         );
                       })()}
+                      {/* Manual KYC document sign-off (staff). Badge above shows the validated state in both views. */}
+                      {!ro && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-2">
+                          {k.documents_checked_at ? (
+                            <>
+                              <span className="text-xs text-emerald-700">Checked &amp; validated{k.documents_checked_by ? ` by ${k.documents_checked_by}` : ""} · {fmtDate(k.documents_checked_at)}</span>
+                              <form action={setUboValidationAction}>
+                                <input type="hidden" name="case_id" value={caseId} />
+                                <input type="hidden" name="kyc_id" value={k.id} />
+                                <input type="hidden" name="checked" value="0" />
+                                <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100" pendingLabel="…">Clear</PendingButton>
+                              </form>
+                            </>
+                          ) : (
+                            <form action={setUboValidationAction}>
+                              <input type="hidden" name="case_id" value={caseId} />
+                              <input type="hidden" name="kyc_id" value={k.id} />
+                              <input type="hidden" name="checked" value="1" />
+                              <PendingButton className="rounded border border-emerald-300 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="…">✓ Mark checked &amp; validated</PendingButton>
+                            </form>
+                          )}
+                        </div>
+                      )}
                     </li>
                   );
                 })}
@@ -1054,8 +1079,22 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
                     <span key={k} className={`rounded px-1.5 py-0.5 text-[10px] ${v ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-400"}`}>{k.replace(/_/g, " ")}{v ? " ✓" : " ✗"}</span>
                   ))}
                 </div>
-                {pr.gaps.length > 0 && <p className="mt-2 text-xs text-amber-700">Gaps: {pr.gaps.join("; ")}</p>}
-                {pr.concerns.length > 0 && <p className="mt-1 text-xs text-red-700">Concerns: {pr.concerns.join("; ")}</p>}
+                {pr.gaps.length > 0 && (
+                  <div className="mt-2">
+                    <div className="text-xs font-medium uppercase tracking-wide text-amber-700">Gaps</div>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-amber-700">
+                      {pr.gaps.map((g, i) => <li key={i}>{g}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {pr.concerns.length > 0 && (
+                  <div className="mt-2">
+                    <div className="text-xs font-medium uppercase tracking-wide text-red-700">Concerns</div>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-red-700">
+                      {pr.concerns.map((c, i) => <li key={i}>{c}</li>)}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </section>

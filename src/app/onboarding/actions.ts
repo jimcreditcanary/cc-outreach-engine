@@ -320,6 +320,29 @@ export async function generateDocsAction(formData: FormData) {
   redirect(`/onboarding/${id}/review`);
 }
 
+/** Mark (or clear) a beneficial owner's KYC documents as checked & validated. */
+export async function setUboValidationAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  const kycId = str(formData.get("kyc_id"));
+  const checked = str(formData.get("checked")) === "1";
+  if (!id || !kycId) return redirect("/onboarding");
+  const db = serviceClient();
+  try {
+    const { error } = await db.from("onboarding_ubo_kyc")
+      .update({ documents_checked_at: checked ? new Date().toISOString() : null, documents_checked_by: checked ? (me.email ?? null) : null })
+      .eq("id", kycId).eq("case_id", id);
+    if (error) throw error;
+    await logCaseEvent(db, id, checked ? "ubo_docs_validated" : "ubo_docs_unvalidated", actorOf(me), { kyc_id: kycId });
+  } catch (e) {
+    const msg = (e as Error).message;
+    await flash("error", `Couldn't update validation: ${msg}${/documents_checked|column/.test(msg) ? " — has migration 077 been applied?" : ""}`);
+  }
+  revalidatePath(`/onboarding/${id}/review`);
+  redirect(`/onboarding/${id}/review`);
+}
+
 /** Create a third-party share link for the case's review. */
 export async function createShareAction(formData: FormData) {
   const me = await currentUser();
