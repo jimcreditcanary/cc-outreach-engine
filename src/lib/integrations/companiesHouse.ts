@@ -146,6 +146,19 @@ export interface ChAccountsDocument {
   madeUpTo: string | null;
 }
 
+/** A filed document pulled from the Document API as its original PDF bytes
+ *  (incorporation IN01, filed accounts, …) — for embedding in the DD pack. */
+export interface ChFiledDocument {
+  /** The filing date (filing-history `date`). */
+  date: string | null;
+  /** Human-readable filing description. */
+  description: string | null;
+  /** Accounts made-up-to date (`action_date`), when relevant. */
+  madeUpTo: string | null;
+  /** The document's original PDF bytes. */
+  pdf: Buffer;
+}
+
 export interface CompaniesHouseClient {
   searchCompanies(query: string, limit?: number): Promise<ChCompanySearchResult[]>;
   /** Null when CH has no company with that number (404). */
@@ -153,6 +166,12 @@ export interface CompaniesHouseClient {
   /** Latest filed accounts as iXBRL (via filing history → Document API). Null
    *  when there are no iXBRL accounts (P2b). */
   getAccountsDocument(companyNumber: string): Promise<ChAccountsDocument | null>;
+  /** The incorporation filing (IN01 / NEWINC) as its original PDF. Null when the
+   *  filing has no downloadable document. For the DD pack. */
+  getIncorporationDocument(companyNumber: string): Promise<ChFiledDocument | null>;
+  /** Every filed-accounts document as original PDF bytes, newest first (capped).
+   *  For the DD pack ("all the accounts"). */
+  getAccountsDocuments(companyNumber: string): Promise<ChFiledDocument[]>;
   /** All officers (caller filters current + resigned ≤12mo). */
   getOfficers(companyNumber: string): Promise<ChOfficer[]>;
   /** Persons with significant control (direct — caller recurses corporates). */
@@ -238,6 +257,38 @@ async function chFetchUrl(url: string, key: string, accept = "application/json")
     }
   }
   throw new CompaniesHouseError(`network error: ${(lastErr as Error)?.message ?? "unknown"}`, 0);
+}
+
+/** Download a filing's original PDF via the Document API: metadata (confirm a
+ *  PDF resource exists) → /content (Accept: application/pdf), following the
+ *  signed-URL redirect without re-sending CH auth to the storage host. Returns
+ *  null (never throws) when there is no PDF. */
+async function fetchFilingPdf(metaUrl: string, key: string): Promise<Buffer | null> {
+  try {
+    const metaRes = await chFetchUrl(metaUrl, key);
+    if (!metaRes.ok) return null;
+    const meta = (await metaRes.json()) as { resources?: Record<string, unknown> };
+    if (!meta.resources || !meta.resources["application/pdf"]) return null;
+    let res = await fetch(`${metaUrl}/content`, {
+      headers: { Authorization: authHeader(key), Accept: "application/pdf" },
+      redirect: "manual",
+    });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get("location");
+      if (!loc) return null;
+      res = await fetch(loc); // signed storage URL — must NOT carry the CH auth header
+    }
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.byteLength > 100 ? buf : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Order filing-history items oldest-first (incorporation) / newest-first (accounts). */
+function filingDate(it: Record<string, unknown>): string {
+  return String(it.date ?? it.action_date ?? "");
 }
 
 function mapProfile(j: Record<string, unknown>): ChCompanyProfile {
@@ -371,6 +422,36 @@ function liveClient(key: string): CompaniesHouseClient {
       const ixbrl = await contentRes.text();
       if (!ixbrl || ixbrl.length < 200) return null;
       return { ixbrl, madeUpTo: item!.action_date ?? item!.date ?? null };
+    },
+    async getIncorporationDocument(companyNumber) {
+      const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/filing-history?category=incorporation&items_per_page=25`, key);
+      if (!res.ok) return null;
+      const j = (await res.json()) as { items?: Record<string, unknown>[] };
+      const items = j.items ?? [];
+      // Prefer the "new incorporation" (NEWINC) filing; else the earliest item.
+      const inc = items.find((it) => String(it.type ?? "").toUpperCase().includes("NEWINC"))
+        ?? items.slice().sort((a, b) => filingDate(a).localeCompare(filingDate(b)))[0];
+      const metaUrl = (inc?.links as { document_metadata?: string } | undefined)?.document_metadata;
+      if (!metaUrl) return null;
+      const pdf = await fetchFilingPdf(metaUrl, key);
+      if (!pdf) return null;
+      return { date: (inc!.date as string) ?? null, description: (inc!.description as string) ?? null, madeUpTo: null, pdf };
+    },
+    async getAccountsDocuments(companyNumber) {
+      const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/filing-history?category=accounts&items_per_page=40`, key);
+      if (!res.ok) return [];
+      const j = (await res.json()) as { items?: Record<string, unknown>[] };
+      const items = (j.items ?? [])
+        .filter((it) => (it.links as { document_metadata?: string } | undefined)?.document_metadata)
+        .sort((a, b) => filingDate(b).localeCompare(filingDate(a))) // newest first
+        .slice(0, 10); // bound time/size; every live filing has a document
+      const out: ChFiledDocument[] = [];
+      for (const it of items) {
+        const metaUrl = (it.links as { document_metadata?: string }).document_metadata!;
+        const pdf = await fetchFilingPdf(metaUrl, key);
+        if (pdf) out.push({ date: (it.date as string) ?? null, description: (it.description as string) ?? null, madeUpTo: (it.action_date as string) ?? null, pdf });
+      }
+      return out;
     },
     async getOfficers(companyNumber) {
       const res = await chFetch(`/company/${encodeURIComponent(companyNumber.trim())}/officers?items_per_page=100`, key);
@@ -509,6 +590,10 @@ function mockClient(): CompaniesHouseClient {
     async getAccountsDocument() {
       return { ixbrl: MOCK_IXBRL, madeUpTo: "2025-03-31" };
     },
+    // No fixture PDF bytes — the mock can't produce a real filed document. In
+    // dev the pack notes that CH documents attach under live CH access.
+    async getIncorporationDocument() { return null; },
+    async getAccountsDocuments() { return []; },
     async getOfficers() {
       return [
         {

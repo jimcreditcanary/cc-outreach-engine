@@ -31,7 +31,11 @@ export type OnboardingDocKind =
   | "tu_monevo_eua"
   | "tu_due_diligence_xlsx"
   | "merchant_onboarding_form"
-  | "dd_questionnaire";
+  | "dd_questionnaire"
+  // The consolidated internal evidence pack (programmatic, not a template):
+  // every captured field + ownership structure + embedded KYC images + the CH
+  // incorporation / accounts. Generated whenever the merchant has submitted.
+  | "due_diligence_pack";
 
 export interface ProductGroup {
   key: ProductGroupKey;

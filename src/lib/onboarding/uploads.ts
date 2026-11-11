@@ -98,6 +98,35 @@ export async function loadUboDocStatus(db: DB, caseId: string): Promise<Map<stri
   return map;
 }
 
+/** The merchant-wizard KYC image uploads (passport / proof of address), keyed to
+ *  an owner via ubo_ref. Shown as inline thumbnails in the review panel (never a
+ *  full-resolution download — the originals live only in the DD pack). */
+export interface UboKycImage { id: string; kind: string; filename: string | null; content_type: string | null; ubo_ref: string | null }
+export async function loadUboKycImages(db: DB, caseId: string): Promise<UboKycImage[]> {
+  try {
+    const { data } = await db
+      .from("onboarding_uploads")
+      .select("id, kind, filename, content_type, ubo_ref")
+      .eq("case_id", caseId)
+      .in("kind", [UBO_ID_KIND, UBO_PROOF_KIND])
+      .order("created_at", { ascending: true });
+    return (data as UboKycImage[] | null) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Download one upload's bytes, scoped to its case (so a thumbnail route can't be
+ *  used to read another case's files). Null when not found. */
+export async function downloadUpload(db: DB, caseId: string, uploadId: string): Promise<{ bytes: Buffer; contentType: string | null; kind: string | null } | null> {
+  const { data } = await db.from("onboarding_uploads").select("storage_path, content_type, kind").eq("case_id", caseId).eq("id", uploadId).maybeSingle();
+  const row = data as { storage_path: string; content_type: string | null; kind: string | null } | null;
+  if (!row) return null;
+  const dl = await db.storage.from(UPLOAD_BUCKET).download(row.storage_path);
+  if (dl.error || !dl.data) return null;
+  return { bytes: Buffer.from(await dl.data.arrayBuffer()), contentType: row.content_type, kind: row.kind };
+}
+
 const extractSchema = z.object({
   document_type: z.string().describe("what kind of document this is"),
   summary: z.string(),

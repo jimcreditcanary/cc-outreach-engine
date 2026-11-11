@@ -35,7 +35,7 @@ import { merchantFormUrl, loadMerchantForm } from "@/lib/onboarding/merchantForm
 import { loadGeneratedDocs, type GeneratedDoc } from "@/lib/onboarding/docgen";
 import { loadEnrichment, distinctIndividualUbos } from "@/lib/onboarding/enrich";
 import { loadPrivacyAssessment } from "@/lib/onboarding/privacyAssessment";
-import { loadUploads } from "@/lib/onboarding/uploads";
+import { loadUploads, loadUboKycImages, UBO_ID_KIND, UBO_PROOF_KIND } from "@/lib/onboarding/uploads";
 import { loadUboChecks } from "@/lib/onboarding/uboChecks";
 import { loadUboDocRequests, loadUboDocs, uboUploadUrl } from "@/lib/onboarding/uboDocs";
 import { caseDriveFolderUrl } from "@/lib/onboarding/driveFiling";
@@ -88,6 +88,7 @@ const DOC_LABELS: Record<OnboardingDocKind, string> = {
   tu_due_diligence_xlsx: "TU Due Diligence (xlsx)",
   merchant_onboarding_form: "Merchant Onboarding Form",
   dd_questionnaire: "DD Questionnaire",
+  due_diligence_pack: "Due Diligence Pack",
 };
 
 const EVENT_LABELS: Record<string, string> = {
@@ -598,7 +599,7 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
   const c = await getCase(db, caseId);
   if (!c) return <p className="text-sm text-neutral-500">Onboarding case not found.</p>;
 
-  const [{ form, kyc, bankAccounts, directDebit }, privacy, uploads, uboChecks, generatedDocs, uboRequests, uboDocs] = await Promise.all([
+  const [{ form, kyc, bankAccounts, directDebit }, privacy, uploads, uboChecks, generatedDocs, uboRequests, uboDocs, kycImages] = await Promise.all([
     loadMerchantForm(db, caseId),
     loadPrivacyAssessment(db, caseId),
     loadUploads(db, caseId),
@@ -606,6 +607,7 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
     loadGeneratedDocs(db, caseId),
     loadUboDocRequests(db, caseId),
     loadUboDocs(db, caseId),
+    loadUboKycImages(db, caseId),
   ]);
   const driveUrl = await caseDriveFolderUrl(db, caseId);
 
@@ -708,10 +710,35 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
                       </div>
                       {addr && <div className="mt-0.5 text-xs text-neutral-500">{addr}</div>}
                       {k.is_pep && k.pep_detail && <div className="mt-0.5 text-xs text-amber-700">{k.pep_detail}</div>}
+                      {(() => {
+                        const mine = kycImages.filter((img) => img.ubo_ref && (img.ubo_ref === k.ubo_id || img.ubo_ref === k.ubo_name));
+                        if (!mine.length) return null;
+                        return (
+                          <div className="mt-2 flex flex-wrap gap-3 border-t border-neutral-100 pt-2">
+                            {mine.map((img) => (
+                              <figure key={img.id} className="m-0">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={`/onboarding/${caseId}/thumb/${img.id}`}
+                                  alt={img.kind === UBO_ID_KIND ? "Photo ID" : "Proof of address"}
+                                  className="pointer-events-none h-28 w-auto select-none rounded border border-neutral-200 object-cover"
+                                  draggable={false}
+                                />
+                                <figcaption className="mt-0.5 text-[10px] uppercase tracking-wide text-neutral-400">
+                                  {img.kind === UBO_ID_KIND ? "Photo ID" : img.kind === UBO_PROOF_KIND ? "Proof of address" : img.kind}
+                                </figcaption>
+                              </figure>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </li>
                   );
                 })}
               </ul>
+            )}
+            {kycImages.length > 0 && (
+              <p className="mt-2 text-xs text-neutral-400">Identity images are shown as thumbnails for review only — the full-resolution originals are embedded in the Due Diligence Pack, not downloadable here.</p>
             )}
           </section>
 

@@ -15,7 +15,7 @@ import { HubspotCompanyDetail } from "../HubspotCompanyDetail";
 import { SECTORS, humanizeLabel } from "@/lib/format/sector";
 
 // Enrichment takes 15-30s (homepage scrape + AI summary + feed discovery).
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export const dynamic = "force-dynamic";
 

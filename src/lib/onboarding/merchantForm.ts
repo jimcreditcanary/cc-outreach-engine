@@ -234,8 +234,21 @@ export async function addBankAccounts(db: DB, caseId: string, bankAccounts: Bank
   const accounts = bankAccounts.filter((a) => (a.account_number ?? "").trim());
   if (!accounts.length) return 0;
   if (!encryptionConfigured()) throw new Error("Payment capture isn't configured yet — please contact us to complete this.");
-  for (const a of accounts) await insertBankAccount(db, caseId, a);
-  return accounts.length;
+  // Dedupe against what's already on file (and within this batch) by purpose +
+  // account tail, so revisiting the accounts page can't add the same account
+  // again (the "3 identical accounts" bug).
+  const tailOf = (n: string) => n.replace(/\D/g, "").slice(-4);
+  const { data: existing } = await db.from("onboarding_bank_accounts").select("purpose, account_tail").eq("case_id", caseId);
+  const seen = new Set(((existing as { purpose: string; account_tail: string | null }[] | null) ?? []).map((e) => `${e.purpose}|${e.account_tail ?? ""}`));
+  let added = 0;
+  for (const a of accounts) {
+    const key = `${a.purpose}|${tailOf(a.account_number ?? "")}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    await insertBankAccount(db, caseId, a);
+    added++;
+  }
+  return added;
 }
 
 /** Remove one bank account (scoped to the case). */

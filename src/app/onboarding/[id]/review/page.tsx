@@ -9,7 +9,7 @@ import { getCase } from "@/lib/onboarding/cases";
 import { OnboardingReviewPanel, standaloneNav } from "../CasePanel";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const me = await currentUser();
