@@ -18,11 +18,6 @@ import { getCase, logCaseEvent } from "./cases";
 import { loadMerchantForm } from "./merchantForm";
 import { documentsFor, type OnboardingDocKind } from "./productGroups";
 import { parsePersonName, nameMatchKey } from "./personName";
-import { renderDueDiligencePack } from "./pack";
-
-/** The consolidated internal evidence pack — generated programmatically (not from
- *  a template), so it's not in the DOCS template map below. */
-const DD_PACK_FILENAME = "Due Diligence Pack.docx";
 
 type DB = ReturnType<typeof serviceClient>;
 const BUCKET = "onboarding-uploads";
@@ -256,31 +251,11 @@ export async function generateDocsForCase(
     if (ins.error) throw ins.error;
   }
 
-  // The consolidated Due Diligence Pack — once the merchant has submitted, always
-  // generate it (it consolidates everything captured + embeds the CH documents).
-  // Best-effort: a pack failure must not sink the template docs.
-  const generatedKinds: OnboardingDocKind[] = [...kinds];
-  if (submitted) {
-    try {
-      const packBytes = await renderDueDiligencePack(db, caseId);
-      const packPath = `${caseId}/generated/due_diligence_pack-${DD_PACK_FILENAME}`;
-      const up = await db.storage.from(BUCKET).upload(packPath, packBytes, { contentType: DOCX, upsert: true });
-      if (up.error) throw up.error;
-      const ins = await db.from("onboarding_generated_docs").insert({
-        case_id: caseId, doc_kind: "due_diligence_pack", filename: DD_PACK_FILENAME, storage_path: packPath, content_type: DOCX,
-      });
-      if (ins.error) throw ins.error;
-      generatedKinds.push("due_diligence_pack");
-    } catch (e) {
-      await logCaseEvent(db, caseId, "dd_pack_failed", actor, { message: (e as Error).message }).catch(() => {});
-    }
-  }
-
-  await logCaseEvent(db, caseId, "docs_generated", actor, { kinds: generatedKinds, advanceStatus });
+  await logCaseEvent(db, caseId, "docs_generated", actor, { kinds, advanceStatus });
   // Finish-time generation (advanceStatus:false) must not jump the case to the
   // late docs_generated status and skip the merchant step; /review keeps advancing.
   if (advanceStatus) await db.from("onboarding_cases").update({ status: "docs_generated" }).eq("id", caseId);
-  return { generated: generatedKinds.length, kinds: generatedKinds };
+  return { generated: kinds.length, kinds };
 }
 
 /** Download a generated doc's bytes (for the authed download route). */

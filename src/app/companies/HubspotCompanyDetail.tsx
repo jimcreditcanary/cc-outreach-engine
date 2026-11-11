@@ -25,6 +25,9 @@ const lbl = "block text-xs font-medium uppercase tracking-wide text-neutral-500 
 
 type Tab = "detail" | "onboarding" | "billing";
 const gbp = (pence: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(pence / 100);
+// Statuses at/after the merchant submitting the form — the Onboarding tab then
+// defaults to the comprehensive review (so every entry point shows the same page).
+const MERCHANT_SUBMITTED_STATUSES = new Set(["merchant_submitted", "ubo_checks", "docs_generated", "awaiting_approval", "onboarded"]);
 
 export async function HubspotCompanyDetail({ id, tab, ob, step, q, from }: {
   id: string; tab?: string; ob?: string; step?: string; q?: string; from?: string;
@@ -115,7 +118,10 @@ export async function HubspotCompanyDetail({ id, tab, ob, step, q, from }: {
 
       {active === "onboarding" && (
         onboardingCase ? (
-          ob === "review"
+          // Once the merchant has submitted, the comprehensive review is the
+          // default view (consistent whichever list you arrived from); the
+          // internal wizard is still reachable via ?ob=case / the "← Case" link.
+          (ob === "review" || (ob !== "case" && MERCHANT_SUBMITTED_STATUSES.has(onboardingCase.status)))
             ? <OnboardingReviewPanel caseId={onboardingCase.id} nav={companyTabNav(id, onboardingCase.id)} />
             : <OnboardingCasePanel caseId={onboardingCase.id} nav={companyTabNav(id, onboardingCase.id)} step={step} q={q} companyName={co.name ?? undefined} />
         ) : (

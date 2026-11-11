@@ -11,7 +11,7 @@ import Link from "next/link";
 import { serviceClient } from "@/lib/db/client";
 import { hubspotEnabled } from "@/lib/hubspot/client";
 import { getDeal, hubspotRepo } from "@/lib/hubspot/repo";
-import { getCompaniesHouse, type ChCompanySearchResult } from "@/lib/integrations/companiesHouse";
+import { getCompaniesHouse, chDocumentUrl, type ChCompanySearchResult } from "@/lib/integrations/companiesHouse";
 import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
@@ -38,6 +38,9 @@ import { loadPrivacyAssessment } from "@/lib/onboarding/privacyAssessment";
 import { loadUploads, loadUboKycImages, UBO_ID_KIND, UBO_PROOF_KIND } from "@/lib/onboarding/uploads";
 import { loadUboChecks } from "@/lib/onboarding/uboChecks";
 import { loadUboDocRequests, loadUboDocs, uboUploadUrl } from "@/lib/onboarding/uboDocs";
+import { getAnswers } from "@/lib/onboarding/formAnswers";
+import { ownershipView, paymentQA, ddQA, infosecQA, policyQA, otherQA, type QA } from "@/lib/onboarding/reviewModel";
+import { PrintButton } from "./PrintButton";
 import { caseDriveFolderUrl } from "@/lib/onboarding/driveFiling";
 import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
 import { getCrm } from "@/lib/crm";
@@ -88,7 +91,6 @@ const DOC_LABELS: Record<OnboardingDocKind, string> = {
   tu_due_diligence_xlsx: "TU Due Diligence (xlsx)",
   merchant_onboarding_form: "Merchant Onboarding Form",
   dd_questionnaire: "DD Questionnaire",
-  due_diligence_pack: "Due Diligence Pack",
 };
 
 const EVENT_LABELS: Record<string, string> = {
@@ -599,7 +601,7 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
   const c = await getCase(db, caseId);
   if (!c) return <p className="text-sm text-neutral-500">Onboarding case not found.</p>;
 
-  const [{ form, kyc, bankAccounts, directDebit }, privacy, uploads, uboChecks, generatedDocs, uboRequests, uboDocs, kycImages] = await Promise.all([
+  const [{ form, kyc, bankAccounts }, privacy, uploads, uboChecks, generatedDocs, uboRequests, uboDocs, kycImages, enrichment, answers] = await Promise.all([
     loadMerchantForm(db, caseId),
     loadPrivacyAssessment(db, caseId),
     loadUploads(db, caseId),
@@ -608,6 +610,8 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
     loadUboDocRequests(db, caseId),
     loadUboDocs(db, caseId),
     loadUboKycImages(db, caseId),
+    loadEnrichment(db, caseId),
+    getAnswers(db, caseId),
   ]);
   const driveUrl = await caseDriveFolderUrl(db, caseId);
 
@@ -616,36 +620,55 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
   const sig = form?.signatory ?? {};
   const pr = privacy?.result ?? null;
 
+  const { snapshot, officers } = enrichment;
+  const own = ownershipView(snapshot?.company_name ?? c.company_number ?? "Operating company", c.company_number, enrichment.ubos, kyc);
+  const pay = paymentQA(answers);
+  const dd = ddQA(answers);
+  const infosec = infosecQA(answers);
+  const pol = policyQA(answers);
+  const other = otherQA(answers);
+  const incUrl = snapshot?.incorporation_transaction_id && c.company_number ? chDocumentUrl(c.company_number, snapshot.incorporation_transaction_id) : null;
+  const chUrl = c.company_number ? `https://find-and-update.company-information.service.gov.uk/company/${encodeURIComponent(c.company_number)}` : null;
+  const activeOfficers = officers.filter((o) => !o.resigned_on);
+  const resignedOfficers = officers.filter((o) => o.resigned_on);
+  const seenBank = new Set<string>();
+  const banks = bankAccounts.filter((a) => { const k = `${a.purpose}|${a.account_tail ?? ""}`; if (seenBank.has(k)) return false; seenBank.add(k); return true; });
+  const held = (o: { direct: boolean; via: string[] }) =>
+    o.direct && o.via.length ? `held directly and via ${o.via.join(", ")}` : o.direct ? "held directly" : o.via.length ? `held via ${o.via.join(", ")}` : "";
+
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+    <div className="onb-review">
+      <div className="no-print mb-4 flex flex-wrap items-center gap-3">
         <Link href={nav.caseHref} className="text-sm text-blue-700 hover:underline">← Case</Link>
       </div>
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 pb-3">
         <div>
-          <h2 className="text-lg font-semibold">Merchant submission</h2>
+          <h2 className="text-lg font-semibold">{snapshot?.company_name ?? "Merchant submission"}</h2>
           <p className="mt-1 text-sm text-neutral-500">
             {c.company_number ? `Company ${c.company_number}` : "—"} · status {c.status.replace(/_/g, " ")}
             {form?.submitted_at && ` · submitted ${fmtDateTime(form.submitted_at)}`}
           </p>
         </div>
-        {c.status === "onboarded" ? (
-          <span className="rounded bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800">✓ Onboarded</span>
-        ) : (
-          <form action={approveCaseAction}>
-            <input type="hidden" name="case_id" value={caseId} />
-            <PendingButton className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700" pendingLabel="Approving…">
-              ✓ Approve onboarding
-            </PendingButton>
-          </form>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <PrintButton />
+          {c.status === "onboarded" ? (
+            <span className="rounded bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800">✓ Onboarded</span>
+          ) : (
+            <form action={approveCaseAction}>
+              <input type="hidden" name="case_id" value={caseId} />
+              <PendingButton className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700" pendingLabel="Approving…">
+                ✓ Approve onboarding
+              </PendingButton>
+            </form>
+          )}
+        </div>
       </header>
 
       {!form ? (
         <p className="text-neutral-500">The merchant hasn&apos;t submitted the form yet.</p>
       ) : (
         <div className="space-y-6">
-          <section className="rounded-lg border border-neutral-200 bg-white p-4">
+          <section className="no-print rounded-lg border border-neutral-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Documents</h3>
               <form action={generateDocsAction}>
@@ -678,19 +701,98 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
             )}
           </section>
 
-          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Cell label="Trading name">{b.trading_name}</Cell>
-            <Cell label="Trading address">{b.trading_address}</Cell>
-            <Cell label="Phone">{b.phone}</Cell>
-            <Cell label="Email">{b.email}</Cell>
-            <Cell label="Website">{b.website}</Cell>
-            <Cell label="Principal office">{b.principal_office}</Cell>
-            <Cell label="ICO number">{comp.ico_number}</Cell>
-            <Cell label="FCA FRN">{comp.fca_frn}</Cell>
-            <Cell label="DPO">{comp.dpo}</Cell>
-            <Cell label="Trade body">{comp.trade_body}</Cell>
-            <Cell label="Privacy policy">{comp.privacy_policy_url}</Cell>
-            <Cell label="Signatory">{[sig.name, sig.title, sig.email].filter(Boolean).join(" · ")}</Cell>
+          {/* Entity + Companies House */}
+          <section>
+            <SectionTitle>Entity &amp; Companies House</SectionTitle>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Cell label="Registered name">{snapshot?.company_name}</Cell>
+              <Cell label="Company number">{c.company_number}</Cell>
+              <Cell label="Type">{snapshot?.company_type}</Cell>
+              <Cell label="Status">{snapshot?.company_status}</Cell>
+              <Cell label="Incorporated">{snapshot?.incorporation_date}</Cell>
+              <Cell label="SIC code(s)">{Array.isArray(snapshot?.sic_codes) ? (snapshot!.sic_codes as string[]).join(", ") : ""}</Cell>
+              <Cell label="Registered office">{fmtChAddr(snapshot?.registered_office)}</Cell>
+              <Cell label="Accounts filing">{snapshot?.accounts_overdue ? "OVERDUE" : snapshot?.accounts_next_due ? `next due ${snapshot.accounts_next_due}` : "—"}</Cell>
+              <Cell label="Confirmation statement">{snapshot?.confirmation_statement_overdue ? "OVERDUE" : snapshot?.confirmation_statement_next_due ? `next due ${snapshot.confirmation_statement_next_due}` : "—"}</Cell>
+              <Cell label="Charges / insolvency">{[snapshot?.has_charges ? "charges on file" : "no charges", snapshot?.has_insolvency_history ? "insolvency history" : "no insolvency"].join(" · ")}</Cell>
+            </div>
+            {(incUrl || chUrl) && (
+              <div className="mt-2 flex flex-wrap gap-4 text-sm">
+                {incUrl && <a href={incUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">Certificate of Incorporation (IN01) ↗</a>}
+                {chUrl && <a href={chUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">Companies House record ↗</a>}
+              </div>
+            )}
+          </section>
+
+          {/* Ownership structure — the real, traced chain (no placeholder scaffold) */}
+          <section>
+            <SectionTitle>Ownership structure</SectionTitle>
+            <div className="rounded-lg border border-neutral-200 bg-white p-4 text-sm">
+              <div className="font-medium text-neutral-800">
+                {own.operatingName}{own.operatingNumber && <span className="text-neutral-500"> · {own.operatingNumber}</span>}
+                <span className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500">operating company</span>
+              </div>
+              <div className="mt-3 text-xs font-medium uppercase tracking-wide text-neutral-400">Ultimate beneficial owner{own.owners.length === 1 ? "" : "s"}</div>
+              {own.owners.length === 0 ? (
+                <p className="mt-1 text-neutral-400">No individual beneficial owners traced from Companies House.</p>
+              ) : (
+                <ul className="mt-1 space-y-1">
+                  {own.owners.map((o, i) => (
+                    <li key={i}>
+                      <span className="font-medium text-neutral-800">{o.name}</span>
+                      {o.pct && <span className="text-neutral-600"> — {o.pct}</span>}
+                      {held(o) && <span className="text-xs text-neutral-500"> · {held(o)}</span>}
+                      {o.natures && <div className="text-xs text-neutral-400">{o.natures}</div>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {own.holdings.length > 0 && (
+                <>
+                  <div className="mt-3 text-xs font-medium uppercase tracking-wide text-neutral-400">Holding compan{own.holdings.length === 1 ? "y" : "ies"} in the chain</div>
+                  <ul className="mt-1 space-y-0.5">
+                    {own.holdings.map((h, i) => (
+                      <li key={i} className="text-neutral-700">{h.name}{h.number && <span className="text-neutral-500"> · {h.number}</span>}{h.natures && <span className="text-xs text-neutral-400"> — {h.natures}</span>}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {own.historic.length > 0 && <p className="mt-2 text-xs text-neutral-400">Historic: {own.historic.join("; ")}</p>}
+            </div>
+          </section>
+
+          {/* Directors */}
+          <section>
+            <SectionTitle>Directors</SectionTitle>
+            {activeOfficers.length === 0 ? <p className="text-sm text-neutral-400">No active directors returned.</p> : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {activeOfficers.map((o) => (
+                  <Cell key={o.id} label={o.name}>{[o.officer_role, o.dob_month || o.dob_year ? `DOB ${o.dob_month ?? "?"}/${o.dob_year ?? "?"}` : "", o.nationality, o.appointed_on ? `appointed ${o.appointed_on}` : ""].filter(Boolean).join(" · ")}</Cell>
+                ))}
+              </div>
+            )}
+            {resignedOfficers.length > 0 && <p className="mt-2 text-xs text-neutral-400">Recently resigned: {resignedOfficers.map((o) => `${o.name} (${o.resigned_on})`).join("; ")}</p>}
+          </section>
+
+          {/* Business & compliance */}
+          <section>
+            <SectionTitle>Business &amp; compliance</SectionTitle>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Cell label="Trading name">{b.trading_name}</Cell>
+              <Cell label="Trading address">{b.trading_address}</Cell>
+              <Cell label="Phone">{b.phone}</Cell>
+              <Cell label="Email">{b.email}</Cell>
+              <Cell label="Website">{b.website}</Cell>
+              <Cell label="Principal office">{b.principal_office}</Cell>
+              <Cell label="ICO number">{comp.ico_number}</Cell>
+              <Cell label="FCA FRN">{comp.fca_frn}</Cell>
+              <Cell label="VAT number">{comp.vat_number}</Cell>
+              <Cell label="DPO">{comp.dpo}</Cell>
+              <Cell label="Trade body">{comp.trade_body}</Cell>
+              <Cell label="Privacy policy">{comp.privacy_policy_url}</Cell>
+              <Cell label="Social">{[b.socials?.facebook, b.socials?.linkedin, b.socials?.twitter, b.socials?.instagram].filter(Boolean).join(" · ")}</Cell>
+              <Cell label="Signatory">{[sig.name, sig.title, sig.email].filter(Boolean).join(" · ")}</Cell>
+            </div>
           </section>
 
           <section>
@@ -806,11 +908,32 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
             )}
           </section>
 
-          {(bankAccounts.length > 0 || directDebit) && (
+          {pay.length > 0 && <section><SectionTitle>Payment profile</SectionTitle><QAList items={pay} /></section>}
+
+          {dd.length > 0 && <section><SectionTitle>Direct Debit</SectionTitle><QAList items={dd} /></section>}
+
+          {(infosec.top.length > 0 || infosec.detail.length > 0) && (
             <section>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">Payments</h3>
+              <SectionTitle>Information security</SectionTitle>
+              {infosec.top.length > 0 && <QAList items={infosec.top} />}
+              {infosec.detail.length > 0 && (
+                <>
+                  <div className="mb-1 mt-3 text-xs font-medium uppercase tracking-wide text-neutral-400">{infosec.over10 === "yes" ? "Controls (more than 10 employees)" : "Controls (10 or fewer employees)"}</div>
+                  <QAList items={infosec.detail} />
+                </>
+              )}
+            </section>
+          )}
+
+          {pol.length > 0 && <section><SectionTitle>Policies &amp; certifications</SectionTitle><QAList items={pol} /></section>}
+
+          {other.length > 0 && <section><SectionTitle>Other answers</SectionTitle><QAList items={other} /></section>}
+
+          {banks.length > 0 && (
+            <section>
+              <SectionTitle>Bank accounts</SectionTitle>
               <ul className="space-y-2">
-                {bankAccounts.map((a) => (
+                {banks.map((a) => (
                   <li key={a.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-sm">
                     <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-600">{a.purpose.replace(/_/g, " ")}</span>
                     <span className="font-medium text-neutral-800">{a.account_name ?? "—"}</span>
@@ -821,18 +944,6 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
                   </li>
                 ))}
               </ul>
-              {directDebit && (
-                <div className="mt-2 rounded-lg border border-neutral-200 bg-white p-3 text-sm text-neutral-600">
-                  <div className="text-xs font-medium uppercase tracking-wide text-neutral-400">Direct Debit</div>
-                  <p className="mt-0.5">{[
-                    directDebit.collects_dd && `collects DDs: ${directDebit.collects_dd}`,
-                    directDebit.existing_sun && `SUN ${directDebit.existing_sun}`,
-                    directDebit.payment_description,
-                    directDebit.expected_monthly_volume && `~${directDebit.expected_monthly_volume}/mo`,
-                    directDebit.average_value && `avg ${directDebit.average_value}`,
-                  ].filter(Boolean).join(" · ") || "—"}</p>
-                </div>
-              )}
             </section>
           )}
 
@@ -911,4 +1022,31 @@ function Cell({ label, children }: { label: string; children?: string | null }) 
       <div className="mt-0.5 break-words text-sm text-neutral-800">{children || <span className="text-neutral-300">—</span>}</div>
     </div>
   );
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-neutral-500">{children}</h3>;
+}
+
+/** A question → answer block (used for every captured questionnaire). */
+function QAList({ items }: { items: QA[] }) {
+  if (!items.length) return null;
+  return (
+    <dl className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white">
+      {items.map((i, idx) => (
+        <div key={idx} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-3 py-2">
+          <dt className="text-sm text-neutral-600">{i.q}{i.note && <span className="mt-0.5 block text-xs italic text-neutral-400">{i.note}</span>}</dt>
+          <dd className="text-right text-sm font-medium text-neutral-900">{i.a}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Format a Companies House address object (the stored registered_office jsonb). */
+function fmtChAddr(a: unknown): string {
+  if (!a || typeof a !== "object") return "";
+  const o = a as Record<string, unknown>;
+  return ["premises", "address_line_1", "address_line_2", "locality", "region", "postal_code", "country"]
+    .map((k) => String(o[k] ?? "").trim()).filter(Boolean).join(", ");
 }

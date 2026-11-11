@@ -53,3 +53,25 @@ select:not([multiple]):not([size]) {
     padding-right: 0;
   }
 }
+
+/* Print / Save-as-PDF for the onboarding review page (.onb-review). Shows only
+ * the review content, drops the app chrome and all action controls, so the PDF
+ * is a clean evidence document. */
+@media print {
+  body * { visibility: hidden !important; }
+  .onb-review, .onb-review * { visibility: visible !important; }
+  .onb-review {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0 !important;
+  }
+  /* Action controls + anything explicitly marked never print. */
+  .onb-review form,
+  .onb-review button,
+  .no-print,
+  .no-print * { display: none !important; }
+  .onb-review section { break-inside: avoid; }
+  @page { margin: 14mm; }
+}
