@@ -9,6 +9,7 @@
 import crypto from "node:crypto";
 import type { serviceClient } from "../db/client";
 import { sendTransactional } from "../send/postmark";
+import { resolveInboundOwner } from "../leads/capture";
 
 type DB = ReturnType<typeof serviceClient>;
 
@@ -110,9 +111,13 @@ export async function issueAccessLink(db: DB, token: string, email: string, comp
     console.error("[share] grant insert threw:", (e as Error)?.message);
     return false;
   }
+  // Send from a verified owner identity (the same default sender the ops/lead
+  // emails use) — the raw POSTMARK_FROM domain isn't a confirmed Postmark sender
+  // in prod, so a no-owner send is rejected ("Illegal email domain").
+  const { ownerId } = await resolveInboundOwner(db).catch(() => ({ ownerId: null as string | null }));
   // Only report success when the email actually went out — so a failed send
   // surfaces to the recipient (and is logged) instead of a false "check your email".
-  return sendShareAccessEmail(clean, shareViewUrl(token, accessToken), companyName);
+  return sendShareAccessEmail(clean, shareViewUrl(token, accessToken), companyName, ownerId);
 }
 
 /** Validate a one-time view link. Returns the case + grant, or a reason it failed. */
@@ -148,7 +153,7 @@ export async function recordShareView(db: DB, grantId: string): Promise<void> {
   } catch { /* best-effort */ }
 }
 
-async function sendShareAccessEmail(to: string, viewUrl: string, companyName: string | null): Promise<boolean> {
+async function sendShareAccessEmail(to: string, viewUrl: string, companyName: string | null, ownerId: string | null): Promise<boolean> {
   const subject = `Your secure access link${companyName ? ` — ${companyName}` : ""}`;
   const htmlBody = `
     <div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#1f2937;max-width:560px">
@@ -159,7 +164,7 @@ async function sendShareAccessEmail(to: string, viewUrl: string, companyName: st
     </div>`;
   const textBody = `Hello,\n\nYou requested access to a secure onboarding summary${companyName ? ` for ${companyName}` : ""} shared with you by Credit Canary.\n\nView it here (valid for 7 days):\n${viewUrl}\n\nIf you weren't expecting this, you can ignore this email.`;
   try {
-    const res = await sendTransactional({ to, subject, htmlBody, textBody, tag: "onboarding-share" });
+    const res = await sendTransactional({ to, subject, htmlBody, textBody, ownerId, tag: "onboarding-share" });
     if (res.dryRun) {
       console.error("[share] email NOT sent — Postmark is in dry-run (POSTMARK_SERVER_TOKEN missing at runtime).");
       return false;
