@@ -30,6 +30,7 @@ import {
   completeInternalAction, cancelCaseAction, addContactToCompanyAction, pullOfficersUbosAction,
   assessPrivacyPolicyAction, extractUploadAction, runUboChecksAction, requestUboDocsAction,
   generateDocsAction, approveCaseAction, fileToDriveAction,
+  createShareAction, revokeShareAction,
 } from "../actions";
 import { merchantFormUrl, loadMerchantForm } from "@/lib/onboarding/merchantForm";
 import { loadGeneratedDocs, type GeneratedDoc } from "@/lib/onboarding/docgen";
@@ -40,6 +41,7 @@ import { loadUboChecks } from "@/lib/onboarding/uboChecks";
 import { loadUboDocRequests, loadUboDocs, uboUploadUrl } from "@/lib/onboarding/uboDocs";
 import { getAnswers } from "@/lib/onboarding/formAnswers";
 import { ownershipView, paymentQA, ddQA, infosecQA, policyQA, otherQA, type QA } from "@/lib/onboarding/reviewModel";
+import { loadShares, shareUrl, type ShareRow } from "@/lib/onboarding/shares";
 import { PrintButton } from "./PrintButton";
 import { caseDriveFolderUrl } from "@/lib/onboarding/driveFiling";
 import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
@@ -100,6 +102,8 @@ const EVENT_LABELS: Record<string, string> = {
   customer_link_ready: "Customer link created", api_sandbox_requested: "API sandbox requested", merchant_submitted: "Customer submitted form",
   privacy_assessed: "Privacy policy assessed", docs_generated: "Documents generated", drive_filed: "Filed to Google Drive",
   ubo_checks_run: "UBO checks run", approved: "Approved & onboarded", cancelled: "Cancelled",
+  share_created: "Share link created", share_revoked: "Share link revoked",
+  share_link_requested: "Share link requested", share_viewed: "Shared view opened",
 };
 const humanEvent = (e: string): string => EVENT_LABELS[e] ?? e.replace(/_/g, " ");
 
@@ -596,10 +600,17 @@ function copBadge(r: string | null) {
   return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>CoP: {r ? r.replace(/_/g, " ") : "—"}</span>;
 }
 
-export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; nav: OnbNav }) {
+export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: string; nav: OnbNav; share?: { token: string; accessToken: string } }) {
+  // `share` present → a third party's read-only view: no staff actions, images
+  // served through the share-scoped (token-validated) thumbnail route.
+  const ro = !!share;
+  const thumbSrc = (uploadId: string) => ro
+    ? `/share/${encodeURIComponent(share!.token)}/thumb/${uploadId}?t=${encodeURIComponent(share!.accessToken)}`
+    : `/onboarding/${caseId}/thumb/${uploadId}`;
   const db = serviceClient();
   const c = await getCase(db, caseId);
   if (!c) return <p className="text-sm text-neutral-500">Onboarding case not found.</p>;
+  const shares: ShareRow[] = ro ? [] : await loadShares(db, caseId);
 
   const [{ form, kyc, bankAccounts }, privacy, uploads, uboChecks, generatedDocs, uboRequests, uboDocs, kycImages, enrichment, answers] = await Promise.all([
     loadMerchantForm(db, caseId),
@@ -643,20 +654,26 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
 
   return (
     <div className="onb-review">
-      <div className="no-print mb-4 flex flex-wrap items-center gap-3">
-        <Link href={nav.caseHref} className="text-sm text-blue-700 hover:underline">← Case</Link>
-      </div>
+      {!ro && (
+        <div className="no-print mb-4 flex flex-wrap items-center gap-3">
+          <Link href={nav.caseHref} className="text-sm text-blue-700 hover:underline">← Case</Link>
+        </div>
+      )}
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 pb-3">
         <div>
           <h2 className="text-lg font-semibold">{snapshot?.company_name ?? "Merchant submission"}</h2>
           <p className="mt-1 text-sm text-neutral-500">
-            {c.company_number ? `Company ${c.company_number}` : "—"} · status {c.status.replace(/_/g, " ")}
+            {c.company_number ? `Company ${c.company_number}` : "—"}
+            {!ro && ` · status ${c.status.replace(/_/g, " ")}`}
             {form?.submitted_at && ` · submitted ${fmtDateTime(form.submitted_at)}`}
           </p>
+          {ro && <p className="mt-1 text-xs text-neutral-400">Shared read-only view · provided by Credit Canary</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PrintButton />
-          {c.status === "onboarded" ? (
+          {ro ? (
+            <span className="rounded bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-600">Read-only</span>
+          ) : c.status === "onboarded" ? (
             <span className="rounded bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800">✓ Onboarded</span>
           ) : (
             <form action={approveCaseAction}>
@@ -673,7 +690,59 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
         <p className="text-neutral-500">The merchant hasn&apos;t submitted the form yet.</p>
       ) : (
         <div className="space-y-6">
-          {showDocs && (
+          {!ro && (
+            <section className="no-print rounded-lg border border-neutral-200 bg-white p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Share externally</h3>
+                <form action={createShareAction}>
+                  <input type="hidden" name="case_id" value={caseId} />
+                  <PendingButton className="rounded bg-[#003566] px-3 py-1 text-xs font-medium text-white hover:bg-[#002a52]" pendingLabel="Creating…">
+                    ＋ Create share link
+                  </PendingButton>
+                </form>
+                <span className="text-xs text-neutral-400">Send the link to a third party; they enter their email to receive a 7-day read-only view link. Every view is logged below.</span>
+              </div>
+              {shares.length > 0 && (
+                <ul className="mt-3 space-y-3">
+                  {shares.map((sh) => {
+                    const url = shareUrl(sh.token);
+                    return (
+                      <li key={sh.id} className={`rounded-lg border p-3 text-sm ${sh.revoked_at ? "border-neutral-200 bg-neutral-50 opacity-70" : "border-neutral-200 bg-white"}`}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {sh.revoked_at ? <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium uppercase text-neutral-600">revoked</span> : <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-700">active</span>}
+                          <a href={url} target="_blank" rel="noopener noreferrer" className="break-all text-blue-700 hover:underline">{url}</a>
+                          {!sh.revoked_at && <CopyButton text={url} label="Copy" />}
+                          <span className="text-xs text-neutral-400">created {fmtDate(sh.created_at)}{sh.created_by_email ? ` by ${sh.created_by_email}` : ""}</span>
+                          {!sh.revoked_at && (
+                            <form action={revokeShareAction} className="ml-auto">
+                              <input type="hidden" name="case_id" value={caseId} />
+                              <input type="hidden" name="share_id" value={sh.id} />
+                              <PendingButton className="rounded border border-red-200 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50" pendingLabel="…">Revoke</PendingButton>
+                            </form>
+                          )}
+                        </div>
+                        {sh.access.length > 0 && (
+                          <ul className="mt-2 border-t border-neutral-100 pt-2 text-xs text-neutral-600">
+                            {sh.access.map((a) => (
+                              <li key={a.id} className="flex flex-wrap items-center gap-2 py-0.5">
+                                <span className="font-medium text-neutral-700">{a.recipient_email}</span>
+                                <span className="text-neutral-400">link sent {fmtDateTime(a.created_at)}</span>
+                                {a.first_viewed_at
+                                  ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">viewed {fmtDateTime(a.last_viewed_at ?? a.first_viewed_at)}{a.view_count > 1 ? ` · ${a.view_count}×` : ""}</span>
+                                  : <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">not yet viewed</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          )}
+
+          {!ro && showDocs && (
           <section className="no-print rounded-lg border border-neutral-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Contract documents</h3>
@@ -828,7 +897,7 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
                               <figure key={img.id} className="m-0">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                  src={`/onboarding/${caseId}/thumb/${img.id}`}
+                                  src={thumbSrc(img.id)}
                                   alt={img.kind === UBO_ID_KIND ? "Photo ID" : "Proof of address"}
                                   className="pointer-events-none h-28 w-auto select-none rounded border border-neutral-200 object-cover"
                                   draggable={false}
@@ -847,19 +916,22 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
               </ul>
             )}
             {kycImages.length > 0 && (
-              <p className="mt-2 text-xs text-neutral-400">Identity images are shown as thumbnails for review only — the full-resolution originals are embedded in the Due Diligence Pack, not downloadable here.</p>
+              <p className="mt-2 text-xs text-neutral-400">Identity images are shown as thumbnails for review only — the full-resolution originals are held securely by Credit Canary and are not downloadable here.</p>
             )}
           </section>
 
+          {(!ro || uboChecks.length > 0) && (
           <section>
             <div className="mb-2 flex items-center gap-3">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Identity &amp; screening</h3>
-              <form action={runUboChecksAction}>
-                <input type="hidden" name="case_id" value={caseId} />
-                <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Running…">
-                  {uboChecks.length ? "Re-run" : "✨ Run UBO checks"}
-                </PendingButton>
-              </form>
+              {!ro && (
+                <form action={runUboChecksAction}>
+                  <input type="hidden" name="case_id" value={caseId} />
+                  <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Running…">
+                    {uboChecks.length ? "Re-run" : "✨ Run UBO checks"}
+                  </PendingButton>
+                </form>
+              )}
             </div>
             {uboChecks.length === 0 ? (
               <p className="text-sm text-neutral-400">Not run yet. Verifies each owner&apos;s identity and screens for PEP / sanctions (Call Validate).</p>
@@ -884,10 +956,11 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
                       const failed = !ch.idv_verified || ch.pep_match || ch.sanctions_match;
                       const reqRow = ch.ubo_name ? uboRequests.get(ch.ubo_name) : undefined;
                       const docs = uboDocs.filter((d) => d.ubo_ref === ch.ubo_name);
+                      if (ro && docs.length === 0) return null; // read-only: only the uploaded docs are relevant
                       if (!failed && !reqRow && docs.length === 0) return null;
                       return (
                         <div className="mt-2 border-t border-neutral-100 pt-2">
-                          {reqRow ? (
+                          {!ro && (reqRow ? (
                             <div className="flex flex-wrap items-center gap-2 text-xs">
                               <span className="font-medium text-neutral-600">Document-upload link:</span>
                               <a href={uboUploadUrl(reqRow.token)} target="_blank" rel="noopener noreferrer" className="break-all text-blue-700 hover:underline">{uboUploadUrl(reqRow.token)}</a>
@@ -900,7 +973,7 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
                               <input type="hidden" name="ubo_name" value={ch.ubo_name ?? ""} />
                               <PendingButton className="rounded border border-amber-300 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-50" pendingLabel="…">Request documents →</PendingButton>
                             </form>
-                          ) : null}
+                          ) : null)}
                           {docs.length > 0 && (
                             <ul className="mt-1 text-xs text-neutral-600">
                               {docs.map((d) => <li key={d.id}>📎 {d.kind === "ubo_passport" ? "Passport" : "Proof of address"}: {d.filename}</li>)}
@@ -914,6 +987,7 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
               </ul>
             )}
           </section>
+          )}
 
           {pay.length > 0 && <section><SectionTitle>Payment profile</SectionTitle><QAList items={pay} /></section>}
 
@@ -957,12 +1031,14 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
           <section>
             <div className="mb-2 flex items-center gap-3">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Privacy-policy assessment</h3>
-              <form action={assessPrivacyPolicyAction}>
-                <input type="hidden" name="case_id" value={caseId} />
-                <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Assessing…">
-                  {pr ? "Re-assess" : "✨ Assess"}
-                </PendingButton>
-              </form>
+              {!ro && (
+                <form action={assessPrivacyPolicyAction}>
+                  <input type="hidden" name="case_id" value={caseId} />
+                  <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Assessing…">
+                    {pr ? "Re-assess" : "✨ Assess"}
+                  </PendingButton>
+                </form>
+              )}
               {privacy?.assessed_at && <span className="text-xs text-neutral-400">{fmtDateTime(privacy.assessed_at)}</span>}
             </div>
             {!pr ? (
@@ -993,13 +1069,15 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-neutral-800">{u.filename}</span>
                       <span className="text-xs text-neutral-400">{kb(u.size_bytes)} · {fmtDate(u.created_at)}</span>
-                      <form action={extractUploadAction} className="ml-auto">
-                        <input type="hidden" name="case_id" value={caseId} />
-                        <input type="hidden" name="upload_id" value={u.id} />
-                        <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Extracting…">
-                          {u.extracted ? "Re-extract" : "✨ Extract"}
-                        </PendingButton>
-                      </form>
+                      {!ro && (
+                        <form action={extractUploadAction} className="ml-auto">
+                          <input type="hidden" name="case_id" value={caseId} />
+                          <input type="hidden" name="upload_id" value={u.id} />
+                          <PendingButton className="rounded border border-neutral-300 px-2 py-0.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Extracting…">
+                            {u.extracted ? "Re-extract" : "✨ Extract"}
+                          </PendingButton>
+                        </form>
+                      )}
                     </div>
                     {u.extracted && (
                       <div className="mt-2 text-xs text-neutral-600">

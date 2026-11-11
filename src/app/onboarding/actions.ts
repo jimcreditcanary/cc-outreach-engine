@@ -23,6 +23,7 @@ import { extractUpload } from "@/lib/onboarding/uploads";
 import { runUboChecks } from "@/lib/onboarding/uboChecks";
 import { ensureUboDocRequest } from "@/lib/onboarding/uboDocs";
 import { generateDocsForCase } from "@/lib/onboarding/docgen";
+import { createShare, revokeShare } from "@/lib/onboarding/shares";
 import { sendOnboardingWebhook } from "@/lib/onboarding/export";
 import { fileCaseToDrive } from "@/lib/onboarding/driveFiling";
 import { parseAccountsForCase } from "@/lib/onboarding/accounts";
@@ -315,6 +316,42 @@ export async function generateDocsAction(formData: FormData) {
   } catch (e) {
     await flash("error", `Document generation failed: ${(e as Error).message}`);
   }
+  revalidatePath(`/onboarding/${id}/review`);
+  redirect(`/onboarding/${id}/review`);
+}
+
+/** Create a third-party share link for the case's review. */
+export async function createShareAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  if (!id) return redirect("/onboarding");
+  const db = serviceClient();
+  try {
+    const share = await createShare(db, id, me.email ?? null, str(formData.get("label")) || null);
+    if (share) {
+      await logCaseEvent(db, id, "share_created", actorOf(me), { token: share.token });
+      await flash("success", "Share link created — copy it below to send to the third party.");
+    } else {
+      await flash("error", "Could not create the share link (has migration 076 been applied?).");
+    }
+  } catch (e) {
+    await flash("error", `Share link failed: ${(e as Error).message}`);
+  }
+  revalidatePath(`/onboarding/${id}/review`);
+  redirect(`/onboarding/${id}/review`);
+}
+
+/** Revoke a share link (access is refused immediately). */
+export async function revokeShareAction(formData: FormData) {
+  const me = await currentUser();
+  if (!me) redirect("/login");
+  const id = str(formData.get("case_id"));
+  const shareId = str(formData.get("share_id"));
+  if (!id || !shareId) return redirect("/onboarding");
+  const db = serviceClient();
+  await revokeShare(db, id, shareId);
+  await logCaseEvent(db, id, "share_revoked", actorOf(me), { share_id: shareId });
   revalidatePath(`/onboarding/${id}/review`);
   redirect(`/onboarding/${id}/review`);
 }
