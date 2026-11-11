@@ -635,6 +635,11 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
   const banks = bankAccounts.filter((a) => { const k = `${a.purpose}|${a.account_tail ?? ""}`; if (seenBank.has(k)) return false; seenBank.add(k); return true; });
   const held = (o: { direct: boolean; via: string[] }) =>
     o.direct && o.via.length ? `held directly and via ${o.via.join(", ")}` : o.direct ? "held directly" : o.via.length ? `held via ${o.via.join(", ")}` : "";
+  // The Merchant Onboarding Form doc is retired — the page is the record now.
+  // Only keep the Documents box for cases that still need real contract docs
+  // (TU EUAs, the DD questionnaire); hide it (and the legacy form) otherwise.
+  const contractDocs = generatedDocs.filter((d) => d.doc_kind !== "merchant_onboarding_form");
+  const showDocs = documentsFor(c.product_groups).length > 0;
 
   return (
     <div className="onb-review">
@@ -668,16 +673,17 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
         <p className="text-neutral-500">The merchant hasn&apos;t submitted the form yet.</p>
       ) : (
         <div className="space-y-6">
+          {showDocs && (
           <section className="no-print rounded-lg border border-neutral-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-3">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Documents</h3>
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Contract documents</h3>
               <form action={generateDocsAction}>
                 <input type="hidden" name="case_id" value={caseId} />
                 <PendingButton className="rounded bg-[#003566] px-3 py-1 text-xs font-medium text-white hover:bg-[#002a52]" pendingLabel="Generating…">
-                  {generatedDocs.length ? "Regenerate" : "✨ Generate documents"}
+                  {contractDocs.length ? "Regenerate" : "✨ Generate documents"}
                 </PendingButton>
               </form>
-              {generatedDocs.length > 0 && (
+              {contractDocs.length > 0 && (
                 <form action={fileToDriveAction}>
                   <input type="hidden" name="case_id" value={caseId} />
                   <PendingButton className="rounded border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100" pendingLabel="Filing…">
@@ -687,11 +693,11 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
               )}
               {driveUrl && <a href={driveUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-700 hover:underline">Open Drive folder ↗</a>}
             </div>
-            {generatedDocs.length === 0 ? (
-              <p className="mt-2 text-sm text-neutral-400">Not generated yet — fills the branded templates for this product selection with the case data.</p>
+            {contractDocs.length === 0 ? (
+              <p className="mt-2 text-sm text-neutral-400">Not generated yet — fills the branded contract templates for this product selection with the case data.</p>
             ) : (
               <ul className="mt-2 space-y-1">
-                {generatedDocs.map((d) => (
+                {contractDocs.map((d) => (
                   <li key={d.id} className="flex flex-wrap items-center gap-2 text-sm">
                     <a href={nav.docHref(d.id)} className="font-medium text-blue-700 hover:underline">⬇ {d.filename}</a>
                     <span className="text-xs text-neutral-400">{fmtDateTime(d.generated_at)}</span>
@@ -700,6 +706,7 @@ export async function OnboardingReviewPanel({ caseId, nav }: { caseId: string; n
               </ul>
             )}
           </section>
+          )}
 
           {/* Entity + Companies House */}
           <section>

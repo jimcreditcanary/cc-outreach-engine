@@ -84,7 +84,7 @@ export const PRODUCT_GROUPS: Record<ProductGroupKey, ProductGroup> = {
     triggersPayments: true,
     triggersDirectDebit: true,
     inMerchantOnboardingForm: true,
-    documents: ["merchant_onboarding_form", "dd_questionnaire"],
+    documents: ["dd_questionnaire"],
   },
   pay_by_bank: {
     key: "pay_by_bank",
@@ -92,7 +92,6 @@ export const PRODUCT_GROUPS: Record<ProductGroupKey, ProductGroup> = {
     weight: "full",
     triggersPayments: true,
     inMerchantOnboardingForm: true,
-    documents: ["merchant_onboarding_form"],
   },
   sweeping_vrp: {
     key: "sweeping_vrp",
@@ -100,7 +99,6 @@ export const PRODUCT_GROUPS: Record<ProductGroupKey, ProductGroup> = {
     weight: "full",
     triggersPayments: true,
     inMerchantOnboardingForm: true,
-    documents: ["merchant_onboarding_form"],
   },
   cvrp: {
     key: "cvrp",
@@ -108,14 +106,12 @@ export const PRODUCT_GROUPS: Record<ProductGroupKey, ProductGroup> = {
     weight: "full",
     triggersPayments: true,
     inMerchantOnboardingForm: true,
-    documents: ["merchant_onboarding_form"],
   },
   faster_payments: {
     key: "faster_payments",
     label: "Faster Payments",
     weight: "full",
     inMerchantOnboardingForm: true,
-    documents: ["merchant_onboarding_form"],
   },
   settlement_accounts: {
     key: "settlement_accounts",
@@ -123,7 +119,6 @@ export const PRODUCT_GROUPS: Record<ProductGroupKey, ProductGroup> = {
     weight: "full",
     autoSelects: ["faster_payments"],
     inMerchantOnboardingForm: true,
-    documents: ["merchant_onboarding_form"],
   },
   open_banking_data: {
     key: "open_banking_data",

@@ -224,7 +224,10 @@ export async function generateDocsForCase(
   const c = await getCase(db, caseId);
   if (!c) throw new Error("Case not found.");
   const allKinds = documentsFor(c.product_groups);
-  if (allKinds.length === 0) throw new Error("No documents apply to this product selection.");
+  // Many product sets have no contract documents now that the Merchant Onboarding
+  // Form is retired (the review page is the record) — that's not an error, just
+  // nothing to generate.
+  if (allKinds.length === 0) return { generated: 0, kinds: [] };
   // Hold back the customer-completed docs until the merchant submits (item 2).
   const submitted = await merchantHasSubmitted(db, caseId);
   const kinds = submitted ? allKinds : allKinds.filter((k) => !CUSTOMER_COMPLETED_DOCS.has(k));

@@ -65,7 +65,10 @@ select:not([multiple]):not([size]) {
     left: 0;
     top: 0;
     width: 100%;
-    padding: 0 !important;
+    box-sizing: border-box;
+    /* Margin via padding — reliable across browsers / the print "Margins: None"
+     * setting, where @page margin is ignored. */
+    padding: 14mm !important;
   }
   /* Action controls + anything explicitly marked never print. */
   .onb-review form,
@@ -73,5 +76,5 @@ select:not([multiple]):not([size]) {
   .no-print,
   .no-print * { display: none !important; }
   .onb-review section { break-inside: avoid; }
-  @page { margin: 14mm; }
+  @page { margin: 0; }
 }
