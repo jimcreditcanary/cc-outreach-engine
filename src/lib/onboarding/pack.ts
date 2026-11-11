@@ -359,7 +359,7 @@ export async function renderDueDiligencePack(db: DB, caseId: string): Promise<Bu
     ["Company number", s(d.companyNumber)],
     ["Type", s(d.snapshot.company_type)],
     ["Status", s(d.snapshot.company_status)],
-    ["Incorporated", s(d.snapshot.date_of_creation)],
+    ["Incorporated", s(d.snapshot.incorporation_date)],
     ["SIC code(s)", Array.isArray(d.snapshot.sic_codes) ? (d.snapshot.sic_codes as string[]).join(", ") : ""],
     ["Registered office", fmtAddr(d.snapshot.registered_office as Rec)],
     ["Trading address", s((d.form?.business as Rec)?.trading_address)],
