@@ -327,11 +327,14 @@ export async function setUboValidationAction(formData: FormData) {
   const id = str(formData.get("case_id"));
   const kycId = str(formData.get("kyc_id"));
   const checked = str(formData.get("checked")) === "1";
+  // The reviewer selects who validated from a dropdown of users; fall back to the
+  // signed-in user's email if none chosen.
+  const validatedBy = str(formData.get("validated_by")) || me.email || null;
   if (!id || !kycId) return redirect("/onboarding");
   const db = serviceClient();
   try {
     const { error } = await db.from("onboarding_ubo_kyc")
-      .update({ documents_checked_at: checked ? new Date().toISOString() : null, documents_checked_by: checked ? (me.email ?? null) : null })
+      .update({ documents_checked_at: checked ? new Date().toISOString() : null, documents_checked_by: checked ? validatedBy : null })
       .eq("id", kycId).eq("case_id", id);
     if (error) throw error;
     await logCaseEvent(db, id, checked ? "ubo_docs_validated" : "ubo_docs_unvalidated", actorOf(me), { kyc_id: kycId });

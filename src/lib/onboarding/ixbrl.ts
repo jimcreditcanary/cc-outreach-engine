@@ -12,12 +12,19 @@
 
 export interface IxbrlFact { name: string; local: string; value: number; contextRef: string; periodEnd: string | null }
 
-/** Balance-sheet working-capital figures for one reported period (B5). */
+/** Per-period figures: working capital (B5) + the performance-overview metrics. */
 export interface AccountsPeriod {
   period_end: string | null;
   current_assets: number | null;
   current_liabilities: number | null;
   net_current_assets: number | null;
+  // Performance overview (populated on re-parse; optional so old stored rows load).
+  revenue?: number | null;
+  cash?: number | null;
+  fixed_assets?: number | null;
+  net_assets?: number | null;
+  capital_reserves?: number | null;
+  employees?: number | null;
 }
 
 export interface ParsedAccounts {
@@ -114,6 +121,13 @@ function pickAt(
 const CURRENT_ASSETS = { exact: ["currentassets"], includes: ["currentassets"], exclude: ["netcurrentassets", "noncurrentassets"] };
 const CURRENT_LIABILITIES = { exact: ["creditorsduewithinoneyear", "currentliabilities"], includes: ["creditorsduewithinoneyear", "currentliabilities"] };
 const NET_CURRENT = { exact: ["netcurrentassetsliabilities", "netcurrentassets"], includes: ["netcurrentassets"] };
+// Performance-overview concepts (matched per period).
+const REVENUE = { exact: ["turnover", "turnoverrevenue", "revenue", "revenuefromcontractswithcustomers"], includes: ["turnover"], exclude: ["cost", "percent"] };
+const CASH = { exact: ["cashbankonhand", "cashbankinhand", "cashcashequivalents", "cashandcashequivalents"], includes: ["cashbank", "cashandcash"] };
+const FIXED_ASSETS = { exact: ["fixedassets", "noncurrentassets"], includes: ["fixedassets", "noncurrentassets"], exclude: ["intangible", "tangible", "investmentproperty", "net"] };
+const NET_ASSETS = { exact: ["netassetsliabilities", "netassets"], includes: ["netassets"], exclude: ["netcurrent"] };
+const CAPITAL_RESERVES = { exact: ["capitalandreserves", "shareholdersfunds", "equity", "totalequity"], includes: ["capitalandreserves", "shareholdersfunds"], exclude: ["liabilit"] };
+const EMPLOYEES_P = { exact: ["averagenumberemployeesduringperiod", "averagenumberemployees"], includes: ["averagenumberemployees", "numberofemployees"] };
 
 export function parseIxbrl(xhtml: string): ParsedAccounts {
   const contexts = parseContexts(xhtml);
@@ -132,8 +146,14 @@ export function parseIxbrl(xhtml: string): ParsedAccounts {
       current_assets: pickAt(facts, pe, CURRENT_ASSETS),
       current_liabilities: pickAt(facts, pe, CURRENT_LIABILITIES),
       net_current_assets: pickAt(facts, pe, NET_CURRENT),
+      revenue: pickAt(facts, pe, REVENUE),
+      cash: pickAt(facts, pe, CASH),
+      fixed_assets: pickAt(facts, pe, FIXED_ASSETS),
+      net_assets: pickAt(facts, pe, NET_ASSETS),
+      capital_reserves: pickAt(facts, pe, CAPITAL_RESERVES),
+      employees: pickAt(facts, pe, EMPLOYEES_P),
     }))
-    .filter((p) => p.current_assets != null || p.current_liabilities != null || p.net_current_assets != null);
+    .filter((p) => [p.current_assets, p.current_liabilities, p.net_current_assets, p.revenue, p.cash, p.fixed_assets, p.net_assets, p.capital_reserves, p.employees].some((v) => v != null));
 
   return {
     periodEnd: latest,

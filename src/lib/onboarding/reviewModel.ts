@@ -14,6 +14,34 @@ import {
 
 export interface QA { q: string; a: string; note?: string }
 
+/** Human label for a Companies House company_type code (e.g. "ltd" →
+ *  "Private Limited Company"). Falls back to a title-cased code. */
+const COMPANY_TYPE_LABELS: Record<string, string> = {
+  "ltd": "Private Limited Company",
+  "private-limited-guarant-nsc": "Private Limited Company (by guarantee, no share capital)",
+  "private-limited-guarant-nsc-limited-exemption": "Private Limited Company (by guarantee)",
+  "private-unlimited": "Private Unlimited Company",
+  "private-unlimited-nsc": "Private Unlimited Company (no share capital)",
+  "plc": "Public Limited Company",
+  "old-public-company": "Old Public Company",
+  "llp": "Limited Liability Partnership",
+  "limited-partnership": "Limited Partnership",
+  "scottish-partnership": "Scottish Partnership",
+  "community-interest-company": "Community Interest Company (CIC)",
+  "charitable-incorporated-organisation": "Charitable Incorporated Organisation (CIO)",
+  "scottish-charitable-incorporated-organisation": "Scottish Charitable Incorporated Organisation",
+  "industrial-and-provident-society": "Industrial & Provident Society",
+  "registered-society-non-jurisdictional": "Registered Society",
+  "royal-charter": "Royal Charter Company",
+  "uk-establishment": "UK Establishment (overseas company)",
+  "oversea-company": "Overseas Company",
+};
+export function companyTypeLabel(code: string | null | undefined): string {
+  const c = (code ?? "").trim().toLowerCase();
+  if (!c) return "";
+  return COMPANY_TYPE_LABELS[c] ?? c.replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 const v = (answers: AnswerMap, k: string) => (answers[k]?.value ?? "").trim();
 const titleize = (s: string) => s.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -177,9 +205,10 @@ export function ownershipView(
     .filter((u) => u.is_corporate && !u.ceased_on && u.name)
     .map((u) => ({ name: u.name!, number: (u.identification?.registration_number as string) ?? u.via_company_number ?? null, natures: natures(u.natures_of_control) }));
 
+  const dmy = (iso: string | null) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : (iso ?? ""); };
   const historic = ubos
     .filter((u) => !u.is_corporate && u.ceased_on && u.name)
-    .map((u) => `${u.name} (ceased ${u.ceased_on})`);
+    .map((u) => `${u.name} (ceased ${dmy(u.ceased_on)})`);
 
   return {
     operatingName,

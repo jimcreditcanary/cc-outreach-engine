@@ -12,7 +12,7 @@ import { serviceClient } from "@/lib/db/client";
 import { hubspotEnabled } from "@/lib/hubspot/client";
 import { getDeal, hubspotRepo } from "@/lib/hubspot/repo";
 import { getCompaniesHouse, chDocumentUrl, type ChCompanySearchResult } from "@/lib/integrations/companiesHouse";
-import { fmtDate, fmtDateTime } from "@/lib/format/datetime";
+import { fmtDate, fmtDateTime, fmtMonthYear, durationSince } from "@/lib/format/datetime";
 import { PendingButton } from "@/components/PendingButton";
 import { ConfirmSubmit } from "@/components/ConfirmSubmit";
 import type { ContactRecord } from "@/lib/crm/types";
@@ -40,8 +40,10 @@ import { loadUploads, loadUboKycImages, UBO_ID_KIND, UBO_PROOF_KIND } from "@/li
 import { loadUboChecks } from "@/lib/onboarding/uboChecks";
 import { loadUboDocRequests, loadUboDocs, uboUploadUrl } from "@/lib/onboarding/uboDocs";
 import { getAnswers } from "@/lib/onboarding/formAnswers";
-import { ownershipView, paymentQA, ddQA, infosecQA, policyQA, otherQA, type QA } from "@/lib/onboarding/reviewModel";
+import { ownershipView, paymentQA, ddQA, infosecQA, policyQA, otherQA, companyTypeLabel, type QA } from "@/lib/onboarding/reviewModel";
 import { loadShares, shareUrl, type ShareRow } from "@/lib/onboarding/shares";
+import { loadAccounts } from "@/lib/onboarding/accounts";
+import { listOperators } from "@/lib/auth/owner";
 import { PrintButton } from "./PrintButton";
 import { caseDriveFolderUrl } from "@/lib/onboarding/driveFiling";
 import { parsePersonName, nameMatchKey } from "@/lib/onboarding/personName";
@@ -613,7 +615,7 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
   if (!c) return <p className="text-sm text-neutral-500">Onboarding case not found.</p>;
   const shares: ShareRow[] = ro ? [] : await loadShares(db, caseId);
 
-  const [{ form, kyc, bankAccounts }, privacy, uploads, uboChecks, generatedDocs, uboRequests, uboDocs, kycImages, enrichment, answers] = await Promise.all([
+  const [{ form, kyc, bankAccounts }, privacy, uploads, uboChecks, generatedDocs, uboRequests, uboDocs, kycImages, enrichment, answers, accounts] = await Promise.all([
     loadMerchantForm(db, caseId),
     loadPrivacyAssessment(db, caseId),
     loadUploads(db, caseId),
@@ -624,8 +626,10 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
     loadUboKycImages(db, caseId),
     loadEnrichment(db, caseId),
     getAnswers(db, caseId),
+    loadAccounts(db, caseId).catch(() => null),
   ]);
   const driveUrl = await caseDriveFolderUrl(db, caseId);
+  const operators = ro ? [] : await listOperators().catch(() => []);
 
   const b = form?.business ?? {};
   const comp = form?.compliance ?? {};
@@ -643,6 +647,15 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
   const chUrl = c.company_number ? `https://find-and-update.company-information.service.gov.uk/company/${encodeURIComponent(c.company_number)}` : null;
   const activeOfficers = officers.filter((o) => !o.resigned_on);
   const resignedOfficers = officers.filter((o) => o.resigned_on);
+  // Flag a director who is also a person with significant control (name match).
+  const pscKeys = new Set(
+    enrichment.ubos.filter((u) => !u.is_corporate && u.name && !u.ceased_on).map((u) => {
+      const pn = parsePersonName(u.name!); return nameMatchKey(pn.first, pn.last) || u.name!.toLowerCase();
+    }),
+  );
+  const isPsc = (name: string) => { const pn = parsePersonName(name); return pscKeys.has(nameMatchKey(pn.first, pn.last) || name.toLowerCase()); };
+  // Performance overview: the parsed accounts periods (newest first, up to 2).
+  const periods = (accounts?.periods ?? []).slice(0, 2);
   const seenBank = new Set<string>();
   const banks = bankAccounts.filter((a) => { const k = `${a.purpose}|${a.account_tail ?? ""}`; if (seenBank.has(k)) return false; seenBank.add(k); return true; });
   const held = (o: { direct: boolean; via: string[] }) =>
@@ -778,20 +791,23 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
           </section>
           )}
 
-          {/* Entity + Companies House */}
+          {/* Overview — Companies House snapshot */}
           <section>
-            <SectionTitle>Entity &amp; Companies House</SectionTitle>
+            <SectionTitle>Overview</SectionTitle>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Cell label="Registered name">{snapshot?.company_name}</Cell>
               <Cell label="Company number">{c.company_number}</Cell>
-              <Cell label="Type">{snapshot?.company_type}</Cell>
-              <Cell label="Status">{snapshot?.company_status}</Cell>
-              <Cell label="Incorporated">{snapshot?.incorporation_date}</Cell>
-              <Cell label="SIC code(s)">{Array.isArray(snapshot?.sic_codes) ? (snapshot!.sic_codes as string[]).join(", ") : ""}</Cell>
-              <Cell label="Registered office">{fmtChAddr(snapshot?.registered_office)}</Cell>
-              <Cell label="Accounts filing">{snapshot?.accounts_overdue ? "OVERDUE" : snapshot?.accounts_next_due ? `next due ${snapshot.accounts_next_due}` : "—"}</Cell>
-              <Cell label="Confirmation statement">{snapshot?.confirmation_statement_overdue ? "OVERDUE" : snapshot?.confirmation_statement_next_due ? `next due ${snapshot.confirmation_statement_next_due}` : "—"}</Cell>
-              <Cell label="Charges / insolvency">{[snapshot?.has_charges ? "charges on file" : "no charges", snapshot?.has_insolvency_history ? "insolvency history" : "no insolvency"].join(" · ")}</Cell>
+              <Cell label="Status">{snapshot?.company_status ? <span className={`rounded px-1.5 py-0.5 text-xs font-semibold uppercase ${/active/i.test(snapshot.company_status) ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{snapshot.company_status.replace(/-/g, " ")}</span> : null}</Cell>
+              <Cell label="Status detail">{snapshot?.company_status_detail ? snapshot.company_status_detail.replace(/-/g, " ") : ""}</Cell>
+              <Cell label="Insolvency history">{snapshot?.has_insolvency_history ? "Yes — see below" : "None on file"}</Cell>
+              <Cell label="Charges">{snapshot?.has_charges ? "Yes — see below" : "None on file"}</Cell>
+              <Cell label="Type">{companyTypeLabel(snapshot?.company_type)}</Cell>
+              <Cell label="Incorporated">{snapshot?.incorporation_date ? fmtDate(snapshot.incorporation_date) : ""}</Cell>
+              <Cell label="Years trading">{durationSince(snapshot?.incorporation_date)}</Cell>
+              <Cell label="SIC codes">{Array.isArray(snapshot?.sic_codes) ? (snapshot!.sic_codes as string[]).join(", ") : ""}</Cell>
+              <Cell label="Registered address">{fmtChAddr(snapshot?.registered_office)}</Cell>
+              <Cell label="Accounts">{snapshot?.accounts_overdue ? "OVERDUE" : snapshot?.accounts_next_due ? `Next due ${fmtDate(snapshot.accounts_next_due)}` : ""}</Cell>
+              <Cell label="Confirmation statement">{snapshot?.confirmation_statement_overdue ? "OVERDUE" : snapshot?.confirmation_statement_next_due ? `Next due ${fmtDate(snapshot.confirmation_statement_next_due)}` : ""}</Cell>
             </div>
             {(incUrl || chUrl) && (
               <div className="mt-2 flex flex-wrap gap-4 text-sm">
@@ -800,6 +816,49 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
               </div>
             )}
           </section>
+
+          {/* Performance overview — filed accounts (newest two periods) */}
+          {periods.length > 0 && (
+            <section>
+              <SectionTitle>Performance overview</SectionTitle>
+              <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-neutral-200 text-xs uppercase tracking-wide text-neutral-400">
+                      <th className="px-3 py-2 text-left font-medium">Metric</th>
+                      <th className="px-3 py-2 text-right font-medium">{periods[0]?.period_end ? fmtDate(periods[0].period_end) : "Latest"}</th>
+                      <th className="px-3 py-2 text-right font-medium">{periods[1]?.period_end ? fmtDate(periods[1].period_end) : "Prior"}</th>
+                      <th className="px-3 py-2 text-right font-medium">YoY change</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {([
+                      ["Revenue", (p: typeof periods[number]) => p.revenue, true],
+                      ["Cash at bank", (p: typeof periods[number]) => p.cash, true],
+                      ["Current assets", (p: typeof periods[number]) => p.current_assets, true],
+                      ["Fixed assets", (p: typeof periods[number]) => p.fixed_assets, true],
+                      ["Total net assets", (p: typeof periods[number]) => p.net_assets ?? p.net_current_assets, true],
+                      ["Capital & reserves", (p: typeof periods[number]) => p.capital_reserves, true],
+                      ["Employees", (p: typeof periods[number]) => p.employees, false],
+                    ] as [string, (p: typeof periods[number]) => number | null | undefined, boolean][]).map(([label, get, isMoney]) => {
+                      const cur = get(periods[0]!); const prev = periods[1] ? get(periods[1]) : null;
+                      if (cur == null && prev == null) return null;
+                      const ch = yoy(cur, prev);
+                      return (
+                        <tr key={label} className="border-b border-neutral-100 last:border-0">
+                          <td className="px-3 py-2 text-neutral-600">{label}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-neutral-900">{cur == null ? "—" : isMoney ? money0(cur) : cur}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-neutral-500">{prev == null ? "—" : isMoney ? money0(prev) : prev}</td>
+                          <td className={`px-3 py-2 text-right tabular-nums ${ch.cls}`}>{ch.text}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {accounts?.parsed_at && <p className="mt-1 text-xs text-neutral-400">Parsed from Companies House filed accounts.</p>}
+            </section>
+          )}
 
           {/* Ownership structure — the real, traced chain (no placeholder scaffold) */}
           <section>
@@ -840,15 +899,36 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
 
           {/* Directors */}
           <section>
-            <SectionTitle>Directors</SectionTitle>
+            <SectionTitle>Directors ({activeOfficers.length})</SectionTitle>
             {activeOfficers.length === 0 ? <p className="text-sm text-neutral-400">No active directors returned.</p> : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {activeOfficers.map((o) => (
-                  <Cell key={o.id} label={o.name}>{[o.officer_role, o.dob_month || o.dob_year ? `DOB ${o.dob_month ?? "?"}/${o.dob_year ?? "?"}` : "", o.nationality, o.appointed_on ? `appointed ${o.appointed_on}` : ""].filter(Boolean).join(" · ")}</Cell>
-                ))}
+              <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-neutral-200 text-xs uppercase tracking-wide text-neutral-400">
+                      <th className="px-3 py-2 text-left font-medium">Name</th>
+                      <th className="px-3 py-2 text-left font-medium">Role</th>
+                      <th className="px-3 py-2 text-left font-medium">Occupation</th>
+                      <th className="px-3 py-2 text-left font-medium">DOB</th>
+                      <th className="px-3 py-2 text-left font-medium">Appointed</th>
+                      <th className="px-3 py-2 text-left font-medium">Flags</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeOfficers.map((o) => (
+                      <tr key={o.id} className="border-b border-neutral-100 last:border-0">
+                        <td className="px-3 py-2 font-medium text-neutral-800">{o.name}</td>
+                        <td className="px-3 py-2 text-neutral-600">{o.officer_role ? o.officer_role.replace(/-/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()) : "—"}</td>
+                        <td className="px-3 py-2 text-neutral-600">{o.occupation || "—"}</td>
+                        <td className="px-3 py-2 tabular-nums text-neutral-600">{fmtMonthYear(o.dob_month, o.dob_year) || "—"}</td>
+                        <td className="px-3 py-2 tabular-nums text-neutral-600">{o.appointed_on ? fmtDate(o.appointed_on) : "—"}</td>
+                        <td className="px-3 py-2">{isPsc(o.name) ? <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-indigo-700">PSC</span> : <span className="text-neutral-300">—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
-            {resignedOfficers.length > 0 && <p className="mt-2 text-xs text-neutral-400">Recently resigned: {resignedOfficers.map((o) => `${o.name} (${o.resigned_on})`).join("; ")}</p>}
+            {resignedOfficers.length > 0 && <p className="mt-2 text-xs text-neutral-400">Recently resigned: {resignedOfficers.map((o) => `${o.name}${o.resigned_on ? ` (${fmtDate(o.resigned_on)})` : ""}`).join("; ")}</p>}
           </section>
 
           {/* Business & compliance */}
@@ -926,11 +1006,16 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
                               </form>
                             </>
                           ) : (
-                            <form action={setUboValidationAction}>
+                            <form action={setUboValidationAction} className="flex flex-wrap items-center gap-2">
                               <input type="hidden" name="case_id" value={caseId} />
                               <input type="hidden" name="kyc_id" value={k.id} />
                               <input type="hidden" name="checked" value="1" />
-                              <PendingButton className="rounded border border-emerald-300 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="…">✓ Mark checked &amp; validated</PendingButton>
+                              <span className="text-xs text-neutral-500">Validated by</span>
+                              <select name="validated_by" required defaultValue="" className="rounded border border-neutral-300 px-2 py-1 text-xs">
+                                <option value="" disabled>Select…</option>
+                                {operators.map((op) => <option key={op.id} value={op.display_name}>{op.display_name}</option>)}
+                              </select>
+                              <PendingButton className="rounded border border-emerald-300 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50" pendingLabel="…">✓ Validate</PendingButton>
                             </form>
                           )}
                         </div>
@@ -1139,13 +1224,26 @@ export async function OnboardingReviewPanel({ caseId, nav, share }: { caseId: st
   );
 }
 
-function Cell({ label, children }: { label: string; children?: string | null }) {
+function Cell({ label, children }: { label: string; children?: ReactNode }) {
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-3">
       <div className="text-xs font-medium uppercase tracking-wide text-neutral-400">{label}</div>
       <div className="mt-0.5 break-words text-sm text-neutral-800">{children || <span className="text-neutral-300">—</span>}</div>
     </div>
   );
+}
+
+/** Coloured money/number for the performance table. */
+function money0(n: number | null | undefined): string {
+  if (n == null) return "—";
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(n);
+}
+function yoy(curr: number | null | undefined, prev: number | null | undefined): { text: string; cls: string } {
+  if (curr == null || prev == null || prev === 0) return { text: "—", cls: "text-neutral-400" };
+  const pct = ((curr - prev) / Math.abs(prev)) * 100;
+  const r = Math.round(pct * 10) / 10;
+  if (r === 0) return { text: "0.0%", cls: "text-neutral-500" };
+  return { text: `${r > 0 ? "+" : ""}${r}%`, cls: r > 0 ? "text-emerald-600" : "text-red-600" };
 }
 
 function SectionTitle({ children }: { children: ReactNode }) {
