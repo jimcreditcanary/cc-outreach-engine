@@ -105,12 +105,14 @@ export async function issueAccessLink(db: DB, token: string, email: string, comp
     const { error } = await db.from("onboarding_share_access").insert({
       share_id: share.id, recipient_email: clean, access_token: accessToken, expires_at: expires,
     });
-    if (error) return false;
-  } catch {
+    if (error) { console.error("[share] grant insert failed:", error.message); return false; }
+  } catch (e) {
+    console.error("[share] grant insert threw:", (e as Error)?.message);
     return false;
   }
-  await sendShareAccessEmail(clean, shareViewUrl(token, accessToken), companyName);
-  return true;
+  // Only report success when the email actually went out — so a failed send
+  // surfaces to the recipient (and is logged) instead of a false "check your email".
+  return sendShareAccessEmail(clean, shareViewUrl(token, accessToken), companyName);
 }
 
 /** Validate a one-time view link. Returns the case + grant, or a reason it failed. */
@@ -146,7 +148,7 @@ export async function recordShareView(db: DB, grantId: string): Promise<void> {
   } catch { /* best-effort */ }
 }
 
-async function sendShareAccessEmail(to: string, viewUrl: string, companyName: string | null): Promise<void> {
+async function sendShareAccessEmail(to: string, viewUrl: string, companyName: string | null): Promise<boolean> {
   const subject = `Your secure access link${companyName ? ` — ${companyName}` : ""}`;
   const htmlBody = `
     <div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#1f2937;max-width:560px">
@@ -157,8 +159,16 @@ async function sendShareAccessEmail(to: string, viewUrl: string, companyName: st
     </div>`;
   const textBody = `Hello,\n\nYou requested access to a secure onboarding summary${companyName ? ` for ${companyName}` : ""} shared with you by Credit Canary.\n\nView it here (valid for 7 days):\n${viewUrl}\n\nIf you weren't expecting this, you can ignore this email.`;
   try {
-    await sendTransactional({ to, subject, htmlBody, textBody, tag: "onboarding-share" });
-  } catch { /* best-effort — the staff panel still shows the grant */ }
+    const res = await sendTransactional({ to, subject, htmlBody, textBody, tag: "onboarding-share" });
+    if (res.dryRun) {
+      console.error("[share] email NOT sent — Postmark is in dry-run (POSTMARK_SERVER_TOKEN missing at runtime).");
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("[share] email send failed:", (e as Error)?.message ?? e);
+    return false;
+  }
 }
 
 function escapeHtml(s: string): string {
