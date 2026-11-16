@@ -611,11 +611,60 @@ export async function getDealRevenue(dealId: string): Promise<DealRevenue | null
       rev.carr.minimums, rev.carr.forecast, rev.carr.combined,
       rev.tcv, rev.recurringTcv, rev.oneoffFees, rev.y1Revenue,
       ...rev.mrrMinimums, ...rev.mrrForecast, ...rev.arrCombined,
-    ].some((v) => v != null);
+      // Non-zero: a deal whose rollup props are all literally "0" has no model
+      // (the value lives in line items), so it falls back to revenueFromLineItems.
+    ].some((v) => v != null && v !== 0);
     return rev;
   } catch {
     return null;
   }
+}
+
+/** Derive a DealRevenue from HubSpot line items, for deals modelled with line
+ *  items instead of the manual ARR rollup fields. Convention (confirmed with the
+ *  team): a line item named "Year N …" belongs to contract year N, and its
+ *  `amount` is the MONTHLY figure (term in months), so that year's ARR =
+ *  amount × 12. Recurring items (a term, or "recurring" in the name) roll into
+ *  ARR / recurring-TCV; anything else is a one-off fee. Line-item amounts are
+ *  contracted/committed, so they populate the Minimums series (= Combined, as
+ *  there's no forecast upside). CARR is taken as the Year-1 (entry) committed
+ *  run-rate. */
+export function revenueFromLineItems(items: DealLineItem[], currency: string | null): DealRevenue {
+  const annualByYear = new Map<number, number>(); // contract year → annual £ (ARR)
+  let oneoff = 0;
+  for (const li of items) {
+    const monthly = li.amount ?? (li.price != null && li.quantity != null ? li.price * li.quantity : null);
+    if (monthly == null) continue;
+    const recurring = li.term != null || /recurring/i.test(li.name ?? "");
+    if (recurring) {
+      const m = /year\s*(\d+)/i.exec(li.name ?? "");
+      const year = m ? Number(m[1]) : 1;
+      annualByYear.set(year, (annualByYear.get(year) ?? 0) + monthly * 12);
+    } else {
+      oneoff += monthly;
+    }
+  }
+  const nYears = annualByYear.size;
+  const arrByYear = [1, 2, 3, 4, 5].map((y) => (annualByYear.has(y) ? annualByYear.get(y)! : null));
+  const mrrByYear = arrByYear.map((a) => (a == null ? null : a / 12));
+  const recurringTcv = [...annualByYear.values()].reduce((s, a) => s + a, 0);
+  const tcv = recurringTcv + oneoff;
+  const avgArr = nYears ? recurringTcv / nYears : null;
+  const y1Arr = annualByYear.get(1) ?? null;
+  return {
+    currency: currency || "GBP",
+    avgArr: { minimums: avgArr, forecast: null, combined: avgArr },
+    carr: { minimums: y1Arr, forecast: null, combined: y1Arr },
+    tcv,
+    recurringTcv,
+    oneoffFees: oneoff,
+    weightedTcv: null,
+    y1Revenue: (y1Arr ?? 0) + oneoff,
+    mrrMinimums: mrrByYear,       // committed monthly curve → drives the chart
+    mrrForecast: [null, null, null, null, null],
+    arrCombined: arrByYear,
+    hasAny: recurringTcv > 0 || oneoff > 0,
+  };
 }
 
 const stripNoteHtml = (s: string): string =>

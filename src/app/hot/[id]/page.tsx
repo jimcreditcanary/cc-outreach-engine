@@ -11,7 +11,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth/server";
 import { hubspotEnabled } from "@/lib/hubspot/client";
-import { hubspotRepo, getDeal, dealContactIds, dealRecentNotes, dealCompanyId, getDealLineItems, getDealRevenue, dealMeetings, dealPipelines, companyDeals } from "@/lib/hubspot/repo";
+import { hubspotRepo, getDeal, dealContactIds, dealRecentNotes, dealCompanyId, getDealLineItems, getDealRevenue, revenueFromLineItems, dealMeetings, dealPipelines, companyDeals } from "@/lib/hubspot/repo";
 import { listOwners, ownerOptions } from "@/lib/hubspot/owners";
 import { getCrm } from "@/lib/crm";
 import { companyOpsStatus } from "@/lib/crm/companyStatus";
@@ -66,6 +66,10 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
     listOwners(),
     dealMeetings(id),
   ]);
+  // Revenue model: prefer HubSpot's ARR rollup fields; if a deal has none (all
+  // zero — the value lives in line items instead), derive it from the line items,
+  // which are the durable, tier-independent source of truth.
+  const revView = revenue?.hasAny ? revenue : (lineItems.length ? revenueFromLineItems(lineItems, deal.currency) : null);
   const [contacts, company] = await Promise.all([
     Promise.all(contactIds.slice(0, 25).map((cid) => hubspotRepo.getContact(cid).catch(() => null))).then((xs) => xs.filter((x): x is NonNullable<typeof x> => x != null)),
     companyId ? hubspotRepo.getCompany(companyId).catch(() => null) : Promise.resolve(null),
@@ -293,7 +297,7 @@ export default async function WorkDealPage({ params }: { params: Promise<{ id: s
                 </section>
               );
 
-              if (revenue?.hasAny) return <RevenueDashboard rev={revenue} sideContent={lineItemsCard} />;
+              if (revView?.hasAny) return <RevenueDashboard rev={revView} sideContent={lineItemsCard} />;
               return lineItemsCard;
             })(),
           },
