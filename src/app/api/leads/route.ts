@@ -65,6 +65,38 @@ function authorized(req: Request, bodyKey: string | null): boolean {
   return bearer === expected || header === expected || bodyKey === expected;
 }
 
+// Per-IP throttle for the public form flows (migration 078). Applied only when a
+// client IP is available (e.g. forwarded by the developer-docs edge function).
+const RATE_HOURLY = 8;
+const RATE_DAILY = 25;
+
+function clientIp(req: Request, bodyIp: string | null): string | null {
+  if (bodyIp) return bodyIp;
+  const first = (req.headers.get("x-forwarded-for") ?? "").split(",")[0]?.trim();
+  return first || null;
+}
+
+/** True when the IP is over its hourly/daily cap and should be rejected. Records
+ *  the hit otherwise. Fail-open: any DB error (incl. the table not yet migrated)
+ *  returns false so a genuine lead is never blocked. */
+async function ipRateLimited(ip: string, source: string | null): Promise<boolean> {
+  try {
+    const db = serviceClient();
+    const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
+    const { data, error } = await db
+      .from("lead_ip_hits").select("created_at").eq("ip", ip).gte("created_at", dayAgo);
+    if (error) return false;
+    const rows = (data ?? []) as { created_at: string }[];
+    if (rows.length >= RATE_DAILY) return true;
+    const hourAgo = Date.now() - 3_600_000;
+    if (rows.filter((r) => new Date(r.created_at).getTime() >= hourAgo).length >= RATE_HOURLY) return true;
+    await db.from("lead_ip_hits").insert({ ip, source });
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: Request): Promise<Response> {
   // Parse JSON or form-encoded.
   let body: Record<string, unknown> = {};
@@ -89,6 +121,13 @@ export async function POST(req: Request): Promise<Response> {
 
   // Honeypot — bots fill hidden fields; fake success so they don't retry.
   if (str("website") || str("_gotcha")) return json(req, { ok: true, contact_id: null });
+
+  // Per-IP throttle (only when a client IP is forwarded, e.g. from the dev-docs
+  // edge function). Fail-open, so other forms that don't forward an IP are unaffected.
+  const ip = clientIp(req, str("client_ip"));
+  if (ip && (await ipRateLimited(ip, str("source")))) {
+    return json(req, { ok: false, error: "Too many requests. Please try again shortly." }, 429);
+  }
 
   const email = str("email");
   if (!email) return json(req, { ok: false, error: "email is required." }, 400);
